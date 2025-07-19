@@ -35,9 +35,6 @@ SP_EN = {
     "sol7": "G7",
 }
 
-# Cache for chords provided interactively by the user during execution
-USER_TRANSLATIONS = {}
-
 CHORD_RE = re.compile(r"^[A-G][#b]?(?:m|maj7|sus4|dim|aug|7)?$")
 
 
@@ -59,28 +56,13 @@ def parse_chords_line(line: str) -> List[Tuple[int, str]]:
 
 
 def translate_chord(token: str, line_no: int) -> str:
-    # Check predefined Spanish to English dictionary
     translated = SP_EN.get(token)
     if translated:
         return translated
-
-    # Chord already in English notation
     if CHORD_RE.match(token):
         return token
-
-    # Previously provided by the user during this run
-    if token in USER_TRANSLATIONS:
-        return USER_TRANSLATIONS[token]
-
-    # Ask the user for the translation
-    print(
-        f"He encontrado este acorde que no tengo localizado cuál es {token}")
-    user_input = input(
-        "indícame que acorde en inglés debo considerarlo \u27a1\ufe0f ").strip()
-    if not user_input:
-        user_input = token
-    USER_TRANSLATIONS[token] = user_input
-    return user_input
+    print(f"Warning: unrecognized chord '{token}' on line {line_no}", file=sys.stderr)
+    return token
 
 
 def inject_chords(positions: List[Tuple[int, str]], lyric_line: str, line_no: int) -> str:
