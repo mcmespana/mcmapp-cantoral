@@ -1,9 +1,11 @@
 {title: Aleluya Cantará}
 {artist: Brotes de Olivo}
 {key: E}
-{comment: Ver versión completa como 'Aleluya de la Tierra' que inlcuye dos estrofas}
-
 
 {comment: Intro: MI}
+{soc}
 ALE[A]LUYA [B]CANTA[E]RÁ QUIEN PER[F#m]DIÓ LA [G#m7]ESPERAN[C#m]ZA 
 Y LA [A]TIERRA [B]SONREI[E]RÁ, ALE[c#m]LUUUUU[E]UUUU[E]YA.  
+{eoc}
+
+{comment: Ver versión completa como 'Aleluya de la Tierra' que inlcuye dos estrofas}
