@@ -27,3 +27,5 @@ Para que la publicaci\xC3\xB3n en Firebase funcione es necesario definir dos
 Una vez configurados, cualquier push a `main` crear\xC3\xA1 la nueva versi\xC3\xB3n de
 `songs.json`, la subir\xC3\xA1 al repositorio y actualizar\xC3\xA1 Firebase de forma
 autom\xC3\xA1tica.
+
+El flujo solo se ejecuta cuando se env\xC3\xADan cambios a la carpeta `songs` en la rama `main`. Cuando esto ocurre se realizan las siguientes acciones:

@@ -21,14 +21,8 @@ def find_latest_version(songs_dir):
 
 
 def main():
-    firebase_url = os.environ.get('FIREBASE_URL')
-    if not firebase_url:
-        raise RuntimeError("Environment variable 'FIREBASE_URL' is required but not set.")
-    firebase_url = firebase_url.rstrip('/')
-
-    token = os.environ.get('FIREBASE_TOKEN')
-    if not token:
-        raise RuntimeError("Environment variable 'FIREBASE_TOKEN' is required but not set.")
+    firebase_url = os.environ['FIREBASE_URL'].rstrip('/')
+    token = os.environ['FIREBASE_TOKEN']
     songs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'songs')
 
     latest_file = find_latest_version(songs_dir)
@@ -39,16 +33,10 @@ def main():
 
     def request(url, body):
         req = urllib.request.Request(url, data=body, method='PUT', headers={'Content-Type': 'application/json'})
-        try:
-            with urllib.request.urlopen(req) as resp:
-                resp.read()
-        except urllib.error.HTTPError as e:
-            print(f"HTTPError: {e.code} {e.reason} for URL: {url}")
-            raise
-        except urllib.error.URLError as e:
-            print(f"URLError: {e.reason} for URL: {url}")
-            raise
-
+        with urllib.request.urlopen(req) as resp:
+            if resp.status < 200 or resp.status >= 300:
+                raise RuntimeError(f"Request to {url} failed with status {resp.status}")
+            resp.read()
     # Update songs/data
     url_data = f"{firebase_url}/songs/data.json?auth={token}"
     request(url_data, data)

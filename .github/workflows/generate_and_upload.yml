@@ -3,6 +3,9 @@ name: Generate Songs JSON and Upload
 on:
   push:
     branches: [main]
+    paths:
+      - 'songs/**'
+      - '!songs/songs-v*.json'
 
 jobs:
   build:
