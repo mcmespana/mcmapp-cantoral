@@ -1,5 +1,8 @@
-# conversor-acordes
-Conversor de acordes en formato tabulado a formato Chord Pro
+# mcmapp-cantoral
+Incluye...
+* Todas las canciones del Cantoral MCM en formato Chord Pro
+* Generador del songs.json y un uploader automático a la MCM App
+* Conversor de acordes en formato tabulado a formato Chord Pro
 ## Automatizaci\xC3\xB3n de songs.json
 
 Este repositorio incluye un flujo de trabajo de GitHub Actions que genera
