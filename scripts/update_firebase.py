@@ -39,8 +39,15 @@ def main():
 
     def request(url, body):
         req = urllib.request.Request(url, data=body, method='PUT', headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req) as resp:
-            resp.read()
+        try:
+            with urllib.request.urlopen(req) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            print(f"HTTPError: {e.code} {e.reason} for URL: {url}")
+            raise
+        except urllib.error.URLError as e:
+            print(f"URLError: {e.reason} for URL: {url}")
+            raise
 
     # Update songs/data
     url_data = f"{firebase_url}/songs/data.json?auth={token}"
