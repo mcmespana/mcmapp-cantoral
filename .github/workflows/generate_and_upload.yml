@@ -1,0 +1,33 @@
+name: Generate Songs JSON and Upload
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'songs/**'
+      - '!songs/songs-v*.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Generate songs JSON
+        run: python scripts/crear_songs_json.py
+      - name: Commit songs JSON
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add songs/songs-v*.json
+            git commit -m "chore: update songs JSON"
+            git push
+          fi
+      - name: Upload to Firebase
+        env:
+          FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: python scripts/update_firebase.py
