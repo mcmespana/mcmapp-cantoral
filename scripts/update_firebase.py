@@ -34,8 +34,9 @@ def main():
     def request(url, body):
         req = urllib.request.Request(url, data=body, method='PUT', headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req) as resp:
+            if resp.status < 200 or resp.status >= 300:
+                raise RuntimeError(f"Request to {url} failed with status {resp.status}")
             resp.read()
-
     # Update songs/data
     url_data = f"{firebase_url}/songs/data.json?auth={token}"
     request(url_data, data)
