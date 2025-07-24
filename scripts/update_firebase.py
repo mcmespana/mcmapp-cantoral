@@ -21,8 +21,14 @@ def find_latest_version(songs_dir):
 
 
 def main():
-    firebase_url = os.environ['FIREBASE_URL'].rstrip('/')
-    token = os.environ['FIREBASE_TOKEN']
+    firebase_url = os.environ.get('FIREBASE_URL')
+    if not firebase_url:
+        raise RuntimeError("Environment variable 'FIREBASE_URL' is required but not set.")
+    firebase_url = firebase_url.rstrip('/')
+
+    token = os.environ.get('FIREBASE_TOKEN')
+    if not token:
+        raise RuntimeError("Environment variable 'FIREBASE_TOKEN' is required but not set.")
     songs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'songs')
 
     latest_file = find_latest_version(songs_dir)
