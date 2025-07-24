@@ -1,4 +1,5 @@
 # mcmapp-cantoral
+[![Generate Songs JSON and Upload](https://github.com/mcmespana/mcmapp-cantoral/actions/workflows/generate_and_upload.yml/badge.svg)](https://github.com/mcmespana/mcmapp-cantoral/actions/workflows/generate_and_upload.yml)
 Incluye...
 * Todas las canciones del Cantoral MCM en formato Chord Pro
 * Generador del songs.json y un uploader automático a la MCM App
