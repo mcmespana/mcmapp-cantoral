@@ -1,170 +1,211 @@
-"""Command-line tool to convert Spanish chord tabs to ChordPro."""
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+CLI mega-friendly para convertir tabs ES ➜ ChordPro
+└─ Versión 2025-07-25-b: numeración auto-padding, aviso de commit,
+   fix líneas vacías & estrbillo ≥70 % mayúsculas.
+"""
 
-import argparse
 import os
 import re
 import sys
+import random
+import subprocess
+from pathlib import Path
 from typing import List, Tuple
 
-try:
-    import cv2
-    import pytesseract
-except Exception:
-    cv2 = None
-    pytesseract = None
+# ---------- Colores ANSI + emojis ---------- #
+RESET = "\033[0m"; CYAN = "\033[96m"; GREEN = "\033[92m"
+YELL  = "\033[93m"; MAG  = "\033[95m"
 
+EMO_ASK  = ["🎤","🎷","🎸","🎺","🥁","🎹"]
+EMO_OK   = ["✅","🎶","👌","🙌","🥳","🚀"]
+EMO_ERR  = ["❌","😵","⚠️","🤔","🚫"]
+EMO_AGAIN = [
+    "¿Otra rondita, jefe? 🤠","¿Nos marcamos otro hit? 🎵",
+    "¡Siguiente temazo? 🔥","¿Te animas a otra? 🥁",
+    "¿Más madera musical? 🚂","¿Otra cancioncita, máquina? 🎸",
+    "¿Repetimos jugada? 🕺","¿Seguimos la jam? 🎷",
+    "¿Otra ronda, compadre? 🍻","¿Un bonus track? 💿",
+    "¿Te queda cuerda? 🤹","¿Más acordes al viento? 🌬️",
+    "¿Otro tema fresco? 🍃","¿Vamos con otra pieza? 🎻",
+    "¿Le damos al REC otra vez? 🔴",
+]
+
+def c(t:str,col:str)->str: return f"{col}{t}{RESET}"
+def ask(p:str)->str:       return input(c(f"{random.choice(EMO_ASK)} {p}: ",CYAN))
+def ok(msg:str):           print(c(f"{random.choice(EMO_OK)} {msg}",GREEN))
+def warn(msg:str):         print(c(f"{random.choice(EMO_ERR)} {msg}",YELL),file=sys.stderr)
+
+# ---------- Diccionario ES ➜ EN ---------- #
 SP_EN = {
-    "DO": "C",
-    "RE": "D",
-    "MI": "E",
-    "FA": "F",
-    "SOL": "G",
-    "LA": "A",
-    "SI": "B",
-    "do": "C",
-    "re": "D",
-    "mi": "E",
-    "fa": "F",
-    "sol": "G",
-    "la": "A",
-    "si": "B",
-    "lam": "Am",
-    "mim": "Em",
-    "sim": "Bm",
-    "fa#m": "F#m",
-    "sol7": "G7",
+    "DO":"C","RE":"D","MI":"E","FA":"F","SOL":"G","LA":"A","SI":"B",
+    "do":"C","re":"D","mi":"E","fa":"F","sol":"G","la":"A","si":"B",
+    "lam":"Am","mim":"Em","sim":"Bm","fa#m":"F#m","sol7":"G7",
 }
-
 CHORD_RE = re.compile(r"^[A-G][#b]?(?:m|maj7|sus4|dim|aug|7)?$")
 
-
-def parse_chords_line(line: str) -> List[Tuple[int, str]]:
-    line = line.replace("\t", "        ")
-    positions = []
-    i = 0
+# ---------- Parsing de acordes ---------- #
+def parse_chords_line(line:str)->List[Tuple[int,str]]:
+    line = line.expandtabs(8)             # tabs → stops reales
+    out, i = [], 0
     while i < len(line):
         if line[i] != " ":
-            start = i
-            token = []
+            start, tok = i, []
             while i < len(line) and line[i] != " ":
-                token.append(line[i])
-                i += 1
-            positions.append((start, "".join(token)))
+                tok.append(line[i]); i += 1
+            out.append((start, "".join(tok)))
         else:
             i += 1
-    return positions
+    return out
 
+def ajusta_posiciones(pos:List[Tuple[int,str]], lyrics:str)->List[Tuple[int,str]]:
+    ajust, ocupadas = [], set(); L = len(lyrics)
+    for col, tok in pos:
+        p = col
+        while p < L and lyrics[p].isspace(): p += 1
+        if p > L: p = L
+        while p in ocupadas and p < L: p += 1
+        ocupadas.add(p); ajust.append((p, tok))
+    return sorted(ajust, key=lambda x: x[0])
 
-def translate_chord(token: str, line_no: int) -> str:
-    translated = SP_EN.get(token)
-    if translated:
-        return translated
-    if CHORD_RE.match(token):
-        return token
-    print(f"Warning: unrecognized chord '{token}' on line {line_no}", file=sys.stderr)
-    return token
+def translate(tok:str)->str:
+    return SP_EN.get(tok) or SP_EN.get(tok.lower()) or tok
 
+def inject(pos:List[Tuple[int,str]], lyrics:str)->str:
+    res, it = [], iter(pos); cur = next(it, None)
+    for idx, ch in enumerate(lyrics):
+        while cur and cur[0] == idx:
+            res.append(f"[{translate(cur[1])}]"); cur = next(it, None)
+            # (si varios acordes comparten columna se añaden seguidos)
+        res.append(ch)
+    if cur:                                    # acordes tras final de línea
+        end = len(lyrics)
+        while cur:
+            res.append(" " * max(cur[0]-end,0))
+            res.append(f"[{translate(cur[1])}]")
+            end = cur[0]; cur = next(it, None)
+    return "".join(res)
 
-def inject_chords(positions: List[Tuple[int, str]], lyric_line: str, line_no: int) -> str:
-    result = []
-    pos_iter = iter(sorted(positions, key=lambda x: x[0]))
-    current = next(pos_iter, None)
-    for idx, ch in enumerate(lyric_line):
-        while current and current[0] == idx:
-            chord = translate_chord(current[1], line_no)
-            result.append(f"[{chord}]")
-            current = next(pos_iter, None)
-        result.append(ch)
-    # handle chords beyond end of line
-    if current:
-        end_len = len(lyric_line)
-        while current:
-            spaces = current[0] - end_len
-            if spaces > 0:
-                result.append(" " * spaces)
-                end_len = current[0]
-            chord = translate_chord(current[1], line_no)
-            result.append(f"[{chord}]")
-            current = next(pos_iter, None)
-    return "".join(result)
+# ---------- Conversión de pares ---------- #
+def convert_lines(lines:List[str])->str:
+    neat = [ln for ln in lines if ln.strip() != ""]     # ← IGNORA vacías
+    out = []
+    for i in range(0, len(neat), 2):
+        chords = neat[i]
+        lyrics = neat[i+1] if i+1 < len(neat) else ""
+        out.append(inject(ajusta_posiciones(parse_chords_line(chords), lyrics), lyrics))
+    return "\n".join(out)
 
+# ---------- Estribillo {soc}/{eoc} ---------- #
+def mark_chorus(text:str)->str:
+    lines = text.splitlines(); marked, in_ch = [], False
+    for line in lines:
+        clean = re.sub(r"\[.*?\]", "", line).strip()
+        letters = [c for c in clean if c.isalpha()]
+        uppers  = [c for c in letters if c.isupper()]
+        is_caps = letters and len(uppers)/len(letters) >= 0.7   # ← ≥70 %
+        if is_caps and not in_ch:
+            marked.append(""); marked.append("{soc}"); in_ch = True
+        if not is_caps and in_ch:
+            marked.append("{eoc}"); in_ch = False
+        marked.append(line)
+    if in_ch: marked.append("{eoc}")
+    return "\n".join(marked)
 
-def convert_lines(lines: List[str]) -> str:
-    output = []
-    for i in range(0, len(lines), 2):
-        chords_line = lines[i] if i < len(lines) else ""
-        lyrics_line = lines[i + 1] if i + 1 < len(lines) else ""
-        positions = parse_chords_line(chords_line)
-        converted = inject_chords(positions, lyrics_line, i + 1)
-        output.append(converted)
-    return "\n".join(output)
+# ---------- Helpers varios ---------- #
+def normalize_key(k:str)->str:
+    if not k.strip(): return ""
+    t = translate(k.strip())
+    return t[0].upper() + t[1:]
 
+def next_song_number(folder:Path)->int:
+    max_n = 0
+    for f in folder.iterdir():
+        m = re.match(r"(\d+)\.", f.name)
+        if m: max_n = max(max_n, int(m.group(1)))
+    return max_n + 1
 
-def ocr_image(path: str) -> List[str]:
-    if cv2 is None or pytesseract is None:
-        print("OCR dependencies not installed. Install OpenCV and pytesseract.", file=sys.stderr)
-        return []
-    image = cv2.imread(path)
-    if image is None:
-        print(f"Cannot read image: {path}", file=sys.stderr)
-        return []
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    coords = cv2.findNonZero(gray)
-    angle = 0.0
-    if coords is not None:
-        rect = cv2.minAreaRect(coords)
-        angle = rect[-1]
-        if angle < -45:
-            angle = -(90 + angle)
-        else:
-            angle = -angle
-        (h, w) = gray.shape
-        M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-        gray = cv2.warpAffine(gray, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    try:
-        text = pytesseract.image_to_string(gray, lang="spa+eng")
-    except pytesseract.pytesseract.TesseractNotFoundError:
-        print("Tesseract is not installed. Cannot perform OCR.", file=sys.stderr)
-        return []
-    return text.splitlines()
+def resolve_category_folder(base:Path, letter:str)->Path:
+    for p in base.iterdir():
+        if p.is_dir() and p.name.upper().startswith(f"{letter.upper()}."):
+            return p
+    new = base / f"{letter.upper()}. Sin_categoria"
+    new.mkdir(parents=True, exist_ok=True); return new
 
+# ---------- CLI principal ---------- #
+def main():
+    ok("Bienvenido al ♪ conversor mega-friendly ♪")
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Convert Spanish chord sheets to ChordPro syntax")
-    parser.add_argument("-i", "--image", help="Path to image or PDF for OCR")
-    args = parser.parse_args()
+    base = Path(__file__).resolve().parent.parent / "songs"
+    base.mkdir(parents=True, exist_ok=True)
 
-    title = input("Song title? ").strip()
+    while True:
+        cat = ask("Letra de la categoría (A-Z)").upper()
+        while not (len(cat)==1 and 'A'<=cat<='Z'):
+            cat = ask("⚠️ Introduce SOLO una letra A-Z").upper()
 
-    if args.image:
-        lines = ocr_image(args.image)
-        if not lines:
-            return
-    else:
-        print('Paste the chord + lyric lines below. End with a single line that contains ONLY "EOF".')
-        lines = []
+        folder = resolve_category_folder(base, cat)
+
+        num_in = ask("Número de la canción (si no lo pones la añadiré al final)").strip()
+        if num_in and not num_in.isdigit():
+            warn("No es un número, lo ignoro"); num_in = ""
+        num = (num_in or str(next_song_number(folder))).zfill(2)
+        if not num_in:
+            ok(f"Número asignado automáticamente ➜ {num}")
+
+        slug = ask("Nombre de ARCHIVO (minúsculas_con_barrabajas)").strip()
+        while not re.fullmatch(r"[a-z0-9_]+", slug):
+            slug = ask("❗ Solo minúsculas, números y _ (sin espacios)").strip()
+
+        titulo  = ask("Título de la canción (el 'bonito')").strip()
+        artista = ask("Artista / Autor (opcional)").strip()
+        tono    = normalize_key(ask("Tono (ej: C, Am, DO, lam)").strip())
+        capo_in = ask("Cejilla (0 o en blanco)").strip()
+        capo    = capo_in if capo_in.isdigit() and int(capo_in)>0 else ""
+
+        ok("¡A pastear tu canción! (líneas de ACORDES/LETRA alternas)")
+        print(c("Cuando termines escribe 'FIN' en una línea aparte ➜ ENTER", MAG))
+        raw = []
         while True:
-            try:
-                line = input()
-            except EOFError:
-                break
-            if line.strip() == 'EOF':
-                break
-            lines.append(line)
+            try: ln = input()
+            except EOFError: warn("Entrada terminada inesperadamente"); break
+            if ln.strip() == "FIN": break
+            raw.append(ln)
+        if not raw: warn("No se pegó nada… volvemos al principio 🤷"); continue
 
-    if not lines:
-        print("No input provided.", file=sys.stderr)
-        return
+        cuerpo = mark_chorus(convert_lines(raw))
+        header = [f"{{title: {titulo}}}", f"{{artist: {artista}}}"]
+        if tono: header.append(f"{{key: {tono}}}")
+        if capo: header.append(f"{{capo: {capo}}}")
+        header_text = "\n".join(header) + "\n\n"
 
-    converted = convert_lines(lines)
+        fname = f"{num}.{slug}.cho"
+        fpath = folder / fname
+        fpath.write_text(header_text + cuerpo, encoding="utf-8")
+        ok(f"Archivo creado en ➜ {fpath}")
 
-    os.makedirs("output", exist_ok=True)
-    file_path = os.path.join("output", f"{title}.cho")
-    with open(file_path, "w", encoding="utf-8") as fh:
-        fh.write(converted)
-    print(f"Wrote {file_path}")
+        print(c("💾 Recuerda hacer un commit en el repositorio para que se suba automáticamente tu nuevo temazo 😉", MAG))
+        try:
+            if sys.platform.startswith("darwin"): subprocess.Popen(["open", str(fpath)])
+            elif os.name == "nt": os.startfile(str(fpath))            # type: ignore
+            else: subprocess.Popen(["xdg-open", str(fpath)])
+        except Exception:
+            warn("No pude abrir el archivo automáticamente 😅")
 
+        again = input(c(random.choice(EMO_AGAIN)+" (s/n) ", CYAN)).strip().lower()
+        if again != "s":
+            ok("¡Hasta la próxima, crack! 👋"); break
 
 if __name__ == "__main__":
-    main()
+    try: main()
+    except KeyboardInterrupt:
+        print(); warn("Cancelado por el usuario")
+
+# ---------- OCR (opcional, desactivado) ---------- #
+"""
+# Si algún día quieres OCR:
+# import cv2, pytesseract
+# def ocr_image(path:str)->List[str]:
+#     ...
+"""
