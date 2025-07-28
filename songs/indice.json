@@ -81,12 +81,12 @@
   },
   "estribillos": {
     "categoryTitle": "Y. Estribillos 🎼",
-    "order": 16,
+    "order": 17,
     "songs": []
   },
-  "adoracion": {
+  "otros": {
     "categoryTitle": "Z. Otros 🎤",
-    "order": 16,
+    "order": 18,
     "songs": []
   }
 }
