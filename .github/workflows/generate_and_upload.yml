@@ -1,4 +1,4 @@
-name: Generate Songs JSON and Upload
+name: Genera songs.json y sube Firebase
 
 on:
   push:
