@@ -3,3 +3,6 @@ pytesseract
 pillow
 opencv-python-headless
 pychord
+requests
+python-dotenv
+rich
