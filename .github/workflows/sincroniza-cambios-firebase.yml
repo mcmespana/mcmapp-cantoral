@@ -1,6 +1,6 @@
 # La app permite hacer cambios a los administradores del cantoral en tiempo real. 
 # Para ello, luego es necesario sincronizar los cambios y que lleguen automáticamente al .cho
-name: Sync songs from Firebase
+name: Sincroniza cambios en Firebase con Repositorio
 
 on:
   workflow_dispatch:
