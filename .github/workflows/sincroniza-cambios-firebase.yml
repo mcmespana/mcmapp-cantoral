@@ -41,14 +41,14 @@ jobs:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_USE_AUTH_HEADER: "false"   # decorativo; el script decide por TOKEN
-        run: python scripts/sync_songs_from_firebase.py --dry-run
+        run: python scripts/sincronizaCambiosDeFirebase.py --dry-run
 
       - name: Apply (escribe y borra nodos)
         env:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_USE_AUTH_HEADER: "false"
-        run: python scripts/sync_songs_from_firebase.py
+        run: python scripts/sincronizaCambiosDeFirebase.py
 
       - name: Commit & push only if changed
         run: |
