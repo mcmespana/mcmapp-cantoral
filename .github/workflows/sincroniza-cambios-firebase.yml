@@ -1,0 +1,89 @@
+# La app permite hacer cambios a los administradores del cantoral en tiempo real. 
+# Para ello, luego es necesario sincronizar los cambios y que lleguen automáticamente al .cho
+name: Sync songs from Firebase
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 */2 * *"   # cada 2 días a las 04:00 de la mañana por si acasito
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: songs-sync
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f scripts/requirements.txt ]; then
+            python -m pip install -r scripts/requirements.txt
+          else
+            python -m pip install requests python-dotenv rich google-auth
+          fi
+
+      # 🔑 Usamos TOKEN (simple y 100% funcionando)
+      - name: Dry-run (no escribe ni borra)
+        env:
+          FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_USE_AUTH_HEADER: "false"   # decorativo; el script decide por TOKEN
+        run: python scripts/sync_songs_from_firebase.py --dry-run
+
+      - name: Apply (escribe y borra nodos)
+        env:
+          FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_USE_AUTH_HEADER: "false"
+        run: python scripts/sync_songs_from_firebase.py
+
+      - name: Commit & push only if changed
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add -A
+            git commit -m "chore: sync songs from Firebase"
+            git push
+          else
+            echo "No hay cambios que commitear."
+          fi
+
+      # ───────────────────────── OPCIONAL: Service Account ─────────────────────────
+      # Para preferir SA en lugar de TOKEN:
+      # 1) Crea el secret FIREBASE_SA_JSON con el contenido del JSON
+      # 2) Restaura el JSON y LIMPIA el token del entorno
+      # 3) Llama al script sin FIREBASE_TOKEN
+      #
+      # - name: Restore service account & prefer SA
+      #   env:
+      #     FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SA_JSON }}
+      #   run: |
+      #     echo "$FIREBASE_SA_JSON" > "$GITHUB_WORKSPACE/sa.json"
+      #     echo "GOOGLE_APPLICATION_CREDENTIALS=$GITHUB_WORKSPACE/sa.json" >> $GITHUB_ENV
+      #     echo "FIREBASE_TOKEN=" >> $GITHUB_ENV   # ← esto fuerza al script a usar SA
+      #
+      # - name: Dry-run (SA)
+      #   env:
+      #     FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+      #     FIREBASE_USE_AUTH_HEADER: "true"
+      #   run: python scripts/sync_songs_from_firebase.py --dry-run
+      #
+      # - name: Apply (SA)
+      #   env:
+      #     FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+      #     FIREBASE_USE_AUTH_HEADER: "true"
+      #   run: python scripts/sync_songs_from_firebase.py
