@@ -6,6 +6,3 @@ pychord
 requests
 python-dotenv
 rich
-PIL
-collections
-bisect
