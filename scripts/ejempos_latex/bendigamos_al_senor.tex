@@ -1,0 +1,62 @@
+% Esto es una canción típica: empieza con \beginsong{título}[info extra], contiene estrofas
+% (enmarcadas en \beginverse y \endverse) y estribillos (\beginchorus y \endchorus).
+% Además de la letra, aparecen acordes en la forma \[acorde]. Los acordes se escriben en
+% notación inglesa (C-Do, D-Re, E-Mi, F-Fa, G-Sol, A-La, B-Si) y automáticamente se imprimen
+% en español (ver archivo estilo/acordes.tex).
+
+% en el bloque de información extra hay varios campos, pero el único que voy a utilizar es
+% "by", que indica el autor de la canción.
+\beginsong{Bendigamos al Señor}[by={Pelayo Sánchez}]
+\beginverse % Empieza una estrofa
+Bendi\[E]gamos al Señor,
+Dios de \[C#m]toda la creación,
+por ha\[A]bernos rega\[B7]lado su a\[E]mor.\[B7]
+Su bon\[E]dad y su perdón,
+y su \[C#m]gran fidelidad,
+por los \[A]siglos de los \[B7]siglos dura\[E]rán.\[E7]
+\endverse % Fin de la estrofa
+\beginchorus % Empieza un estribillo
+El Es\[A]píritu de \[B7]Dios hoy es\[E]tá \[B7]sobre \[C#m]mí,
+\[A]Él es quien me ha un\[B7]gido a procla\[E]mar,
+\[E7]a procla\[A]mar, la buena \[B7]nueva a los más \[E B7]po\[C#m]bres, \[A]
+% La línea anterior es demasiado larga para los ajustes del cancionero, y pasa a la siguiente
+% línea automáticamente con un poco de indentación, como si fuera un poema.
+% Para ajustar el punto de corte si no cabe todo en una línea, se puede utilizar \brk (dejando espacios a ambos lados)
+% en el punto deseado. Por ejemplo "Yo Señor te presento \brk lo que hay en mi interior."
+% Por lo general cada línea es un verso.
+\ifchorded
+% TODO: decidir estilo
+(1) la gracia \[E]de su salva\[B7]ción. \rep{2}
+(2) la gracia \[B7]de su salva\[E]ción.
+\else
+la gracia de su salvación. \rep{2}
+\fi
+% Esto es un condicional: solo se verá lo que hay entre \ifchorded (si tiene acordes) y \fi
+% en las versiones del cancionero con acordes, por lo que podemos usarlo para anotaciones
+% para los músicos. La estructura {\nolyrics texto con acordes} hace que todo quede en una 
+% línea y no en dos líneas como si fuera letra cantable.
+\ifchorded
+{\nolyrics Puente: \[B7]}
+\fi
+\endchorus % Fin del estribillo
+\beginverse % Empieza otra estrofa: como los acordes son los mismos del ejemplo anterior
+% usamos el acento circumflejo para "repetir" el acorde correspondiente. Para más información,
+% ver el manual del paquete "songs" en songs.sourceforge.net
+Envi^ados con poder
+y en el ^nombre de Jesús,
+a sa^nar a los en^fermos del do^lor,^
+a los ^ciegos dar visión,
+a los ^pobres la verdad
+y a los ^presos y opri^midos liber^tad.^
+\endverse % Fin de la segunda estrofa
+\beginverse % Empieza la tercera estrofa
+Con la ^fuerza de su amor 
+y de ^la resurrección
+anun^ciamos llega ^ya la salva^ción, ^
+que ni el ^miedo ni el temor,
+ni la ^duda o la opresión
+borra^rán la paz de ^nuestro cora^zón. ^
+\endverse % Fin de la tercera estrofa
+\endsong % Fin de la canción (obligatorio)
+
+% Se podrían incluir otras canciones aquí, pero resulta más sencillo separarlas en archivos individuales.
