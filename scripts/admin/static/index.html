@@ -295,40 +295,72 @@
           <div class="visual-toolbar">
             <button class="btn-mini" @click="visualAddMode = !visualAddMode"
                     :class="{primary: visualAddMode}">
-              <span x-text="visualAddMode ? '✕ Cancelar añadir' : '+ Añadir acorde'"></span>
+              <span x-text="visualAddMode ? '✕ Cancelar añadir' : '+ Acorde'"></span>
             </button>
-            <span class="hint">
-              Arrastra acordes para moverlos · doble-click para editar texto ·
-              tecla <kbd>Supr</kbd> para borrar · <kbd>Shift</kbd> al soltar = sin snap.
-              <span x-show="visualAddMode" class="adding-hint">Modo añadir: pincha una letra para colocar un acorde nuevo.</span>
-            </span>
+
+            <span class="sep"></span>
+            <span class="sel-info" x-show="visualSelectedLines.size > 0"
+                  x-text="visualSelectedLines.size + ' línea(s) sel.'"></span>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="markSelectionAsChorus()">🟡 Marcar estribillo</button>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="unmarkSelectionChorus()">Quitar marca</button>
+
+            <span class="sep"></span>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="copyChordPattern()">📋 Copiar acordes</button>
+            <button class="btn-mini"
+                    :disabled="!visualChordClipboard || visualSelectedLines.size === 0"
+                    @click="pasteChordPattern()">📥 Pegar acordes</button>
+
+            <span class="sep"></span>
+            <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
+                    @click="insertChorusHere()">🔁 Insertar estribillo</button>
+
+            <span class="sel-clear" x-show="visualSelectedLines.size > 0"
+                  @click="clearLineSelection()">Limpiar selección</span>
+
+            <button class="btn-mini help-mini" @click="showHelp = true" title="Ayuda">❓</button>
           </div>
+
+          <div class="visual-add-hint" x-show="visualAddMode" x-cloak>
+            🟢 Modo añadir activado — pincha sobre cualquier letra para insertar un acorde nuevo.
+          </div>
+
           <div class="visual-doc"
                @click="onVisualClick($event)"
                @keydown.delete.prevent="deleteSelectedChord()"
                @keydown.backspace.prevent="deleteSelectedChord()"
                tabindex="0">
             <template x-for="(ln, idx) in editor.parsed" :key="idx">
-              <div :class="'ed-line ed-' + ln.type" :data-line-idx="idx">
-                <!-- meta / directives shown as compact tags -->
+              <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
+                <div class="line-gutter"
+                     @click.stop="toggleLineSelection(idx, $event)"
+                     title="Click selecciona · Shift+click rango"
+                     x-text="visualSelectedLines.has(idx) ? '◉' : '○'"></div>
                 <template x-if="ln.type === 'directive' || ln.type === 'comment'">
                   <div class="ed-meta-line" x-text="ln.raw"></div>
                 </template>
                 <template x-if="ln.type === 'soc'">
-                  <div class="ed-marker">▶ Inicio estribillo</div>
+                  <div class="ed-marker chorus-start">▶ Inicio estribillo
+                    <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
+                  </div>
                 </template>
                 <template x-if="ln.type === 'eoc'">
-                  <div class="ed-marker">◀ Fin estribillo</div>
+                  <div class="ed-marker chorus-end">◀ Fin estribillo
+                    <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
+                  </div>
                 </template>
                 <template x-if="ln.type === 'blank'">
-                  <div class="ed-blank">·</div>
+                  <div class="ed-blank"></div>
                 </template>
                 <template x-if="ln.type === 'lyric'">
                   <div class="ed-line-row">
                     <div class="ed-chords-layer"></div>
-                    <div class="ed-lyric-row">
+                    <div class="ed-lyric-row"
+                         @dblclick.stop="editLyricLine(idx)">
                       <template x-for="(ch, i) in ln.lyric" :key="i">
-                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
+                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
                       </template>
                       <span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span>
                     </div>

@@ -231,6 +231,7 @@ function app() {
         this.setSaveIndicator('saved', '✓ Cargada');
         // Pre-parsear porque visual es el tab por defecto
         this.editor.parsed = parseCho(this.editor.content);
+        this.markChorusFlags();
         this.$nextTick(() => this.layoutChords());
       } catch (e) {
         alert('Error abriendo: ' + e.message);
@@ -249,16 +250,14 @@ function app() {
       this.setSaveIndicator('saved', 'Sin cambios');
     },
     setEditorTab(t) {
-      // Sincronizar entre tabs según la dirección
       if (this.editor.tab === 'visual' && t !== 'visual') {
-        // visual → otro: serializar parsed → content
         this.editor.content = serializeCho(this.editor.parsed);
         this.refreshMetaFromRaw();
       }
       this.editor.tab = t;
       if (t === 'visual') {
-        // raw → visual: parsear content
         this.editor.parsed = parseCho(this.editor.content);
+        this.markChorusFlags();
         this.$nextTick(() => this.layoutChords());
       }
     },
@@ -350,16 +349,20 @@ function app() {
             const d = Math.abs(cx - dropX);
             if (d < bestDist) { bestDist = d; bestIdx = i; }
           });
-          // Word-start snap unless Shift held
-          if (!e.shiftKey) {
-            const ln = self.editor.parsed[dragState.lineIdx];
+          // Snap mode según modificadores:
+          //   sin modif. → snap a inicio de palabra
+          //   Shift     → snap a inicio de sílaba (más fino)
+          //   Alt       → sin snap (pixel-perfect carácter a carácter)
+          const ln = self.editor.parsed[dragState.lineIdx];
+          if (e.altKey) {
+            // no snap
+          } else if (e.shiftKey) {
+            bestIdx = snapToSyllable(bestIdx, ln.lyric);
+          } else {
             bestIdx = snapToWordStart(bestIdx, ln.lyric);
           }
-          const ln = self.editor.parsed[dragState.lineIdx];
           ln.chords[dragState.chordIdx].pos = bestIdx;
-          self.editor.dirty = true;
-          self.editor.content = serializeCho(self.editor.parsed);
-          self.refreshMetaFromRaw();
+          self.commitParsed();
           self.layoutChords();
           dragState = null;
         }
@@ -377,14 +380,11 @@ function app() {
         if (next != null) {
           const v = next.trim();
           if (v === '') {
-            // delete
             self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
           } else {
             self.editor.parsed[lineIdx].chords[chordIdx].text = v;
           }
-          self.editor.dirty = true;
-          self.editor.content = serializeCho(self.editor.parsed);
-          self.refreshMetaFromRaw();
+          self.commitParsed();
           self.layoutChords();
         }
       });
@@ -395,9 +395,7 @@ function app() {
         const chordIdx = parseInt(el.dataset.chordIdx, 10);
         if (confirm('¿Borrar este acorde?')) {
           self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
-          self.editor.dirty = true;
-          self.editor.content = serializeCho(self.editor.parsed);
-          self.refreshMetaFromRaw();
+          self.commitParsed();
           self.layoutChords();
         }
       });
@@ -422,9 +420,7 @@ function app() {
       if (!text || !text.trim()) return;
       this.editor.parsed[lineIdx].chords.push({ text: text.trim(), pos: charIdx });
       this.editor.parsed[lineIdx].chords.sort((a, b) => a.pos - b.pos);
-      this.editor.dirty = true;
-      this.editor.content = serializeCho(this.editor.parsed);
-      this.refreshMetaFromRaw();
+      this.commitParsed();
       this.visualAddMode = false;
       this.$nextTick(() => this.layoutChords());
     },
@@ -433,11 +429,217 @@ function app() {
       if (!this.visualSelectedChord) return;
       const { lineIdx, chordIdx } = this.visualSelectedChord;
       this.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+      this.commitParsed();
+      this.visualSelectedChord = null;
+      this.layoutChords();
+    },
+
+    // ─────────── Helpers de actualización ───────────
+    commitParsed() {
       this.editor.dirty = true;
       this.editor.content = serializeCho(this.editor.parsed);
       this.refreshMetaFromRaw();
-      this.visualSelectedChord = null;
-      this.layoutChords();
+    },
+
+    lineCssClass(ln, idx) {
+      const cls = ['ed-line', 'ed-' + ln.type];
+      if (this.visualSelectedLines.has(idx)) cls.push('selected');
+      if (ln._inChorus) cls.push('in-chorus');
+      return cls.join(' ');
+    },
+
+    // ─────────── Selección de líneas (gutter) ───────────
+    toggleLineSelection(idx, ev) {
+      if (ev && ev.shiftKey && this.visualLastClickedLine != null) {
+        const lo = Math.min(this.visualLastClickedLine, idx);
+        const hi = Math.max(this.visualLastClickedLine, idx);
+        for (let i = lo; i <= hi; i++) this.visualSelectedLines.add(i);
+      } else {
+        if (this.visualSelectedLines.has(idx)) this.visualSelectedLines.delete(idx);
+        else this.visualSelectedLines.add(idx);
+        this.visualLastClickedLine = idx;
+      }
+      this.visualSelectedLines = new Set(this.visualSelectedLines);  // trigger Alpine
+    },
+    clearLineSelection() {
+      this.visualSelectedLines = new Set();
+      this.visualLastClickedLine = null;
+    },
+    selectedLineRange() {
+      const arr = [...this.visualSelectedLines].sort((a, b) => a - b);
+      if (arr.length === 0) return null;
+      // Tomamos el rango entre min y max (contiguo)
+      return { start: arr[0], end: arr[arr.length - 1] };
+    },
+
+    // ─────────── Estribillo: marcar / desmarcar / insertar ───────────
+    markSelectionAsChorus() {
+      const r = this.selectedLineRange();
+      if (!r) return;
+      // Insertar {eoc} después de r.end y {soc} antes de r.start
+      // Pero antes: eliminar cualquier {soc}/{eoc} dentro del rango
+      const newParsed = [...this.editor.parsed];
+      // Filtramos dentro: marcar los soc/eoc dentro del rango para borrar luego
+      const toRemove = new Set();
+      for (let i = r.start; i <= r.end; i++) {
+        if (newParsed[i] && (newParsed[i].type === 'soc' || newParsed[i].type === 'eoc')) {
+          toRemove.add(i);
+        }
+      }
+      const filtered = newParsed.filter((_, i) => !toRemove.has(i));
+      // Recalcular el rango (los índices después de quitar pueden haber cambiado)
+      // Simplificación: contamos cuántos toRemove están antes de r.start / r.end
+      const removedBeforeStart = [...toRemove].filter(i => i < r.start).length;
+      const removedInRange = toRemove.size - removedBeforeStart;
+      const newStart = r.start - removedBeforeStart;
+      const newEnd = r.end - removedBeforeStart - removedInRange;
+      // Insertar {eoc} después de newEnd, luego {soc} antes de newStart
+      filtered.splice(newEnd + 1, 0, { type: 'eoc', raw: '{eoc}' });
+      filtered.splice(newStart, 0, { type: 'soc', raw: '{soc}' });
+      this.editor.parsed = filtered;
+      this.clearLineSelection();
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    unmarkSelectionChorus() {
+      const r = this.selectedLineRange();
+      if (!r) return;
+      // Quitar todos los {soc}/{eoc} dentro del rango y los inmediatamente antes/después
+      const toRemove = new Set();
+      for (let i = Math.max(0, r.start - 2); i <= Math.min(this.editor.parsed.length - 1, r.end + 2); i++) {
+        const ln = this.editor.parsed[i];
+        if (ln && (ln.type === 'soc' || ln.type === 'eoc')) toRemove.add(i);
+      }
+      this.editor.parsed = this.editor.parsed.filter((_, i) => !toRemove.has(i));
+      this.clearLineSelection();
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    removeChorusMarkerAt(idx) {
+      this.editor.parsed.splice(idx, 1);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    markChorusFlags() {
+      // Anota _inChorus en líneas que estén entre {soc}/{eoc}
+      let inside = false;
+      for (const ln of this.editor.parsed) {
+        if (ln.type === 'soc') { inside = true; ln._inChorus = false; continue; }
+        if (ln.type === 'eoc') { inside = false; ln._inChorus = false; continue; }
+        ln._inChorus = inside;
+      }
+    },
+
+    // Devuelve [{startIdx, endIdx, lines}] de cada bloque de estribillo (entre soc/eoc).
+    getChorusBlocks() {
+      const blocks = [];
+      let curStart = -1;
+      this.editor.parsed.forEach((ln, i) => {
+        if (ln.type === 'soc') { curStart = i; }
+        else if (ln.type === 'eoc' && curStart >= 0) {
+          const inner = this.editor.parsed.slice(curStart + 1, i);
+          blocks.push({ startIdx: curStart, endIdx: i, lines: inner });
+          curStart = -1;
+        }
+      });
+      return blocks;
+    },
+    insertChorusHere() {
+      const blocks = this.getChorusBlocks();
+      if (blocks.length === 0) return;
+      let chosen = 0;
+      if (blocks.length > 1) {
+        const opts = blocks.map((b, i) => {
+          const preview = b.lines
+            .filter(l => l.type === 'lyric')
+            .map(l => l.lyric)
+            .join(' / ')
+            .slice(0, 60);
+          return `${i + 1}. ${preview}`;
+        }).join('\n');
+        const r = prompt(`Hay ${blocks.length} estribillos. ¿Cuál insertar? (1-${blocks.length})\n\n${opts}`, '1');
+        if (!r) return;
+        const n = parseInt(r, 10);
+        if (isNaN(n) || n < 1 || n > blocks.length) return;
+        chosen = n - 1;
+      }
+      const block = blocks[chosen];
+      // Clonar las líneas (deep clone para no afectar al original)
+      const clone = JSON.parse(JSON.stringify(this.editor.parsed.slice(block.startIdx, block.endIdx + 1)));
+      // Insertar después de la última línea seleccionada (o al final del doc si no hay)
+      const r = this.selectedLineRange();
+      let insertAt = r ? r.end + 1 : this.editor.parsed.length;
+      // Añadir línea blanca de separación antes y después
+      const toInsert = [{ type: 'blank', raw: '' }, ...clone, { type: 'blank', raw: '' }];
+      this.editor.parsed.splice(insertAt, 0, ...toInsert);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+
+    // ─────────── Copiar / pegar patrón de acordes ───────────
+    copyChordPattern() {
+      const r = this.selectedLineRange();
+      if (!r) return;
+      const pattern = [];
+      for (let i = r.start; i <= r.end; i++) {
+        const ln = this.editor.parsed[i];
+        if (ln && ln.type === 'lyric') {
+          pattern.push({
+            lyric: ln.lyric,
+            chords: JSON.parse(JSON.stringify(ln.chords)),
+          });
+        }
+      }
+      if (pattern.length === 0) { alert('No hay líneas de letra en la selección.'); return; }
+      this.visualChordClipboard = pattern;
+      const total = pattern.reduce((acc, p) => acc + p.chords.length, 0);
+      this.setSaveIndicator('saved', `📋 ${total} acordes copiados de ${pattern.length} línea(s)`);
+      setTimeout(() => { if (this.editor.dirty) this.setSaveIndicator('dirty', '● Sin guardar'); }, 2500);
+    },
+    pasteChordPattern() {
+      const r = this.selectedLineRange();
+      if (!r || !this.visualChordClipboard) return;
+      // Recoger las líneas de letra de la selección
+      const targets = [];
+      for (let i = r.start; i <= r.end; i++) {
+        const ln = this.editor.parsed[i];
+        if (ln && ln.type === 'lyric') targets.push(ln);
+      }
+      if (targets.length === 0) { alert('No hay líneas de letra en la selección.'); return; }
+      // Mapear: línea N del clipboard → línea N del target (si existe)
+      for (let n = 0; n < targets.length; n++) {
+        const src = this.visualChordClipboard[Math.min(n, this.visualChordClipboard.length - 1)];
+        targets[n].chords = mapChordsByWord(src, targets[n].lyric);
+      }
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
+
+    // ─────────── Editar texto de la letra ───────────
+    editLyricLine(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'lyric') return;
+      const next = prompt('Edita el texto de esta línea (los acordes intentan mantenerse pegados a su palabra):', ln.lyric);
+      if (next == null || next === ln.lyric) return;
+      // Mapear posiciones de acordes al nuevo texto por word-index
+      const oldStarts = wordStarts(ln.lyric);
+      const newStarts = wordStarts(next);
+      ln.chords = ln.chords.map(ch => {
+        // Encontrar a qué palabra pertenecía
+        let wordIdx = 0;
+        for (let k = 0; k < oldStarts.length; k++) {
+          if (oldStarts[k] <= ch.pos) wordIdx = k; else break;
+        }
+        const newPos = newStarts[Math.min(wordIdx, newStarts.length - 1)] || Math.min(ch.pos, next.length);
+        return { text: ch.text, pos: newPos };
+      });
+      ln.lyric = next;
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
     },
 
     refreshMetaFromRaw() {
@@ -672,6 +874,120 @@ function snapToWordStart(idx, lyric) {
   return best;
 }
 function isSpace(ch) { return ch === ' ' || ch === '\t'; }
+
+function wordStarts(lyric) {
+  if (!lyric) return [0];
+  const starts = [];
+  if (!isSpace(lyric[0] || ' ')) starts.push(0);
+  for (let i = 1; i < lyric.length; i++) {
+    if (!isSpace(lyric[i]) && isSpace(lyric[i - 1])) starts.push(i);
+  }
+  if (starts.length === 0) starts.push(0);
+  return starts;
+}
+
+// Mapea acordes desde {lyric: src, chords: [...]} a un newLyric, alineando por índice de palabra.
+function mapChordsByWord(srcLine, newLyric) {
+  const srcStarts = wordStarts(srcLine.lyric);
+  const newStarts = wordStarts(newLyric);
+  // Para cada acorde, encontrar a qué palabra pertenecía (la última cuyo start <= pos)
+  const out = [];
+  for (const ch of srcLine.chords) {
+    let wordIdx = 0;
+    for (let i = 0; i < srcStarts.length; i++) {
+      if (srcStarts[i] <= ch.pos) wordIdx = i;
+      else break;
+    }
+    let newPos;
+    if (wordIdx < newStarts.length) {
+      newPos = newStarts[wordIdx];
+      // Si el acorde estaba más a la derecha que el inicio de palabra (caso raro), lo respetamos proporcionalmente
+      const srcWordStart = srcStarts[wordIdx];
+      const srcWordEnd = (srcStarts[wordIdx + 1] != null) ? srcStarts[wordIdx + 1] : srcLine.lyric.length;
+      const newWordEnd = (newStarts[wordIdx + 1] != null) ? newStarts[wordIdx + 1] : newLyric.length;
+      const srcWordLen = Math.max(1, srcWordEnd - srcWordStart);
+      const newWordLen = Math.max(1, newWordEnd - newPos);
+      const offsetInWord = ch.pos - srcWordStart;
+      const ratio = offsetInWord / srcWordLen;
+      newPos = newPos + Math.round(ratio * newWordLen);
+      newPos = Math.min(newPos, newLyric.length);
+    } else {
+      newPos = newLyric.length;
+    }
+    out.push({ text: ch.text, pos: newPos });
+  }
+  return out;
+}
+
+// ─────────── Silabeado español sencillo ───────────
+const SP_STRONG = new Set(['a','e','o','á','é','ó']);
+const SP_WEAK_UNACC = new Set(['i','u','ü']);
+const SP_WEAK_ACC = new Set(['í','ú']);
+const SP_VOW = new Set([...SP_STRONG, ...SP_WEAK_UNACC, ...SP_WEAK_ACC]);
+const SP_INSEP = new Set(['pr','br','tr','dr','cr','gr','fr','pl','bl','cl','gl','fl','ch','ll','rr']);
+
+function isVow(c) { return SP_VOW.has((c || '').toLowerCase()); }
+
+function syllableStartsInWord(word) {
+  // Devuelve los índices (relativos al inicio de la palabra) donde empieza cada sílaba.
+  if (!word) return [0];
+  const w = word.toLowerCase();
+  const starts = [0];
+  let i = 0;
+  while (i < w.length) {
+    // saltar consonantes iniciales (ya están en la sílaba actual)
+    while (i < w.length && !isVow(w[i])) i++;
+    // saltar el núcleo vocálico (diptongo si corresponde — simplificado)
+    while (i < w.length && isVow(w[i])) i++;
+    // cluster consonántico hasta la siguiente vocal
+    const cStart = i;
+    while (i < w.length && !isVow(w[i])) i++;
+    if (i >= w.length) break;  // fin de palabra
+    const cluster = w.slice(cStart, i);
+    let nextSyl;
+    if (cluster.length === 0) nextSyl = i;
+    else if (cluster.length === 1) nextSyl = cStart;  // V-CV
+    else if (cluster.length === 2) {
+      nextSyl = SP_INSEP.has(cluster) ? cStart : cStart + 1;
+    } else {
+      const last2 = cluster.slice(-2);
+      nextSyl = SP_INSEP.has(last2) ? i - 2 : i - 1;
+    }
+    if (nextSyl > starts[starts.length - 1]) starts.push(nextSyl);
+  }
+  return starts;
+}
+
+function syllableStartsInLine(lyric) {
+  if (!lyric) return [0];
+  const starts = [];
+  let wstart = -1;
+  for (let i = 0; i <= lyric.length; i++) {
+    const ch = lyric[i];
+    if (i === lyric.length || isSpace(ch)) {
+      if (wstart >= 0) {
+        const word = lyric.slice(wstart, i);
+        for (const s of syllableStartsInWord(word)) starts.push(wstart + s);
+        wstart = -1;
+      }
+    } else if (wstart === -1) {
+      wstart = i;
+    }
+  }
+  starts.push(lyric.length);
+  return starts;
+}
+
+function snapToSyllable(idx, lyric) {
+  const starts = syllableStartsInLine(lyric);
+  if (starts.length === 0) return idx;
+  let best = starts[0], bestDist = Infinity;
+  for (const s of starts) {
+    const d = Math.abs(s - idx);
+    if (d < bestDist) { bestDist = d; best = s; }
+  }
+  return best;
+}
 
 // Render a ChordPro line: produces stacked chord/lyric HTML.
 function renderChordLine(line) {

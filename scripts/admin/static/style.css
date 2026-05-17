@@ -225,10 +225,18 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 
 /* Visual editor */
-.visual-toolbar { display: flex; gap: 12px; align-items: center; padding: 8px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
-.visual-toolbar .hint { color: var(--fg-3); font-size: 12px; }
-.visual-toolbar .hint kbd { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size: 11px; border: 1px solid var(--border-strong); }
-.visual-toolbar .adding-hint { color: var(--accent); font-weight: 600; margin-left: 8px; }
+.visual-toolbar {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 6px 8px; background: var(--bg-3); border-radius: 6px;
+  margin-bottom: 8px; position: sticky; top: 0; z-index: 5;
+}
+.visual-toolbar .sep { width: 1px; height: 18px; background: var(--border-strong); margin: 0 4px; }
+.visual-toolbar .sel-info { font-size: 12px; color: var(--accent); font-weight: 600; padding: 0 4px; }
+.visual-toolbar .sel-clear { font-size: 11px; color: var(--fg-3); cursor: pointer; margin-left: auto; padding: 0 6px; }
+.visual-toolbar .sel-clear:hover { color: var(--danger); text-decoration: underline; }
+.visual-toolbar .help-mini { background: transparent; border: none; font-size: 14px; cursor: pointer; margin-left: auto; }
+
+.visual-add-hint { background: rgba(22, 163, 74, 0.12); color: var(--ok); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 6px; }
 
 .visual-doc {
   outline: none; padding: 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
@@ -245,7 +253,14 @@ table.songs tr.has-warn td { background: #fffbeb; }
   display: inline-block; margin: 4px 0;
 }
 .ed-line.ed-comment .ed-meta-line { color: var(--todo); }
-.ed-marker { font-size: 11px; color: var(--warn); padding: 6px 0; text-transform: uppercase; letter-spacing: 0.05em; }
+.ed-marker {
+  font-size: 11px; color: var(--warn); padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.05em;
+  background: rgba(202, 138, 4, 0.1); display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 3px; margin: 6px 0 2px 28px;
+}
+.ed-marker.chorus-end { color: var(--warn); }
+.ed-marker .link-mini { background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; opacity: 0.6; }
+.ed-marker .link-mini:hover { opacity: 1; color: var(--danger); }
 
 .ed-line-row { position: relative; margin: 18px 0 2px; min-height: 2em; padding-left: 28px; }
 .ed-chords-layer { position: absolute; top: -1.05em; left: 28px; right: 0; height: 1.1em; pointer-events: none; }
