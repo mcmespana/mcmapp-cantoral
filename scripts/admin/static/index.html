@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Cantoral Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="style.css" />
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+</head>
+<body x-data="app()" x-init="boot()" :class="{ 'theme-dark': theme === 'dark' }">
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-emoji">🎵</div>
+    <div>
+      <div class="brand-title">Cantoral Admin</div>
+      <div class="brand-sub">Familia Consolación</div>
+    </div>
+  </div>
+
+  <nav>
+    <a :class="{active: view === 'dashboard'}" @click.prevent="view = 'dashboard'" href="#">📊 Dashboard</a>
+    <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
+    <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
+    <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
+  </nav>
+
+  <div class="sidebar-section" x-show="data">
+    <div class="sidebar-section-title">Categorías</div>
+    <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+      <a class="cat-link" href="#"
+         @click.prevent="view = 'catalog'; categoryFilter = cat.letter"
+         :class="{active: categoryFilter === cat.letter && view === 'catalog'}">
+        <span class="cat-letter" x-text="cat.letter"></span>
+        <span class="cat-name" x-text="cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></span>
+        <span class="cat-count" x-text="countByCat(cat.letter)"></span>
+      </a>
+    </template>
+  </div>
+
+  <div class="sidebar-foot">
+    <button @click="theme = theme === 'dark' ? 'light' : 'dark'; localStorage.theme = theme">
+      <span x-text="theme === 'dark' ? '☀️ Claro' : '🌙 Oscuro'"></span>
+    </button>
+    <button @click="loadCatalog()" :disabled="loading">🔄 Recargar</button>
+  </div>
+</aside>
+
+<main>
+
+  <!-- TOP BAR: indicador de guardado global -->
+  <div class="topbar">
+    <div class="save-indicator" :class="saveIndicator.cls" x-text="saveIndicator.text"></div>
+    <button class="topbar-help" @click="showHelp = true" title="Ayuda y atajos">❓</button>
+  </div>
+
+  <!-- LOADING -->
+  <div x-show="loading && !data" class="loading">Cargando catálogo…</div>
+  <div x-show="error" class="error" x-text="error"></div>
+
+  <!-- DASHBOARD -->
+  <section x-show="view === 'dashboard' && data" x-cloak>
+    <h1>📊 Dashboard</h1>
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="stat-val" x-text="data.stats.repo_total"></div>
+        <div class="stat-lbl">canciones en el repo</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" x-text="data.stats.docx_total"></div>
+        <div class="stat-lbl">canciones en el cantoral</div>
+      </div>
+      <div class="stat warn">
+        <div class="stat-val" x-text="data.stats.missing_from_repo"></div>
+        <div class="stat-lbl">faltan en el repo</div>
+      </div>
+      <div class="stat todo">
+        <div class="stat-val" x-text="data.stats.todo_count"></div>
+        <div class="stat-lbl">con TO DO pendiente</div>
+      </div>
+      <div class="stat info">
+        <div class="stat-val" x-text="data.stats.only_in_repo"></div>
+        <div class="stat-lbl">solo en repo (manuales)</div>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="btn primary" @click="view = 'import'">📥 Importar del cantoral</button>
+      <button class="btn" @click="view = 'catalog'; todoFilter = true">📝 Ver pendientes de revisión</button>
+      <button class="btn" @click="openNewSongModal()">➕ Nueva canción a mano</button>
+    </div>
+
+    <div class="commit-reminder">
+      <h3>🚀 Cómo publicar tus cambios</h3>
+      <p>
+        Esta app guarda directamente en los archivos <code>.cho</code> del repositorio.
+        Cuando hayas terminado de editar, haz un <code>git commit</code> y un
+        <code>git push</code> a la rama. Un GitHub Action se encarga automáticamente
+        de regenerar <code>songs-vX.json</code> y subirlo a Firebase.
+      </p>
+      <p class="muted">
+        En la terminal, desde la raíz del repo:
+        <code>git add songs/ &amp;&amp; git commit -m "..." &amp;&amp; git push</code>
+      </p>
+    </div>
+  </section>
+
+  <!-- CATÁLOGO -->
+  <section x-show="view === 'catalog' && data" x-cloak>
+    <h1>📋 Catálogo
+      <span x-show="categoryFilter" class="filter-tag" x-text="'· ' + categoryName(categoryFilter)"></span>
+    </h1>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Buscar título o autor…" x-model="search" />
+      <label><input type="checkbox" x-model="todoFilter" /> Solo TO DO</label>
+      <label><input type="checkbox" x-model="onlyInRepoFilter" /> Solo manuales (no en cantoral)</label>
+      <button @click="search = ''; todoFilter = false; onlyInRepoFilter = false; categoryFilter = ''">Limpiar</button>
+      <span class="count" x-text="filteredRepoSongs().length + ' canciones'"></span>
+    </div>
+
+    <table class="songs">
+      <thead>
+        <tr>
+          <th></th>
+          <th>#</th>
+          <th>Título</th>
+          <th>Autor</th>
+          <th>Tono</th>
+          <th>Capo</th>
+          <th>Categoría</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="r in filteredRepoSongs()" :key="r.path">
+          <tr>
+            <td>
+              <span class="badge ok" x-show="r.in_docx" title="También en el cantoral">✅</span>
+              <span class="badge info" x-show="!r.in_docx" title="Solo en repo (manual)">➕</span>
+              <span class="badge todo" x-show="r.has_todo" title="TO DO pendiente revisión">📝</span>
+            </td>
+            <td x-text="r.number"></td>
+            <td><a href="#" @click.prevent="openEditor(r.path)" x-text="r.title"></a></td>
+            <td x-text="r.artist"></td>
+            <td x-text="r.key"></td>
+            <td x-text="r.capo || ''"></td>
+            <td x-text="r.category_letter + '. ' + r.category_folder.replace(/^[A-Z+\d]+\.\s*/, '')"></td>
+            <td>
+              <button class="btn-mini" @click="openEditor(r.path)">Editar</button>
+              <button class="btn-mini danger" @click="deleteSong(r)">Borrar</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- IMPORTAR -->
+  <section x-show="view === 'import' && data" x-cloak>
+    <h1>📥 Importar del cantoral</h1>
+    <p class="muted">
+      Canciones del Word que <strong>aún no existen</strong> en <code>/songs/</code>.
+      Al importar, se guarda con la línea <code>{comment: TO DO: PENDIENTE REVISIÓN ACORDES}</code>
+      al principio para que las revises (mostrarán <span class="badge todo">📝</span>).
+    </p>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Buscar…" x-model="importSearch" />
+      <select x-model="importSectionFilter">
+        <option value="">Todas las secciones</option>
+        <template x-for="cat in data.categories" :key="cat.letter">
+          <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+        </template>
+      </select>
+      <button @click="selectAllImport()">Seleccionar todas</button>
+      <button @click="selectedImports = new Set()">Limpiar selección</button>
+      <button class="btn primary" :disabled="selectedImports.size === 0 || importing"
+              @click="doImport()"
+              x-text="importing ? 'Importando…' : `Importar ${selectedImports.size} seleccionadas`"></button>
+    </div>
+
+    <table class="songs">
+      <thead>
+        <tr><th></th><th>Sección</th><th>Título (en el docx)</th><th>Tono</th><th>Capo</th><th>Avisos</th><th></th></tr>
+      </thead>
+      <tbody>
+        <template x-for="m in filteredMissing()" :key="m.docx_id">
+          <tr :class="{ 'has-warn': m.warnings.length > 0 }">
+            <td>
+              <input type="checkbox"
+                     :checked="selectedImports.has(m.docx_id)"
+                     @change="toggleImport(m.docx_id)" />
+            </td>
+            <td x-text="m.section_letter"></td>
+            <td><a href="#" @click.prevent="previewDocx(m.docx_id)" x-text="m.title"></a></td>
+            <td x-text="m.key"></td>
+            <td x-text="m.capo || ''"></td>
+            <td class="warn-cell" x-text="m.warnings.join('; ')"></td>
+            <td><button class="btn-mini" @click="previewDocx(m.docx_id)">👁 Ver</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <div x-show="importResults.length > 0" class="import-results" x-cloak>
+      <h3>Resultado:</h3>
+      <ul>
+        <template x-for="r in importResults" :key="r.id">
+          <li :class="{ ok: r.ok, err: !r.ok }">
+            <span x-text="r.ok ? '✓' : '✗'"></span>
+            <span x-text="r.title || `id ${r.id}`"></span>
+            <span x-show="r.path" class="path" x-text="r.path"></span>
+            <span x-show="r.error" class="error-msg" x-text="r.error"></span>
+          </li>
+        </template>
+      </ul>
+    </div>
+  </section>
+
+  <!-- REORDENAR -->
+  <section x-show="view === 'reorder' && data" x-cloak>
+    <h1>🔀 Reordenar canciones</h1>
+    <p class="muted">Elige una categoría, arrastra para reordenar y pulsa <em>Aplicar</em>. Los archivos
+       se renumerarán (<code>01., 02., …</code>) manteniendo el slug. Se hace backup en
+       <code>songs-backup-edits/</code>.</p>
+    <div class="filter-bar">
+      <select x-model="reorderCategory" @change="loadReorder()">
+        <option value="">— Elige categoría —</option>
+        <template x-for="cat in data.categories" :key="cat.letter">
+          <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+        </template>
+      </select>
+      <button class="btn primary" :disabled="!reorderModified" @click="applyReorder()">Aplicar nuevo orden</button>
+      <button x-show="reorderModified" @click="loadReorder()">Cancelar cambios</button>
+    </div>
+
+    <ul class="reorder-list" x-show="reorderCategory">
+      <template x-for="(s, idx) in reorderSongs" :key="s.path">
+        <li draggable="true"
+            @dragstart="reorderDragIdx = idx"
+            @dragover.prevent
+            @drop="onReorderDrop(idx)">
+          <span class="grip">⋮⋮</span>
+          <span class="new-num" x-text="(idx + 1).toString().padStart(2,'0')"></span>
+          <span class="old-num" x-text="s.number != null ? `(was ${s.number.toString().padStart(2,'0')})` : ''"></span>
+          <span class="title" x-text="s.title"></span>
+          <span class="filename" x-text="s.filename"></span>
+        </li>
+      </template>
+    </ul>
+  </section>
+
+  <!-- EDITOR MODAL -->
+  <div class="editor-overlay" x-show="editor.path" @click.self="closeEditor()" x-cloak>
+    <div class="editor-modal">
+      <div class="editor-header">
+        <h2>
+          <span x-text="editor.meta.title || editor.filename"></span>
+          <span class="badge todo" x-show="editor.meta.has_todo">📝 TO DO</span>
+        </h2>
+        <div class="editor-actions">
+          <button x-show="editor.meta.has_todo" class="btn" @click="markReviewed()">✓ Revisada</button>
+          <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
+          <button class="btn" @click="closeEditor()">✕ Cerrar</button>
+        </div>
+      </div>
+
+      <div class="editor-tabs">
+        <button :class="{active: editor.tab === 'visual'}" @click="setEditorTab('visual')">🎨 Visual</button>
+        <button :class="{active: editor.tab === 'raw'}" @click="setEditorTab('raw')">📝 Raw</button>
+        <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
+        <span class="dirty" x-show="editor.dirty">● sin guardar</span>
+      </div>
+
+      <div class="editor-body">
+
+        <!-- METADATA SIDE PANEL (always visible) -->
+        <div class="editor-meta">
+          <h4>Metadatos</h4>
+          <label>Título</label>
+          <input type="text" x-model="editor.meta.title" @input="updateMetaInRaw('title', $event.target.value)" />
+          <label>Autor / Artista</label>
+          <input type="text" x-model="editor.meta.artist" @input="updateMetaInRaw('artist', $event.target.value)" />
+          <label>Tono (key)</label>
+          <input type="text" x-model="editor.meta.key" @input="updateMetaInRaw('key', $event.target.value)" />
+          <label>Capo</label>
+          <input type="number" min="0" x-model="editor.meta.capo" @input="updateMetaInRaw('capo', $event.target.value)" />
+          <div class="path-info">
+            <small x-text="editor.path"></small>
+          </div>
+        </div>
+
+        <!-- VISUAL -->
+        <div class="editor-pane visual" x-show="editor.tab === 'visual'" x-cloak>
+          <div class="visual-toolbar">
+            <button class="btn-mini" @click="visualAddMode = !visualAddMode"
+                    :class="{primary: visualAddMode}">
+              <span x-text="visualAddMode ? '✕ Cancelar añadir' : '+ Acorde'"></span>
+            </button>
+
+            <span class="sep"></span>
+            <span class="sel-info" x-show="visualSelectedLines.size > 0"
+                  x-text="visualSelectedLines.size + ' línea(s) sel.'"></span>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="markSelectionAsChorus()">🟡 Marcar estribillo</button>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="unmarkSelectionChorus()">Quitar marca</button>
+
+            <span class="sep"></span>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="copyChordPattern()">📋 Copiar acordes</button>
+            <button class="btn-mini"
+                    :disabled="!visualChordClipboard || visualSelectedLines.size === 0"
+                    @click="pasteChordPattern()">📥 Pegar acordes</button>
+
+            <span class="sep"></span>
+            <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
+                    @click="insertChorusHere()">🔁 Insertar estribillo</button>
+
+            <span class="sel-clear" x-show="visualSelectedLines.size > 0"
+                  @click="clearLineSelection()">Limpiar selección</span>
+
+            <button class="btn-mini help-mini" @click="showHelp = true" title="Ayuda">❓</button>
+          </div>
+
+          <div class="visual-add-hint" x-show="visualAddMode" x-cloak>
+            🟢 Modo añadir activado — pincha sobre cualquier letra para insertar un acorde nuevo.
+          </div>
+
+          <div class="visual-doc"
+               @click="onVisualClick($event)"
+               @keydown.delete.prevent="deleteSelectedChord()"
+               @keydown.backspace.prevent="deleteSelectedChord()"
+               tabindex="0">
+            <template x-for="(ln, idx) in editor.parsed" :key="idx">
+              <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
+                <div class="line-gutter"
+                     @click.stop="toggleLineSelection(idx, $event)"
+                     title="Click selecciona · Shift+click rango"
+                     x-text="visualSelectedLines.has(idx) ? '◉' : '○'"></div>
+                <template x-if="ln.type === 'directive' || ln.type === 'comment'">
+                  <div class="ed-meta-line" x-text="ln.raw"></div>
+                </template>
+                <template x-if="ln.type === 'soc'">
+                  <div class="ed-marker chorus-start">▶ Inicio estribillo
+                    <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
+                  </div>
+                </template>
+                <template x-if="ln.type === 'eoc'">
+                  <div class="ed-marker chorus-end">◀ Fin estribillo
+                    <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
+                  </div>
+                </template>
+                <template x-if="ln.type === 'blank'">
+                  <div class="ed-blank"></div>
+                </template>
+                <template x-if="ln.type === 'lyric'">
+                  <div class="ed-line-row">
+                    <div class="ed-chords-layer"></div>
+                    <div class="ed-lyric-row"
+                         @dblclick.stop="editLyricLine(idx)">
+                      <template x-for="(ch, i) in ln.lyric" :key="i">
+                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
+                      </template>
+                      <span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- RAW -->
+        <div class="editor-pane raw" x-show="editor.tab === 'raw'" x-cloak>
+          <textarea x-model="editor.content"
+                    @input="editor.dirty = true; refreshMetaFromRaw()"
+                    spellcheck="false"></textarea>
+        </div>
+
+        <!-- PREVIEW -->
+        <div class="editor-pane preview" x-show="editor.tab === 'preview'" x-cloak>
+          <div class="preview-render" x-html="renderPreviewHtml(editor.content)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HELP MODAL -->
+  <div class="editor-overlay" x-show="showHelp" @click.self="showHelp = false" x-cloak>
+    <div class="editor-modal small">
+      <div class="editor-header">
+        <h2>❓ Atajos y trucos</h2>
+        <button class="btn" @click="showHelp = false">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <h3>Editor visual</h3>
+          <table class="kbd-help">
+            <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Al soltar hace <em>snap</em> al inicio de palabra más cercano.</td></tr>
+            <tr><th><kbd>Shift</kbd> + soltar</th><td>Snap por <strong>sílaba</strong> (cómo se canta).</td></tr>
+            <tr><th><kbd>Alt</kbd> + soltar</th><td>Sin snap — colocación carácter a carácter (pixel perfect).</td></tr>
+            <tr><th>Doble-click acorde</th><td>Edita texto del acorde (vacío = borrar).</td></tr>
+            <tr><th>Click derecho acorde</th><td>Borra con confirmación.</td></tr>
+            <tr><th><kbd>Supr</kbd></th><td>Borra el acorde seleccionado.</td></tr>
+            <tr><th>Doble-click en letra</th><td>Edita el texto de esa línea entera.</td></tr>
+            <tr><th>Click en margen izq.</th><td>Selecciona la línea (verde). Útil para marcar estribillos o copiar acordes.</td></tr>
+            <tr><th><kbd>Shift</kbd>+click en margen</th><td>Selección de rango.</td></tr>
+          </table>
+          <h3>Marcar estribillo</h3>
+          <ol>
+            <li>Selecciona las líneas (clicks en el margen izquierdo).</li>
+            <li>Pulsa <strong>"Marcar estribillo"</strong> en la barra del editor.</li>
+            <li>Para quitar marcadores, pulsa <strong>"Quitar marcadores"</strong>.</li>
+          </ol>
+          <h3>Copiar / pegar estribillo</h3>
+          <p>Botón <strong>"Insertar estribillo"</strong> → elige cuál de los estribillos ya marcados quieres pegar; se inserta justo después de la línea actualmente seleccionada (o al final).</p>
+          <h3>Copiar patrón de acordes entre estrofas</h3>
+          <ol>
+            <li>Selecciona las líneas de la estrofa con los acordes que quieres copiar.</li>
+            <li>Pulsa <strong>"Copiar acordes"</strong>.</li>
+            <li>Selecciona las líneas destino (sin acordes o con pocos).</li>
+            <li>Pulsa <strong>"Pegar acordes"</strong>. Se alinean por <em>palabra</em>: el acorde N de la línea origen va a la palabra N de la línea destino. Luego ajusta a mano lo que haga falta.</li>
+          </ol>
+          <h3>Guardado</h3>
+          <p>La app escribe directamente en los archivos <code>.cho</code>. Cuando termines, haz <code>git commit</code> y <code>git push</code> — un GitHub Action regenera <code>songs.json</code> y lo sube a Firebase automáticamente.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW SONG MODAL -->
+  <div class="editor-overlay" x-show="newSong.open" @click.self="newSong.open = false" x-cloak>
+    <div class="editor-modal small">
+      <div class="editor-header">
+        <h2>➕ Nueva canción</h2>
+        <button class="btn" @click="newSong.open = false">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <div class="form-grid">
+            <label>Categoría</label>
+            <select x-model="newSong.category">
+              <option value="">— Elige —</option>
+              <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+                <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+              </template>
+            </select>
+            <label>Título</label>
+            <input type="text" x-model="newSong.title" placeholder="Ven a celebrar" />
+            <label>Autor / Artista</label>
+            <input type="text" x-model="newSong.artist" />
+            <label>Tono</label>
+            <input type="text" x-model="newSong.key" placeholder="G" />
+            <label>Capo</label>
+            <input type="number" min="0" x-model="newSong.capo" />
+            <label>Modo</label>
+            <select x-model="newSong.mode">
+              <option value="blank">En blanco (rellenas en el editor)</option>
+              <option value="chordpro">Pego un .cho en formato ChordPro</option>
+              <option value="ug" disabled>📌 Pegar formato Ultimate Guitar (próximamente)</option>
+              <option value="word" disabled>📌 Pegar texto con acordes encima en líneas separadas (próximamente)</option>
+            </select>
+            <label x-show="newSong.mode === 'chordpro'">Contenido ChordPro</label>
+            <textarea x-show="newSong.mode === 'chordpro'" x-model="newSong.content" rows="10"
+                      placeholder="{title: ...}&#10;[C]Letra de la canción..."></textarea>
+          </div>
+          <p class="muted small">
+            La nueva canción se guarda con
+            <code>{comment: TO DO: PENDIENTE REVISIÓN ACORDES}</code> al inicio, para que la revises
+            con el editor visual (badge 📝 en el catálogo).
+          </p>
+          <div class="actions-row">
+            <button class="btn primary" :disabled="!newSong.category || !newSong.title || newSong.creating"
+                    @click="createNewSong()" x-text="newSong.creating ? 'Creando…' : 'Crear y abrir editor'"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DOCX PREVIEW MODAL -->
+  <div class="editor-overlay" x-show="docxPreview" @click.self="docxPreview = null" x-cloak>
+    <div class="editor-modal small">
+      <div class="editor-header">
+        <h2 x-text="docxPreview ? docxPreview.title : ''"></h2>
+        <div class="editor-actions">
+          <button class="btn primary" @click="importOne(docxPreview.id)">Importar esta</button>
+          <button class="btn" @click="docxPreview = null">✕ Cerrar</button>
+        </div>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane preview">
+          <pre x-text="docxPreview ? docxPreview.content : ''"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
