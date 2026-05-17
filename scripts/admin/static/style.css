@@ -76,8 +76,38 @@ body { display: flex; background: var(--bg); color: var(--fg); }
 }
 
 /* ─────────── MAIN ─────────── */
-main { flex: 1; padding: 28px 36px; overflow-y: auto; height: 100vh; }
+main { flex: 1; padding: 16px 36px 28px; overflow-y: auto; height: 100vh; position: relative; }
 h1 { margin-top: 0; font-size: 24px; display: flex; align-items: center; gap: 12px; }
+.topbar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-bottom: 8px; }
+.save-indicator { padding: 4px 10px; border-radius: 12px; font-size: 12px; background: var(--bg-3); color: var(--fg-3); transition: all 0.2s; min-width: 120px; text-align: center; }
+.save-indicator.saved { background: rgba(22, 163, 74, 0.12); color: var(--ok); }
+.save-indicator.dirty { background: rgba(234, 88, 12, 0.12); color: var(--todo); }
+.save-indicator.saving { background: rgba(8, 145, 178, 0.15); color: var(--info); }
+.save-indicator.error { background: rgba(220, 38, 38, 0.15); color: var(--danger); }
+.topbar-help { background: var(--bg-2); border: 1px solid var(--border-strong); width: 28px; height: 28px; border-radius: 14px; cursor: pointer; font-size: 14px; color: var(--fg); }
+.topbar-help:hover { background: var(--accent); color: white; }
+
+.commit-reminder { margin-top: 26px; padding: 16px 20px; background: var(--bg-2); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 6px; }
+.commit-reminder h3 { margin: 0 0 8px; font-size: 15px; }
+.commit-reminder p { margin: 6px 0; color: var(--fg-2); font-size: 13px; }
+
+.form-grid { display: grid; grid-template-columns: 140px 1fr; gap: 10px 14px; align-items: start; margin-bottom: 16px; }
+.form-grid label { font-size: 12px; color: var(--fg-2); text-transform: uppercase; padding-top: 6px; }
+.form-grid input, .form-grid select, .form-grid textarea {
+  padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 4px; font-size: 13px;
+  background: var(--bg-2); color: var(--fg); font-family: inherit;
+}
+.form-grid textarea { min-height: 200px; font-family: monospace; font-size: 12px; }
+.muted.small { font-size: 12px; }
+
+.kbd-help { width: 100%; border-collapse: collapse; }
+.kbd-help th { text-align: left; padding: 6px 12px 6px 0; font-weight: 600; font-size: 13px; vertical-align: top; width: 38%; }
+.kbd-help td { padding: 6px 0; font-size: 13px; color: var(--fg-2); vertical-align: top; }
+.kbd-help kbd { background: var(--bg-3); padding: 1px 6px; border-radius: 3px; font-size: 11px; border: 1px solid var(--border-strong); font-family: inherit; }
+.editor-modal h3 { margin: 16px 0 6px; font-size: 15px; }
+.editor-modal h3:first-child { margin-top: 0; }
+.editor-modal ol, .editor-modal ul { padding-left: 22px; font-size: 13px; color: var(--fg-2); }
+
 .filter-tag { color: var(--fg-3); font-weight: 400; font-size: 16px; }
 .muted { color: var(--fg-2); }
 .loading { padding: 60px; text-align: center; color: var(--fg-3); }
@@ -217,14 +247,30 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .ed-line.ed-comment .ed-meta-line { color: var(--todo); }
 .ed-marker { font-size: 11px; color: var(--warn); padding: 6px 0; text-transform: uppercase; letter-spacing: 0.05em; }
 
-.ed-line-row { position: relative; margin: 28px 0 6px; min-height: 2.6em; }
-.ed-chords-layer { position: absolute; top: -1.5em; left: 0; right: 0; height: 1.4em; pointer-events: none; }
-.ed-lyric-row { white-space: pre; font-size: 16px; line-height: 1.5; }
+.ed-line-row { position: relative; margin: 18px 0 2px; min-height: 2em; padding-left: 28px; }
+.ed-chords-layer { position: absolute; top: -1.05em; left: 28px; right: 0; height: 1.1em; pointer-events: none; }
+.ed-lyric-row { white-space: pre; font-size: 15px; line-height: 1.25; }
 .ed-char {
-  display: inline-block; min-width: 0.25em; line-height: 1.4;
+  display: inline-block; min-width: 0.25em; line-height: 1.15;
   border-bottom: 1px dotted transparent;
 }
 .ed-char.ed-end { color: var(--fg-3); margin-left: 4px; font-size: 0.7em; }
+.ed-line.ed-blank { height: 8px; }
+.ed-line .line-gutter {
+  position: absolute; left: 0; top: 0; width: 24px; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: transparent; font-size: 12px; user-select: none;
+}
+.ed-line:hover .line-gutter { color: var(--fg-3); }
+.ed-line.selected .line-gutter { color: var(--accent); }
+.ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
+.theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
+.ed-line.ed-soc + .ed-line.ed-lyric .ed-line-row,
+.ed-line.ed-lyric + .ed-line.ed-lyric .ed-line-row {
+  margin-top: 14px;
+}
+.ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(202, 138, 4, 0.06), transparent 30%); }
+.theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(234, 179, 8, 0.12), transparent 30%); }
 
 /* When in add mode, highlight chars on hover */
 .visual-doc.add-mode-on .ed-char:hover,

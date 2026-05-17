@@ -44,10 +44,28 @@ function app() {
       parsed: [],
     },
     visualAddMode: false,
-    visualSelectedChord: null,  // {lineIdx, chordIdx}
+    visualSelectedChord: null,
+    visualSelectedLines: new Set(),
+    visualLastClickedLine: null,
+    visualChordClipboard: null,   // [{lyric, chords}]  patrón copiado
+    showHelp: false,
+    newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
+               mode: 'blank', content: '', creating: false },
+    saveIndicator: { text: 'Sin cambios', cls: 'saved' },
+    lastSaveAt: null,
 
     // ─────────── Lifecycle ───────────
     async boot() {
+      this.$watch('editor.dirty', (v) => {
+        if (v) this.setSaveIndicator('dirty', '● Sin guardar — pulsa 💾');
+      });
+      // Atajo global: Ctrl/Cmd+S
+      window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's' && this.editor.path) {
+          e.preventDefault();
+          this.saveSong();
+        }
+      });
       await this.loadCatalog();
     },
 
@@ -204,9 +222,16 @@ function app() {
           content: json.content,
           originalContent: json.content,
           dirty: false,
-          tab: 'raw',
+          tab: 'visual',  // por defecto abrimos en visual
           meta: { ...json.meta },
+          parsed: [],
         };
+        this.visualSelectedLines = new Set();
+        this.visualSelectedChord = null;
+        this.setSaveIndicator('saved', '✓ Cargada');
+        // Pre-parsear porque visual es el tab por defecto
+        this.editor.parsed = parseCho(this.editor.content);
+        this.$nextTick(() => this.layoutChords());
       } catch (e) {
         alert('Error abriendo: ' + e.message);
       }
@@ -215,9 +240,13 @@ function app() {
       if (this.editor.dirty && !confirm('Hay cambios sin guardar. ¿Descartar?')) return;
       this.editor = {
         path: null, filename: null, content: '', originalContent: '',
-        dirty: false, tab: 'raw',
+        dirty: false, tab: 'visual',
         meta: { title: '', artist: '', key: '', capo: 0, has_todo: false },
+        parsed: [],
       };
+      this.visualSelectedLines = new Set();
+      this.visualSelectedChord = null;
+      this.setSaveIndicator('saved', 'Sin cambios');
     },
     setEditorTab(t) {
       // Sincronizar entre tabs según la dirección
@@ -450,6 +479,7 @@ function app() {
     },
     async saveSong() {
       if (!this.editor.dirty) return;
+      this.setSaveIndicator('saving', 'Guardando…');
       try {
         const r = await fetch('/api/song?path=' + encodeURIComponent(this.editor.path), {
           method: 'PUT',
@@ -459,11 +489,15 @@ function app() {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         this.editor.originalContent = this.editor.content;
         this.editor.dirty = false;
+        this.lastSaveAt = new Date();
+        this.setSaveIndicator('saved', '✓ Guardado · haz commit cuando termines');
         await this.loadCatalog();
       } catch (e) {
+        this.setSaveIndicator('error', '✗ Error guardando');
         alert('Error guardando: ' + e.message);
       }
     },
+    setSaveIndicator(cls, text) { this.saveIndicator = { cls, text }; },
     async deleteSong(r) {
       if (!confirm(`¿Borrar "${r.title}" (${r.filename})? Se hace backup en songs-backup-edits.`)) return;
       try {
@@ -485,19 +519,40 @@ function app() {
       }
     },
 
-    // ─────────── Build JSON ───────────
-    async buildJson() {
-      this.building = true;
-      this.buildResult = '';
+    // ─────────── Nueva canción ───────────
+    openNewSongModal() {
+      this.newSong = { open: true, category: '', title: '', artist: '', key: '', capo: 0,
+                       mode: 'blank', content: '', creating: false };
+    },
+    async createNewSong() {
+      if (!this.newSong.category || !this.newSong.title) return;
+      this.newSong.creating = true;
       try {
-        const r = await fetch('/api/build-json', { method: 'POST' });
-        const json = await r.json();
-        this.buildResult = (json.ok ? '✓ OK\n\n' : '✗ Error (rc=' + json.returncode + ')\n\n') +
-          (json.stdout || '') + (json.stderr ? '\nSTDERR:\n' + json.stderr : '');
+        const r = await fetch('/api/song/new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: this.newSong.category,
+            title: this.newSong.title,
+            artist: this.newSong.artist,
+            key: this.newSong.key,
+            capo: parseInt(this.newSong.capo) || 0,
+            mode: this.newSong.mode,
+            content: this.newSong.content,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const { path } = await r.json();
+        this.newSong.open = false;
+        await this.loadCatalog();
+        await this.openEditor(path);
       } catch (e) {
-        this.buildResult = 'Error: ' + e.message;
+        alert('Error creando: ' + e.message);
       } finally {
-        this.building = false;
+        this.newSong.creating = false;
       }
     },
 
@@ -644,13 +699,12 @@ function renderChordLine(line) {
   let textBuf = '';
   for (const t of tokens) {
     if (t.chord != null) {
-      // flush previous segment first
       if (textBuf || pendingChords.length) {
         html.push(`<span class="pv-seg"><span class="pv-chords">${pendingChords.map(esc).join(' ')}</span><span class="pv-lyr">${esc(textBuf) || '&nbsp;'}</span></span>`);
         pendingChords = [];
         textBuf = '';
       }
-      pendingChords.push('[' + t.chord + ']');
+      pendingChords.push(t.chord);  // sin corchetes en el preview
     } else {
       textBuf += t.char;
     }
