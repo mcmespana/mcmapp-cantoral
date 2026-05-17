@@ -14,7 +14,7 @@
     <div class="brand-emoji">🎵</div>
     <div>
       <div class="brand-title">Cantoral Admin</div>
-      <div class="brand-sub">MCM Castellón</div>
+      <div class="brand-sub">Familia Consolación</div>
     </div>
   </div>
 
@@ -48,6 +48,12 @@
 
 <main>
 
+  <!-- TOP BAR: indicador de guardado global -->
+  <div class="topbar">
+    <div class="save-indicator" :class="saveIndicator.cls" x-text="saveIndicator.text"></div>
+    <button class="topbar-help" @click="showHelp = true" title="Ayuda y atajos">❓</button>
+  </div>
+
   <!-- LOADING -->
   <div x-show="loading && !data" class="loading">Cargando catálogo…</div>
   <div x-show="error" class="error" x-text="error"></div>
@@ -80,13 +86,21 @@
     <div class="actions-row">
       <button class="btn primary" @click="view = 'import'">📥 Importar del cantoral</button>
       <button class="btn" @click="view = 'catalog'; todoFilter = true">📝 Ver pendientes de revisión</button>
-      <button class="btn" @click="buildJson()" :disabled="building">
-        <span x-show="!building">🔨 Regenerar songs.json</span>
-        <span x-show="building">Generando…</span>
-      </button>
+      <button class="btn" @click="openNewSongModal()">➕ Nueva canción a mano</button>
     </div>
-    <div x-show="buildResult" class="output" x-cloak>
-      <pre x-text="buildResult"></pre>
+
+    <div class="commit-reminder">
+      <h3>🚀 Cómo publicar tus cambios</h3>
+      <p>
+        Esta app guarda directamente en los archivos <code>.cho</code> del repositorio.
+        Cuando hayas terminado de editar, haz un <code>git commit</code> y un
+        <code>git push</code> a la rama. Un GitHub Action se encarga automáticamente
+        de regenerar <code>songs-vX.json</code> y subirlo a Firebase.
+      </p>
+      <p class="muted">
+        En la terminal, desde la raíz del repo:
+        <code>git add songs/ &amp;&amp; git commit -m "..." &amp;&amp; git push</code>
+      </p>
     </div>
   </section>
 
@@ -281,40 +295,72 @@
           <div class="visual-toolbar">
             <button class="btn-mini" @click="visualAddMode = !visualAddMode"
                     :class="{primary: visualAddMode}">
-              <span x-text="visualAddMode ? '✕ Cancelar añadir' : '+ Añadir acorde'"></span>
+              <span x-text="visualAddMode ? '✕ Cancelar añadir' : '+ Acorde'"></span>
             </button>
-            <span class="hint">
-              Arrastra acordes para moverlos · doble-click para editar texto ·
-              tecla <kbd>Supr</kbd> para borrar · <kbd>Shift</kbd> al soltar = sin snap.
-              <span x-show="visualAddMode" class="adding-hint">Modo añadir: pincha una letra para colocar un acorde nuevo.</span>
-            </span>
+
+            <span class="sep"></span>
+            <span class="sel-info" x-show="visualSelectedLines.size > 0"
+                  x-text="visualSelectedLines.size + ' línea(s) sel.'"></span>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="markSelectionAsChorus()">🟡 Marcar estribillo</button>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="unmarkSelectionChorus()">Quitar marca</button>
+
+            <span class="sep"></span>
+            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                    @click="copyChordPattern()">📋 Copiar acordes</button>
+            <button class="btn-mini"
+                    :disabled="!visualChordClipboard || visualSelectedLines.size === 0"
+                    @click="pasteChordPattern()">📥 Pegar acordes</button>
+
+            <span class="sep"></span>
+            <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
+                    @click="insertChorusHere()">🔁 Insertar estribillo</button>
+
+            <span class="sel-clear" x-show="visualSelectedLines.size > 0"
+                  @click="clearLineSelection()">Limpiar selección</span>
+
+            <button class="btn-mini help-mini" @click="showHelp = true" title="Ayuda">❓</button>
           </div>
+
+          <div class="visual-add-hint" x-show="visualAddMode" x-cloak>
+            🟢 Modo añadir activado — pincha sobre cualquier letra para insertar un acorde nuevo.
+          </div>
+
           <div class="visual-doc"
                @click="onVisualClick($event)"
                @keydown.delete.prevent="deleteSelectedChord()"
                @keydown.backspace.prevent="deleteSelectedChord()"
                tabindex="0">
             <template x-for="(ln, idx) in editor.parsed" :key="idx">
-              <div :class="'ed-line ed-' + ln.type" :data-line-idx="idx">
-                <!-- meta / directives shown as compact tags -->
+              <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
+                <div class="line-gutter"
+                     @click.stop="toggleLineSelection(idx, $event)"
+                     title="Click selecciona · Shift+click rango"
+                     x-text="visualSelectedLines.has(idx) ? '◉' : '○'"></div>
                 <template x-if="ln.type === 'directive' || ln.type === 'comment'">
                   <div class="ed-meta-line" x-text="ln.raw"></div>
                 </template>
                 <template x-if="ln.type === 'soc'">
-                  <div class="ed-marker">▶ Inicio estribillo</div>
+                  <div class="ed-marker chorus-start">▶ Inicio estribillo
+                    <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
+                  </div>
                 </template>
                 <template x-if="ln.type === 'eoc'">
-                  <div class="ed-marker">◀ Fin estribillo</div>
+                  <div class="ed-marker chorus-end">◀ Fin estribillo
+                    <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
+                  </div>
                 </template>
                 <template x-if="ln.type === 'blank'">
-                  <div class="ed-blank">·</div>
+                  <div class="ed-blank"></div>
                 </template>
                 <template x-if="ln.type === 'lyric'">
                   <div class="ed-line-row">
                     <div class="ed-chords-layer"></div>
-                    <div class="ed-lyric-row">
+                    <div class="ed-lyric-row"
+                         @dblclick.stop="editLyricLine(idx)">
                       <template x-for="(ch, i) in ln.lyric" :key="i">
-                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
+                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
                       </template>
                       <span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span>
                     </div>
@@ -335,6 +381,99 @@
         <!-- PREVIEW -->
         <div class="editor-pane preview" x-show="editor.tab === 'preview'" x-cloak>
           <div class="preview-render" x-html="renderPreviewHtml(editor.content)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HELP MODAL -->
+  <div class="editor-overlay" x-show="showHelp" @click.self="showHelp = false" x-cloak>
+    <div class="editor-modal small">
+      <div class="editor-header">
+        <h2>❓ Atajos y trucos</h2>
+        <button class="btn" @click="showHelp = false">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <h3>Editor visual</h3>
+          <table class="kbd-help">
+            <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Al soltar hace <em>snap</em> al inicio de palabra más cercano.</td></tr>
+            <tr><th><kbd>Shift</kbd> + soltar</th><td>Snap por <strong>sílaba</strong> (cómo se canta).</td></tr>
+            <tr><th><kbd>Alt</kbd> + soltar</th><td>Sin snap — colocación carácter a carácter (pixel perfect).</td></tr>
+            <tr><th>Doble-click acorde</th><td>Edita texto del acorde (vacío = borrar).</td></tr>
+            <tr><th>Click derecho acorde</th><td>Borra con confirmación.</td></tr>
+            <tr><th><kbd>Supr</kbd></th><td>Borra el acorde seleccionado.</td></tr>
+            <tr><th>Doble-click en letra</th><td>Edita el texto de esa línea entera.</td></tr>
+            <tr><th>Click en margen izq.</th><td>Selecciona la línea (verde). Útil para marcar estribillos o copiar acordes.</td></tr>
+            <tr><th><kbd>Shift</kbd>+click en margen</th><td>Selección de rango.</td></tr>
+          </table>
+          <h3>Marcar estribillo</h3>
+          <ol>
+            <li>Selecciona las líneas (clicks en el margen izquierdo).</li>
+            <li>Pulsa <strong>"Marcar estribillo"</strong> en la barra del editor.</li>
+            <li>Para quitar marcadores, pulsa <strong>"Quitar marcadores"</strong>.</li>
+          </ol>
+          <h3>Copiar / pegar estribillo</h3>
+          <p>Botón <strong>"Insertar estribillo"</strong> → elige cuál de los estribillos ya marcados quieres pegar; se inserta justo después de la línea actualmente seleccionada (o al final).</p>
+          <h3>Copiar patrón de acordes entre estrofas</h3>
+          <ol>
+            <li>Selecciona las líneas de la estrofa con los acordes que quieres copiar.</li>
+            <li>Pulsa <strong>"Copiar acordes"</strong>.</li>
+            <li>Selecciona las líneas destino (sin acordes o con pocos).</li>
+            <li>Pulsa <strong>"Pegar acordes"</strong>. Se alinean por <em>palabra</em>: el acorde N de la línea origen va a la palabra N de la línea destino. Luego ajusta a mano lo que haga falta.</li>
+          </ol>
+          <h3>Guardado</h3>
+          <p>La app escribe directamente en los archivos <code>.cho</code>. Cuando termines, haz <code>git commit</code> y <code>git push</code> — un GitHub Action regenera <code>songs.json</code> y lo sube a Firebase automáticamente.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW SONG MODAL -->
+  <div class="editor-overlay" x-show="newSong.open" @click.self="newSong.open = false" x-cloak>
+    <div class="editor-modal small">
+      <div class="editor-header">
+        <h2>➕ Nueva canción</h2>
+        <button class="btn" @click="newSong.open = false">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <div class="form-grid">
+            <label>Categoría</label>
+            <select x-model="newSong.category">
+              <option value="">— Elige —</option>
+              <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+                <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+              </template>
+            </select>
+            <label>Título</label>
+            <input type="text" x-model="newSong.title" placeholder="Ven a celebrar" />
+            <label>Autor / Artista</label>
+            <input type="text" x-model="newSong.artist" />
+            <label>Tono</label>
+            <input type="text" x-model="newSong.key" placeholder="G" />
+            <label>Capo</label>
+            <input type="number" min="0" x-model="newSong.capo" />
+            <label>Modo</label>
+            <select x-model="newSong.mode">
+              <option value="blank">En blanco (rellenas en el editor)</option>
+              <option value="chordpro">Pego un .cho en formato ChordPro</option>
+              <option value="ug" disabled>📌 Pegar formato Ultimate Guitar (próximamente)</option>
+              <option value="word" disabled>📌 Pegar texto con acordes encima en líneas separadas (próximamente)</option>
+            </select>
+            <label x-show="newSong.mode === 'chordpro'">Contenido ChordPro</label>
+            <textarea x-show="newSong.mode === 'chordpro'" x-model="newSong.content" rows="10"
+                      placeholder="{title: ...}&#10;[C]Letra de la canción..."></textarea>
+          </div>
+          <p class="muted small">
+            La nueva canción se guarda con
+            <code>{comment: TO DO: PENDIENTE REVISIÓN ACORDES}</code> al inicio, para que la revises
+            con el editor visual (badge 📝 en el catálogo).
+          </p>
+          <div class="actions-row">
+            <button class="btn primary" :disabled="!newSong.category || !newSong.title || newSong.creating"
+                    @click="createNewSong()" x-text="newSong.creating ? 'Creando…' : 'Crear y abrir editor'"></button>
+          </div>
         </div>
       </div>
     </div>

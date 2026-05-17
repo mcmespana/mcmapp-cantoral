@@ -366,6 +366,56 @@ def api_song_put():
     return jsonify({"ok": True, "path": str(p.relative_to(REPO_DIR)), "meta": meta})
 
 
+@app.route("/api/song/new", methods=["POST"])
+def api_song_new():
+    body = request.get_json(silent=True) or {}
+    cat_letter = (body.get("category") or "").upper()
+    title = (body.get("title") or "").strip()
+    artist = (body.get("artist") or "").strip()
+    key = (body.get("key") or "").strip()
+    capo = body.get("capo") or 0
+    mode = body.get("mode") or "blank"
+    user_content = body.get("content") or ""
+    if not cat_letter or not title:
+        abort(400, "Falta category o title")
+    cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    folder.mkdir(exist_ok=True)
+    num = d2c.next_song_number(folder)
+    slug = d2c.slugify(d2c.pretty_title_case(title))
+    fname = f"{num:02d}.{slug}.cho"
+    fpath = folder / fname
+    if fpath.exists():
+        abort(409, "Ya existe un archivo con ese nombre")
+
+    if mode == "chordpro" and user_content.strip():
+        # Limpieza mínima: asegurar que tiene la línea TO DO al principio
+        content = user_content
+        if not TODO_REGEX.search(content):
+            content = TODO_COMMENT_LINE + "\n" + content
+        # Asegurar el title si no está
+        if not re.search(r"\{\s*title", content, re.IGNORECASE):
+            content = content.rstrip() + "\n"
+            content = TODO_COMMENT_LINE + "\n" + f"{{title: {title}}}\n" + content.lstrip(TODO_COMMENT_LINE).lstrip("\n")
+    else:
+        # Modo blank
+        header = [TODO_COMMENT_LINE, f"{{title: {title}}}"]
+        if artist: header.append(f"{{artist: {artist}}}")
+        if key: header.append(f"{{key: {key}}}")
+        if capo: header.append(f"{{capo: {capo}}}")
+        body_text = "" if mode == "blank" else user_content
+        content = "\n".join(header) + "\n\n" + body_text
+
+    fpath.write_text(content, encoding="utf-8")
+    return jsonify({
+        "ok": True,
+        "path": str(fpath.relative_to(REPO_DIR)),
+        "filename": fname,
+    })
+
+
 @app.route("/api/song", methods=["DELETE"])
 def api_song_delete():
     path_str = request.args.get("path", "")

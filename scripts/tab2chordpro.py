@@ -44,6 +44,10 @@ SP_EN: Dict[str,str] = {
 USER_MAP: Dict[str,str] = {}              # Traducciones aprendidas en la sesión
 CHORD_RE = re.compile(r"^[A-G][#b]?(?:m|maj7|sus[24]?|dim|aug|add9|7|9|11|13)?$")
 
+# Marcador para revisar acordes en el admin visual (con espacio entre TO y DO
+# para no confundir con la palabra española "todo").
+TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
+
 # ───────── Helpers acordes ───────── #
 def clean_chord(tok: str) -> str:
     return tok.replace('(', '').replace(')', '')
@@ -248,13 +252,13 @@ def procesar_archivo_latex(tex_file: Path, base: Path, processed_dir: Path):
     num_in = ask("Número de la canción (blanco = auto)").strip()
     num = (num_in if num_in.isdigit() else str(next_song_number(folder))).zfill(2)
     
-    header = [f"{{title: {titulo}}}"]
+    header = [TODO_COMMENT_LINE, f"{{title: {titulo}}}"]
     if artista: header.append(f"{{artist: {artista}}}")
     if musica_val: header.append(f"{{comment: Música: {musica_val}}}")
     if tono: header.append(f"{{key: {tono}}}")
     if capo: header.append(f"{{capo: {capo}}}")
     if transpose_val: header.append(f"{{transpose: {transpose_val}}}")
-    
+
     fname = f"{num}.{slug}.cho"; fpath = folder / fname
     fpath.write_text("\n".join(header) + "\n\n" + cuerpo, encoding="utf-8")
     ok(f"Archivo creado en ➜ {fpath}")
@@ -327,7 +331,7 @@ def main():
         if not raw: continue
 
         cuerpo=mark_chorus(convert_lines(raw))
-        header=[f"{{title: {titulo}}}"]
+        header=[TODO_COMMENT_LINE, f"{{title: {titulo}}}"]
         if artista: header.append(f"{{artist: {artista}}}")
         if tono: header.append(f"{{key: {tono}}}")
         if capo: header.append(f"{{capo: {capo}}}")
