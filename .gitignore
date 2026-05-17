@@ -197,3 +197,4 @@ cython_debug/
 .DS_Store
 songs/.DS_Store
 songs/.DS_Store
+scripts/staging_docx2cho/
