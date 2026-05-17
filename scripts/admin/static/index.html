@@ -276,10 +276,52 @@
           </div>
         </div>
 
-        <!-- VISUAL (3c) - placeholder for now -->
-        <div class="editor-pane" x-show="editor.tab === 'visual'" x-cloak>
-          <div class="placeholder">
-            🚧 Editor visual con drag&drop — próxima fase. Usa la pestaña <em>Raw</em> mientras tanto.
+        <!-- VISUAL -->
+        <div class="editor-pane visual" x-show="editor.tab === 'visual'" x-cloak>
+          <div class="visual-toolbar">
+            <button class="btn-mini" @click="visualAddMode = !visualAddMode"
+                    :class="{primary: visualAddMode}">
+              <span x-text="visualAddMode ? '✕ Cancelar añadir' : '+ Añadir acorde'"></span>
+            </button>
+            <span class="hint">
+              Arrastra acordes para moverlos · doble-click para editar texto ·
+              tecla <kbd>Supr</kbd> para borrar · <kbd>Shift</kbd> al soltar = sin snap.
+              <span x-show="visualAddMode" class="adding-hint">Modo añadir: pincha una letra para colocar un acorde nuevo.</span>
+            </span>
+          </div>
+          <div class="visual-doc"
+               @click="onVisualClick($event)"
+               @keydown.delete.prevent="deleteSelectedChord()"
+               @keydown.backspace.prevent="deleteSelectedChord()"
+               tabindex="0">
+            <template x-for="(ln, idx) in editor.parsed" :key="idx">
+              <div :class="'ed-line ed-' + ln.type" :data-line-idx="idx">
+                <!-- meta / directives shown as compact tags -->
+                <template x-if="ln.type === 'directive' || ln.type === 'comment'">
+                  <div class="ed-meta-line" x-text="ln.raw"></div>
+                </template>
+                <template x-if="ln.type === 'soc'">
+                  <div class="ed-marker">▶ Inicio estribillo</div>
+                </template>
+                <template x-if="ln.type === 'eoc'">
+                  <div class="ed-marker">◀ Fin estribillo</div>
+                </template>
+                <template x-if="ln.type === 'blank'">
+                  <div class="ed-blank">·</div>
+                </template>
+                <template x-if="ln.type === 'lyric'">
+                  <div class="ed-line-row">
+                    <div class="ed-chords-layer"></div>
+                    <div class="ed-lyric-row">
+                      <template x-for="(ch, i) in ln.lyric" :key="i">
+                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
+                      </template>
+                      <span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
           </div>
         </div>
 

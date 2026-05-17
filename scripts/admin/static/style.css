@@ -194,6 +194,57 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .editor-pane pre { white-space: pre-wrap; font-family: monospace; font-size: 13px; }
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 
+/* Visual editor */
+.visual-toolbar { display: flex; gap: 12px; align-items: center; padding: 8px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.visual-toolbar .hint { color: var(--fg-3); font-size: 12px; }
+.visual-toolbar .hint kbd { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size: 11px; border: 1px solid var(--border-strong); }
+.visual-toolbar .adding-hint { color: var(--accent); font-weight: 600; margin-left: 8px; }
+
+.visual-doc {
+  outline: none; padding: 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+  font-family: "Calibri", "Carlito", "Segoe UI", sans-serif;
+  user-select: text;
+}
+.visual-doc:focus { box-shadow: 0 0 0 2px var(--accent); }
+.ed-line { margin: 0; }
+.ed-line.ed-blank { height: 14px; }
+.ed-line.ed-directive .ed-meta-line,
+.ed-line.ed-comment .ed-meta-line {
+  font-family: monospace; font-size: 12px; color: var(--fg-3);
+  padding: 2px 6px; background: var(--bg-3); border-radius: 3px;
+  display: inline-block; margin: 4px 0;
+}
+.ed-line.ed-comment .ed-meta-line { color: var(--todo); }
+.ed-marker { font-size: 11px; color: var(--warn); padding: 6px 0; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.ed-line-row { position: relative; margin: 28px 0 6px; min-height: 2.6em; }
+.ed-chords-layer { position: absolute; top: -1.5em; left: 0; right: 0; height: 1.4em; pointer-events: none; }
+.ed-lyric-row { white-space: pre; font-size: 16px; line-height: 1.5; }
+.ed-char {
+  display: inline-block; min-width: 0.25em; line-height: 1.4;
+  border-bottom: 1px dotted transparent;
+}
+.ed-char.ed-end { color: var(--fg-3); margin-left: 4px; font-size: 0.7em; }
+
+/* When in add mode, highlight chars on hover */
+.visual-doc.add-mode-on .ed-char:hover,
+body.adding .ed-char:hover { background: rgba(37, 99, 235, 0.15); cursor: pointer; }
+
+.ed-chord {
+  position: absolute; top: 0;
+  background: rgba(37, 99, 235, 0.92); color: white;
+  padding: 1px 5px; border-radius: 3px;
+  font-family: 'SF Mono', Menlo, monospace; font-size: 12px; font-weight: 700;
+  cursor: grab; pointer-events: auto;
+  transform: translateX(-50%); /* center on the char */
+  user-select: none;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+.ed-chord:hover { background: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.ed-chord.selected { background: var(--todo); box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.4); }
+.ed-chord.dragging { cursor: grabbing; opacity: 0.85; transform: translateX(-50%) scale(1.1); z-index: 10; }
+
 /* Preview render */
 .preview-render { font-family: Georgia, serif; line-height: 1.8; }
 .preview-render .pv-title { font-size: 22px; margin: 0 0 12px; }

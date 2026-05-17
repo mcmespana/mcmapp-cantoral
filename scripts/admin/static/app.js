@@ -41,7 +41,10 @@ function app() {
       dirty: false,
       tab: 'raw',
       meta: { title: '', artist: '', key: '', capo: 0, has_todo: false },
+      parsed: [],
     },
+    visualAddMode: false,
+    visualSelectedChord: null,  // {lineIdx, chordIdx}
 
     // ─────────── Lifecycle ───────────
     async boot() {
@@ -216,7 +219,198 @@ function app() {
         meta: { title: '', artist: '', key: '', capo: 0, has_todo: false },
       };
     },
-    setEditorTab(t) { this.editor.tab = t; },
+    setEditorTab(t) {
+      // Sincronizar entre tabs según la dirección
+      if (this.editor.tab === 'visual' && t !== 'visual') {
+        // visual → otro: serializar parsed → content
+        this.editor.content = serializeCho(this.editor.parsed);
+        this.refreshMetaFromRaw();
+      }
+      this.editor.tab = t;
+      if (t === 'visual') {
+        // raw → visual: parsear content
+        this.editor.parsed = parseCho(this.editor.content);
+        this.$nextTick(() => this.layoutChords());
+      }
+    },
+
+    // ─────────── Editor visual ───────────
+    layoutChords() {
+      const root = document.querySelector('.visual-doc');
+      if (!root) return;
+      const lines = root.querySelectorAll('.ed-line');
+      lines.forEach((lineEl) => {
+        const idx = parseInt(lineEl.dataset.lineIdx, 10);
+        const ln = this.editor.parsed[idx];
+        if (!ln || ln.type !== 'lyric') return;
+        const layer = lineEl.querySelector('.ed-chords-layer');
+        if (!layer) return;
+        layer.innerHTML = '';
+        const lyricRow = lineEl.querySelector('.ed-lyric-row');
+        const lyricRect = lyricRow.getBoundingClientRect();
+        const chars = lyricRow.querySelectorAll('.ed-char');
+        ln.chords.forEach((ch, chordIdx) => {
+          const target = chars[Math.min(ch.pos, chars.length - 1)] || chars[chars.length - 1];
+          if (!target) return;
+          const t = target.getBoundingClientRect();
+          const left = t.left - lyricRect.left;
+          const el = document.createElement('span');
+          el.className = 'ed-chord';
+          el.dataset.lineIdx = idx;
+          el.dataset.chordIdx = chordIdx;
+          el.style.left = left + 'px';
+          el.textContent = ch.text;
+          if (this.visualSelectedChord &&
+              this.visualSelectedChord.lineIdx === idx &&
+              this.visualSelectedChord.chordIdx === chordIdx) {
+            el.classList.add('selected');
+          }
+          this.attachChordEvents(el);
+          layer.appendChild(el);
+        });
+      });
+    },
+
+    attachChordEvents(el) {
+      const self = this;
+      let dragState = null;
+
+      el.addEventListener('mousedown', (ev) => {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const lineIdx = parseInt(el.dataset.lineIdx, 10);
+        const chordIdx = parseInt(el.dataset.chordIdx, 10);
+        self.visualSelectedChord = { lineIdx, chordIdx };
+        // Refresh selection visuals
+        document.querySelectorAll('.ed-chord.selected').forEach(n => n.classList.remove('selected'));
+        el.classList.add('selected');
+        // Focus root for keyboard
+        const root = document.querySelector('.visual-doc');
+        if (root) root.focus();
+
+        const startX = ev.clientX;
+        const startLeft = parseFloat(el.style.left) || 0;
+        dragState = { startX, startLeft, lineIdx, chordIdx, moved: false };
+
+        function onMove(e) {
+          if (!dragState) return;
+          const dx = e.clientX - dragState.startX;
+          if (Math.abs(dx) > 3) dragState.moved = true;
+          el.style.left = (dragState.startLeft + dx) + 'px';
+          el.classList.add('dragging');
+        }
+        function onUp(e) {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          el.classList.remove('dragging');
+          if (!dragState || !dragState.moved) {
+            dragState = null;
+            return;
+          }
+          // Find closest char in this line
+          const lineEl = document.querySelector(`.ed-line[data-line-idx="${dragState.lineIdx}"]`);
+          const lyricRow = lineEl && lineEl.querySelector('.ed-lyric-row');
+          if (!lyricRow) { dragState = null; return; }
+          const chars = lyricRow.querySelectorAll('.ed-char');
+          let bestIdx = 0, bestDist = Infinity;
+          const dropX = e.clientX;
+          chars.forEach((c, i) => {
+            const r = c.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const d = Math.abs(cx - dropX);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          });
+          // Word-start snap unless Shift held
+          if (!e.shiftKey) {
+            const ln = self.editor.parsed[dragState.lineIdx];
+            bestIdx = snapToWordStart(bestIdx, ln.lyric);
+          }
+          const ln = self.editor.parsed[dragState.lineIdx];
+          ln.chords[dragState.chordIdx].pos = bestIdx;
+          self.editor.dirty = true;
+          self.editor.content = serializeCho(self.editor.parsed);
+          self.refreshMetaFromRaw();
+          self.layoutChords();
+          dragState = null;
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+
+      el.addEventListener('dblclick', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const lineIdx = parseInt(el.dataset.lineIdx, 10);
+        const chordIdx = parseInt(el.dataset.chordIdx, 10);
+        const cur = self.editor.parsed[lineIdx].chords[chordIdx].text;
+        const next = prompt('Acorde:', cur);
+        if (next != null) {
+          const v = next.trim();
+          if (v === '') {
+            // delete
+            self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+          } else {
+            self.editor.parsed[lineIdx].chords[chordIdx].text = v;
+          }
+          self.editor.dirty = true;
+          self.editor.content = serializeCho(self.editor.parsed);
+          self.refreshMetaFromRaw();
+          self.layoutChords();
+        }
+      });
+
+      el.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        const lineIdx = parseInt(el.dataset.lineIdx, 10);
+        const chordIdx = parseInt(el.dataset.chordIdx, 10);
+        if (confirm('¿Borrar este acorde?')) {
+          self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+          self.editor.dirty = true;
+          self.editor.content = serializeCho(self.editor.parsed);
+          self.refreshMetaFromRaw();
+          self.layoutChords();
+        }
+      });
+    },
+
+    onVisualClick(ev) {
+      // Add chord on click when add mode is on
+      if (!this.visualAddMode) {
+        // Click outside chord → deselect
+        if (!ev.target.classList.contains('ed-chord')) {
+          this.visualSelectedChord = null;
+          document.querySelectorAll('.ed-chord.selected').forEach(n => n.classList.remove('selected'));
+        }
+        return;
+      }
+      const charEl = ev.target.closest('.ed-char');
+      if (!charEl) return;
+      const lineEl = charEl.closest('.ed-line');
+      const lineIdx = parseInt(lineEl.dataset.lineIdx, 10);
+      const charIdx = parseInt(charEl.dataset.idx, 10);
+      const text = prompt('Acorde nuevo:', 'C');
+      if (!text || !text.trim()) return;
+      this.editor.parsed[lineIdx].chords.push({ text: text.trim(), pos: charIdx });
+      this.editor.parsed[lineIdx].chords.sort((a, b) => a.pos - b.pos);
+      this.editor.dirty = true;
+      this.editor.content = serializeCho(this.editor.parsed);
+      this.refreshMetaFromRaw();
+      this.visualAddMode = false;
+      this.$nextTick(() => this.layoutChords());
+    },
+
+    deleteSelectedChord() {
+      if (!this.visualSelectedChord) return;
+      const { lineIdx, chordIdx } = this.visualSelectedChord;
+      this.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+      this.editor.dirty = true;
+      this.editor.content = serializeCho(this.editor.parsed);
+      this.refreshMetaFromRaw();
+      this.visualSelectedChord = null;
+      this.layoutChords();
+    },
+
     refreshMetaFromRaw() {
       const c = this.editor.content;
       const get = (k) => {
@@ -338,6 +532,91 @@ function app() {
     },
   };
 }
+
+// ─────────── ChordPro parsing helpers (visual editor) ───────────
+
+// Parse full ChordPro content into a list of line-objects.
+// Types: 'directive' (incl. {comment}), 'soc', 'eoc', 'blank', 'lyric'.
+function parseCho(content) {
+  const lines = content.split('\n');
+  return lines.map(raw => {
+    const t = raw.trim();
+    if (t === '') return { type: 'blank', raw };
+    if (/^\{soc\}$/i.test(t) || /^\{start_of_chorus\}$/i.test(t)) return { type: 'soc', raw };
+    if (/^\{eoc\}$/i.test(t) || /^\{end_of_chorus\}$/i.test(t)) return { type: 'eoc', raw };
+    if (/^\{[a-z_]+\s*:/i.test(t) || /^\{[a-z_]+\}$/i.test(t)) {
+      const isComment = /^\{comment/i.test(t);
+      return { type: isComment ? 'comment' : 'directive', raw };
+    }
+    // Parse as lyric line with optional [chord] tags
+    const { lyric, chords } = parseChordLineToModel(raw);
+    return { type: 'lyric', lyric, chords, raw };
+  });
+}
+
+function parseChordLineToModel(line) {
+  let lyric = '';
+  const chords = [];
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] === '[') {
+      const j = line.indexOf(']', i);
+      if (j > 0) {
+        chords.push({ text: line.slice(i + 1, j), pos: lyric.length });
+        i = j + 1;
+        continue;
+      }
+    }
+    lyric += line[i];
+    i++;
+  }
+  return { lyric, chords };
+}
+
+function serializeChordLine(model) {
+  // Insert chords back into the lyric at their positions; multiple chords at the same pos stack.
+  const lyric = model.lyric;
+  const byPos = new Map();
+  for (const ch of model.chords) {
+    const p = Math.max(0, Math.min(ch.pos, lyric.length));
+    if (!byPos.has(p)) byPos.set(p, []);
+    byPos.get(p).push(ch.text);
+  }
+  const positions = [...byPos.keys()].sort((a, b) => a - b);
+  let out = '';
+  let last = 0;
+  for (const p of positions) {
+    out += lyric.slice(last, p);
+    for (const t of byPos.get(p)) out += '[' + t + ']';
+    last = p;
+  }
+  out += lyric.slice(last);
+  return out;
+}
+
+function serializeCho(parsed) {
+  return parsed.map(ln => {
+    if (ln.type === 'lyric') return serializeChordLine({ lyric: ln.lyric, chords: ln.chords });
+    return ln.raw;
+  }).join('\n');
+}
+
+function snapToWordStart(idx, lyric) {
+  // Find the word-start (non-space preceded by space or BOL) closest in CHARS to idx.
+  if (!lyric) return idx;
+  const starts = [0];
+  for (let i = 1; i < lyric.length; i++) {
+    if (!isSpace(lyric[i]) && isSpace(lyric[i - 1])) starts.push(i);
+  }
+  starts.push(lyric.length);
+  let best = starts[0], bestDist = Infinity;
+  for (const s of starts) {
+    const d = Math.abs(s - idx);
+    if (d < bestDist) { bestDist = d; best = s; }
+  }
+  return best;
+}
+function isSpace(ch) { return ch === ' ' || ch === '\t'; }
 
 // Render a ChordPro line: produces stacked chord/lyric HTML.
 function renderChordLine(line) {
