@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <title>Cantoral Admin</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
@@ -397,15 +400,18 @@
         <div class="editor-pane" style="overflow:auto">
           <h3>Editor visual</h3>
           <table class="kbd-help">
-            <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Al soltar hace <em>snap</em> al inicio de palabra más cercano.</td></tr>
-            <tr><th><kbd>Shift</kbd> + soltar</th><td>Snap por <strong>sílaba</strong> (cómo se canta).</td></tr>
-            <tr><th><kbd>Alt</kbd> + soltar</th><td>Sin snap — colocación carácter a carácter (pixel perfect).</td></tr>
+            <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Durante el drag verás en azul la letra donde caerá y una etiqueta del modo (PALABRA/SÍLABA/LIBRE).</td></tr>
+            <tr><th>(sin modificador)</th><td>Snap al inicio de <strong>palabra</strong> más cercano.</td></tr>
+            <tr><th><kbd>Shift</kbd> al soltar</th><td>Snap a inicio de <strong>sílaba</strong> (silabeado español).</td></tr>
+            <tr><th><kbd>Alt</kbd> al soltar</th><td>Sin snap — colocación libre carácter a carácter (pixel-perfect).</td></tr>
+            <tr><th>Hover sobre línea</th><td>Muestra puntos grises (<code>·</code>) en los inicios de sílaba y barras azules en los inicios de palabra, para ver visualmente dónde puedes anclar.</td></tr>
             <tr><th>Doble-click acorde</th><td>Edita texto del acorde (vacío = borrar).</td></tr>
             <tr><th>Click derecho acorde</th><td>Borra con confirmación.</td></tr>
             <tr><th><kbd>Supr</kbd></th><td>Borra el acorde seleccionado.</td></tr>
-            <tr><th>Doble-click en letra</th><td>Edita el texto de esa línea entera.</td></tr>
-            <tr><th>Click en margen izq.</th><td>Selecciona la línea (verde). Útil para marcar estribillos o copiar acordes.</td></tr>
+            <tr><th>Doble-click en letra</th><td>Edita el texto de esa línea entera (los acordes se reubican por palabra).</td></tr>
+            <tr><th>Click en margen izq.</th><td>Selecciona la línea (azul). Útil para marcar estribillos o copiar acordes.</td></tr>
             <tr><th><kbd>Shift</kbd>+click en margen</th><td>Selección de rango.</td></tr>
+            <tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></th><td>Guarda la canción.</td></tr>
           </table>
           <h3>Marcar estribillo</h3>
           <ol>

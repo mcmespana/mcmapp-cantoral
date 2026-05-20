@@ -274,29 +274,67 @@ function app() {
         const layer = lineEl.querySelector('.ed-chords-layer');
         if (!layer) return;
         layer.innerHTML = '';
+
         const lyricRow = lineEl.querySelector('.ed-lyric-row');
         const lyricRect = lyricRow.getBoundingClientRect();
         const chars = lyricRow.querySelectorAll('.ed-char');
+
+        // 1) Marcar caracteres que son inicio de sílaba (para hover).
+        const sylSet = new Set(syllableStartsInLine(ln.lyric));
+        const wordSet = new Set(wordStarts(ln.lyric));
+        chars.forEach((c, i) => {
+          c.classList.toggle('ed-syllable-start', sylSet.has(i));
+          c.classList.toggle('ed-word-start', wordSet.has(i));
+        });
+
+        // 2) Agrupar acordes por posición para apilarlos visualmente sin solaparse.
+        const groups = new Map();
         ln.chords.forEach((ch, chordIdx) => {
-          const target = chars[Math.min(ch.pos, chars.length - 1)] || chars[chars.length - 1];
+          const p = Math.max(0, Math.min(ch.pos, ln.lyric.length));
+          if (!groups.has(p)) groups.set(p, []);
+          groups.get(p).push({ ch, chordIdx });
+        });
+
+        groups.forEach((arr, pos) => {
+          const target = chars[Math.min(pos, chars.length - 1)] || chars[chars.length - 1];
           if (!target) return;
-          const t = target.getBoundingClientRect();
-          const left = t.left - lyricRect.left;
-          const el = document.createElement('span');
-          el.className = 'ed-chord';
-          el.dataset.lineIdx = idx;
-          el.dataset.chordIdx = chordIdx;
-          el.style.left = left + 'px';
-          el.textContent = ch.text;
-          if (this.visualSelectedChord &&
-              this.visualSelectedChord.lineIdx === idx &&
-              this.visualSelectedChord.chordIdx === chordIdx) {
-            el.classList.add('selected');
-          }
-          this.attachChordEvents(el);
-          layer.appendChild(el);
+          const baseLeft = target.getBoundingClientRect().left - lyricRect.left;
+          let cumX = baseLeft;
+          arr.forEach(({ ch, chordIdx }) => {
+            const el = document.createElement('span');
+            el.className = 'ed-chord';
+            el.dataset.lineIdx = idx;
+            el.dataset.chordIdx = chordIdx;
+            el.style.left = cumX + 'px';
+            el.textContent = ch.text;
+            if (this.visualSelectedChord &&
+                this.visualSelectedChord.lineIdx === idx &&
+                this.visualSelectedChord.chordIdx === chordIdx) {
+              el.classList.add('selected');
+            }
+            this.attachChordEvents(el);
+            layer.appendChild(el);
+            // Avanzar para el siguiente acorde del mismo grupo (+gap pequeño)
+            const w = el.offsetWidth;
+            cumX += w + 3;
+          });
         });
       });
+    },
+
+    // Resalta la ancla de snap (carácter target) mientras se arrastra un acorde.
+    highlightSnapTarget(lineIdx, charIdx) {
+      // Limpia resaltados previos en toda la canción
+      document.querySelectorAll('.ed-char.snap-hover').forEach(c => c.classList.remove('snap-hover'));
+      if (lineIdx == null || charIdx == null) return;
+      const lineEl = document.querySelector(`.ed-line[data-line-idx="${lineIdx}"]`);
+      if (!lineEl) return;
+      const chars = lineEl.querySelectorAll('.ed-char');
+      const ch = chars[Math.min(charIdx, chars.length - 1)];
+      if (ch) ch.classList.add('snap-hover');
+    },
+    clearSnapHighlight() {
+      document.querySelectorAll('.ed-char.snap-hover').forEach(c => c.classList.remove('snap-hover'));
     },
 
     attachChordEvents(el) {
@@ -321,46 +359,57 @@ function app() {
         const startLeft = parseFloat(el.style.left) || 0;
         dragState = { startX, startLeft, lineIdx, chordIdx, moved: false };
 
+        // Helper para calcular dónde caería el acorde con los modificadores actuales
+        function computeSnapIdx(eventLikeEv) {
+          const lineEl = document.querySelector(`.ed-line[data-line-idx="${dragState.lineIdx}"]`);
+          const lyricRow = lineEl && lineEl.querySelector('.ed-lyric-row');
+          if (!lyricRow) return null;
+          const chars = lyricRow.querySelectorAll('.ed-char');
+          let bestIdx = 0, bestDist = Infinity;
+          const x = eventLikeEv.clientX;
+          chars.forEach((c, i) => {
+            const r = c.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const d = Math.abs(cx - x);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          });
+          const ln = self.editor.parsed[dragState.lineIdx];
+          if (eventLikeEv.altKey) {
+            return bestIdx;  // sin snap
+          } else if (eventLikeEv.shiftKey) {
+            return snapToSyllable(bestIdx, ln.lyric);
+          } else {
+            return snapToWordStart(bestIdx, ln.lyric);
+          }
+        }
+
         function onMove(e) {
           if (!dragState) return;
           const dx = e.clientX - dragState.startX;
           if (Math.abs(dx) > 3) dragState.moved = true;
           el.style.left = (dragState.startLeft + dx) + 'px';
           el.classList.add('dragging');
+          // Indicador en vivo: resaltar la letra a la que se va a anclar
+          if (dragState.moved) {
+            const snapIdx = computeSnapIdx(e);
+            self.highlightSnapTarget(dragState.lineIdx, snapIdx);
+            // Etiqueta del modo activo
+            el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'syl' : 'word');
+          }
         }
         function onUp(e) {
           document.removeEventListener('mousemove', onMove);
           document.removeEventListener('mouseup', onUp);
           el.classList.remove('dragging');
+          el.removeAttribute('data-snap-mode');
+          self.clearSnapHighlight();
           if (!dragState || !dragState.moved) {
             dragState = null;
             return;
           }
-          // Find closest char in this line
-          const lineEl = document.querySelector(`.ed-line[data-line-idx="${dragState.lineIdx}"]`);
-          const lyricRow = lineEl && lineEl.querySelector('.ed-lyric-row');
-          if (!lyricRow) { dragState = null; return; }
-          const chars = lyricRow.querySelectorAll('.ed-char');
-          let bestIdx = 0, bestDist = Infinity;
-          const dropX = e.clientX;
-          chars.forEach((c, i) => {
-            const r = c.getBoundingClientRect();
-            const cx = r.left + r.width / 2;
-            const d = Math.abs(cx - dropX);
-            if (d < bestDist) { bestDist = d; bestIdx = i; }
-          });
-          // Snap mode según modificadores:
-          //   sin modif. → snap a inicio de palabra
-          //   Shift     → snap a inicio de sílaba (más fino)
-          //   Alt       → sin snap (pixel-perfect carácter a carácter)
+          const bestIdx = computeSnapIdx(e);
+          if (bestIdx == null) { dragState = null; return; }
           const ln = self.editor.parsed[dragState.lineIdx];
-          if (e.altKey) {
-            // no snap
-          } else if (e.shiftKey) {
-            bestIdx = snapToSyllable(bestIdx, ln.lyric);
-          } else {
-            bestIdx = snapToWordStart(bestIdx, ln.lyric);
-          }
           ln.chords[dragState.chordIdx].pos = bestIdx;
           self.commitParsed();
           self.layoutChords();
