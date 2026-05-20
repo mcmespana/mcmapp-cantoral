@@ -240,7 +240,9 @@ table.songs tr.has-warn td { background: #fffbeb; }
 
 .visual-doc {
   outline: none; padding: 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
-  font-family: "Calibri", "Carlito", "Segoe UI", sans-serif;
+  /* Carlito = clon métrico de Calibri (mismas anchuras de caracteres).
+     Por eso los acordes calculados con Calibri caen pixel-fiel en pantalla. */
+  font-family: "Carlito", "Calibri", "Segoe UI", sans-serif;
   user-select: text;
 }
 .visual-doc:focus { box-shadow: 0 0 0 2px var(--accent); }
@@ -297,14 +299,41 @@ body.adding .ed-char:hover { background: rgba(37, 99, 235, 0.15); cursor: pointe
   padding: 1px 5px; border-radius: 3px;
   font-family: 'SF Mono', Menlo, monospace; font-size: 12px; font-weight: 700;
   cursor: grab; pointer-events: auto;
-  transform: translateX(-50%); /* center on the char */
+  /* Sin translate: el acorde se ancla LEFT-aligned al inicio del carácter target.
+     Así varios acordes en la misma posición se apilan a la derecha sin solaparse. */
   user-select: none;
-  transition: background 0.1s;
+  transition: background 0.1s, box-shadow 0.1s;
   white-space: nowrap;
 }
-.ed-chord:hover { background: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-.ed-chord.selected { background: var(--todo); box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.4); }
-.ed-chord.dragging { cursor: grabbing; opacity: 0.85; transform: translateX(-50%) scale(1.1); z-index: 10; }
+.ed-chord:hover { background: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 2; }
+.ed-chord.selected { background: var(--todo); box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.4); z-index: 3; }
+.ed-chord.dragging { cursor: grabbing; opacity: 0.92; transform: scale(1.1); z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+/* Etiqueta del modo de snap durante el drag */
+.ed-chord.dragging[data-snap-mode]::after {
+  content: attr(data-snap-mode); position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: white; font-size: 9px; padding: 1px 5px; border-radius: 8px;
+  text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
+}
+.ed-chord.dragging[data-snap-mode="word"]::after { content: "palabra"; }
+.ed-chord.dragging[data-snap-mode="syl"]::after { content: "sílaba (shift)"; background: var(--info); }
+.ed-chord.dragging[data-snap-mode="free"]::after { content: "libre (alt)"; background: var(--todo); }
+
+/* Indicador del snap target: la letra donde caerá el acorde */
+.ed-char.snap-hover {
+  background: rgba(37, 99, 235, 0.25); border-radius: 2px;
+  box-shadow: 0 2px 0 var(--accent);
+}
+
+/* Inicio de sílaba/palabra: visible al hover sobre la línea */
+.ed-line.ed-lyric .ed-char.ed-syllable-start { position: relative; }
+.ed-line.ed-lyric:hover .ed-char.ed-syllable-start:not(.ed-word-start)::before {
+  content: '·'; position: absolute; left: -2px; top: -10px; color: var(--fg-3);
+  font-size: 12px; line-height: 1; pointer-events: none; opacity: 0.6;
+}
+.ed-line.ed-lyric:hover .ed-char.ed-word-start::before {
+  content: '|'; position: absolute; left: -2px; top: -9px; color: var(--info);
+  font-size: 8px; line-height: 1; pointer-events: none; opacity: 0.6;
+}
 
 /* Preview render */
 .preview-render { font-family: Georgia, serif; line-height: 1.8; }
