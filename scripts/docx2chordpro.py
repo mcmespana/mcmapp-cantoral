@@ -451,6 +451,83 @@ def word_start_indices(text: str) -> List[int]:
     return starts
 
 
+# ─────────── Silabeado español sencillo ─────────── #
+# Mismas reglas que el silabeado del editor visual (app.js):
+#   V-CV  ·  V-C·CV (con grupos inseparables br/pr/tr/bl/cl/... como excepción)
+_SP_STRONG = set("aeoáéó")
+_SP_WEAK_UNACC = set("iuü")
+_SP_WEAK_ACC = set("íú")
+_SP_VOW = _SP_STRONG | _SP_WEAK_UNACC | _SP_WEAK_ACC
+_SP_INSEP = {"pr", "br", "tr", "dr", "cr", "gr", "fr",
+             "pl", "bl", "cl", "gl", "fl", "ch", "ll", "rr"}
+
+
+def _is_vow(ch: str) -> bool:
+    return ch.lower() in _SP_VOW
+
+
+def syllable_starts_in_word(word: str) -> List[int]:
+    """Índices (relativos al inicio de la palabra) donde empieza cada sílaba."""
+    if not word:
+        return [0]
+    w = word.lower()
+    starts = [0]
+    i = 0
+    while i < len(w):
+        # saltar consonantes iniciales (forman parte de la sílaba actual)
+        while i < len(w) and not _is_vow(w[i]):
+            i += 1
+        # saltar el núcleo vocálico (diptongo/hiato → tratado como uno solo)
+        while i < len(w) and _is_vow(w[i]):
+            i += 1
+        c_start = i
+        # cluster consonántico hasta la siguiente vocal
+        while i < len(w) and not _is_vow(w[i]):
+            i += 1
+        if i >= len(w):
+            break  # palabra acaba en consonantes
+        cluster = w[c_start:i]
+        if len(cluster) == 0:
+            next_syl = i
+        elif len(cluster) == 1:
+            next_syl = c_start                                 # V-CV
+        elif len(cluster) == 2:
+            next_syl = c_start if cluster in _SP_INSEP else c_start + 1
+        else:
+            last2 = cluster[-2:]
+            next_syl = i - 2 if last2 in _SP_INSEP else i - 1
+        if next_syl > starts[-1]:
+            starts.append(next_syl)
+    return starts
+
+
+def syllable_anchor_indices(lyric: str) -> List[int]:
+    """Índices absolutos donde empieza cada sílaba en la línea entera.
+    Añade además 0 y len(lyric) para acordes que caen al principio o final."""
+    if not lyric:
+        return [0]
+    anchors: List[int] = []
+    wstart = -1
+    for i in range(len(lyric)):
+        ch = lyric[i]
+        if ch.isspace():
+            if wstart >= 0:
+                word = lyric[wstart:i]
+                for s in syllable_starts_in_word(word):
+                    anchors.append(wstart + s)
+                wstart = -1
+        else:
+            if wstart == -1:
+                wstart = i
+    if wstart >= 0:
+        word = lyric[wstart:]
+        for s in syllable_starts_in_word(word):
+            anchors.append(wstart + s)
+    anchors.append(0)
+    anchors.append(len(lyric))
+    return sorted(set(anchors))
+
+
 def snap_to_word_start(precise_idx: int, lyric_text: str,
                        char_positions: List[float], chord_x: float) -> int:
     """Snap el índice al inicio de palabra más cercano en PÍXELES.
@@ -458,21 +535,38 @@ def snap_to_word_start(precise_idx: int, lyric_text: str,
     starts = word_start_indices(lyric_text)
     if not starts:
         return precise_idx
-    # candidate: cada inicio de palabra + final de línea (para acordes que caen al final)
     candidates = list(starts) + [len(lyric_text)]
     best = min(candidates, key=lambda s: abs(char_positions[s] - chord_x))
     return best
 
 
+# Umbral de píxeles para considerar que dos acordes "están juntos" y deben
+# apilarse en la misma ancla en lugar de repartirse a sílabas distintas.
+# 30 px ≈ ancho de una sílaba corta en Calibri 12pt @ 96 dpi.
+CHORD_STACK_THRESHOLD_PX = 30.0
+
+# Bonus en píxeles para preferir un inicio de palabra frente a un inicio de
+# sílaba mid-word. Con 10 px, la sílaba tiene que estar al menos 10 px más cerca
+# que la palabra para ganar. Reproduce la convención del cantoral de poner casi
+# todos los acordes en inicio de palabra, salvo cuando claramente caen mid-word.
+WORD_PREFERENCE_PX = 10.0
+
+
 def inject_chords(lyric_text: str, char_positions: List[float],
                   chord_positions: List[Tuple[float, str]]) -> str:
     """Inserta los acordes traducidos en la letra. Conserva el texto tal cual.
+
     Política:
-      - Snap al inicio de palabra más cercano en píxeles.
-      - Si dos acordes (de tokens diferentes) caen en la misma palabra, se hace
-        un "spread": el segundo acorde busca el siguiente inicio de palabra libre.
-      - Los acordes derivados de un único token con guiones (ej. "DO-mim-lam")
-        se mantienen apilados en la misma posición, que es lo esperado.
+      - Híbrido palabra/sílaba: por defecto prefiere inicio de PALABRA; solo
+        usa inicio de sílaba (mid-word) cuando el acorde cae claramente dentro
+        de una palabra (>= WORD_PREFERENCE_PX más cerca de una sílaba que del
+        inicio de palabra). Esto reproduce la convención del cantoral, que pone
+        casi todos los acordes en inicio de palabra pero ocasionalmente en
+        mitad ("VE[C]NID", "LE[C]VAN[Em]TA").
+      - Si dos acordes caen muy cerca en píxeles (< CHORD_STACK_THRESHOLD_PX),
+        se apilan en la misma ancla; si están más separados se reparten en
+        sílabas contiguas para no perder información.
+      - Los acordes de un token con guiones ("DO-mim-lam") se apilan siempre.
     """
     if not chord_positions:
         return lyric_text
@@ -483,20 +577,38 @@ def inject_chords(lyric_text: str, char_positions: List[float],
             chunks.append("".join(f"[{c}]" for c in chords))
         return " ".join(chunks)
 
-    word_starts = word_start_indices(lyric_text)
-    candidates = sorted(set(word_starts + [0, len(lyric_text)]),
-                        key=lambda s: char_positions[s])
+    word_anchors = sorted(set(word_start_indices(lyric_text) + [0, len(lyric_text)]))
+    syl_anchors = syllable_anchor_indices(lyric_text)
+
+    def pick_anchor(x: float, forbidden: set) -> int:
+        """Elige la mejor ancla para un acorde en pixel x, evitando 'forbidden'."""
+        def best_in(candidates):
+            avail = [c for c in candidates if c not in forbidden]
+            if not avail:
+                avail = candidates
+            return min(avail, key=lambda c: abs(char_positions[c] - x))
+        w_best = best_in(word_anchors)
+        s_best = best_in(syl_anchors)
+        w_dist = abs(char_positions[w_best] - x)
+        s_dist = abs(char_positions[s_best] - x)
+        # Si la palabra está dentro de WORD_PREFERENCE_PX de tan buena
+        # como la sílaba, gana la palabra (output más limpio).
+        if w_dist <= s_dist + WORD_PREFERENCE_PX:
+            return w_best
+        return s_best
 
     insertions: Dict[int, List[str]] = {}
-    claimed: set = set()
+    claimed_x: Dict[int, float] = {}  # ancla → x del primer acorde que la ocupó
     for x, tok in sorted(chord_positions, key=lambda p: p[0]):
         chords = translate_chord_token(tok) or [tok]
-        unclaimed = [c for c in candidates if c not in claimed]
-        if unclaimed:
-            idx = min(unclaimed, key=lambda c: abs(char_positions[c] - x))
-        else:
-            idx = min(candidates, key=lambda c: abs(char_positions[c] - x))
-        claimed.add(idx)
+        idx = pick_anchor(x, forbidden=set())
+        if idx in claimed_x:
+            # Ya ocupada: apilar si están juntos, si no, repartir
+            if abs(x - claimed_x[idx]) < CHORD_STACK_THRESHOLD_PX:
+                pass  # apilar — usamos el mismo idx
+            else:
+                idx = pick_anchor(x, forbidden=set(claimed_x.keys()))
+        claimed_x.setdefault(idx, x)
         insertions.setdefault(idx, []).extend(f"[{c}]" for c in chords)
 
     out: List[str] = []
