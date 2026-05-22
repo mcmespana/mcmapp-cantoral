@@ -16,6 +16,7 @@ function app() {
     categoryFilter: '',
     search: '',
     todoFilter: false,
+    chordReviewFilter: false,
     onlyInRepoFilter: false,
 
     // Import view
@@ -40,7 +41,7 @@ function app() {
       originalContent: '',
       dirty: false,
       tab: 'raw',
-      meta: { title: '', artist: '', key: '', capo: 0, has_todo: false },
+      meta: { title: '', artist: '', key: '', capo: 0, has_todo: false, has_chord_review: false },
       parsed: [],
     },
     visualAddMode: false,
@@ -102,6 +103,7 @@ function app() {
       let list = this.data.repo_songs;
       if (this.categoryFilter) list = list.filter(r => r.category_letter === this.categoryFilter);
       if (this.todoFilter) list = list.filter(r => r.has_todo);
+      if (this.chordReviewFilter) list = list.filter(r => r.has_chord_review);
       if (this.onlyInRepoFilter) list = list.filter(r => !r.in_docx);
       if (this.search) {
         const q = this.normalizeSearch(this.search);
@@ -242,7 +244,7 @@ function app() {
       this.editor = {
         path: null, filename: null, content: '', originalContent: '',
         dirty: false, tab: 'visual',
-        meta: { title: '', artist: '', key: '', capo: 0, has_todo: false },
+        meta: { title: '', artist: '', key: '', capo: 0, has_todo: false, has_chord_review: false },
         parsed: [],
       };
       this.visualSelectedLines = new Set();
@@ -646,8 +648,10 @@ function app() {
       if (pattern.length === 0) { alert('No hay líneas de letra en la selección.'); return; }
       this.visualChordClipboard = pattern;
       const total = pattern.reduce((acc, p) => acc + p.chords.length, 0);
-      this.setSaveIndicator('saved', `📋 ${total} acordes copiados de ${pattern.length} línea(s)`);
-      setTimeout(() => { if (this.editor.dirty) this.setSaveIndicator('dirty', '● Sin guardar'); }, 2500);
+      this.setSaveIndicator('saved', `📋 ${total} acordes copiados — ahora selecciona el destino y pega`);
+      // Limpiar selección para que el usuario seleccione el destino sin mezclar origen
+      this.clearLineSelection();
+      setTimeout(() => { if (this.editor.dirty) this.setSaveIndicator('dirty', '● Sin guardar'); else this.setSaveIndicator('saved', 'Sin cambios'); }, 3000);
     },
     pasteChordPattern() {
       const r = this.selectedLineRange();
@@ -660,12 +664,21 @@ function app() {
       }
       if (targets.length === 0) { alert('No hay líneas de letra en la selección.'); return; }
       // Mapear: línea N del clipboard → línea N del target (si existe)
+      let totalPasted = 0;
       for (let n = 0; n < targets.length; n++) {
         const src = this.visualChordClipboard[Math.min(n, this.visualChordClipboard.length - 1)];
-        targets[n].chords = mapChordsByWord(src, targets[n].lyric);
+        const newChords = mapChordsByWord(src, targets[n].lyric);
+        targets[n].chords = newChords;
+        totalPasted += newChords.length;
       }
+      // Forzar que Alpine detecte el cambio reasignando el array
+      this.editor.parsed = [...this.editor.parsed];
       this.commitParsed();
-      this.$nextTick(() => this.layoutChords());
+      this.$nextTick(() => {
+        this.layoutChords();
+        this.setSaveIndicator('saved', `✓ ${totalPasted} acordes pegados en ${targets.length} línea(s)`);
+        setTimeout(() => { if (this.editor.dirty) this.setSaveIndicator('dirty', '● Sin guardar'); }, 2500);
+      });
     },
 
     // ─────────── Editar texto de la letra ───────────
@@ -703,6 +716,7 @@ function app() {
       const capoStr = get('capo');
       this.editor.meta.capo = /^\d+$/.test(capoStr) ? parseInt(capoStr, 10) : 0;
       this.editor.meta.has_todo = /\bTO\s+DO\b/i.test(c);
+      this.editor.meta.has_chord_review = /♩\s*REVISAR\s*ACORDES/i.test(c);
     },
     updateMetaInRaw(key, value) {
       // Updates the {key: value} line in the raw content. If absent, inserts after title.
@@ -767,6 +781,29 @@ function app() {
         this.editor.content = filtered.join('\n');
         this.editor.dirty = true;
         this.editor.meta.has_todo = false;
+      }
+    },
+    markChordReview() {
+      if (this.editor.meta.has_chord_review) return;
+      const lines = this.editor.content.split('\n');
+      // Insertar después del primer bloque de metadatos
+      let insertAt = 0;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\{(title|comment|artist|author|key|capo)/i.test(lines[i])) insertAt = i + 1;
+        else if (lines[i].trim() === '' && insertAt > 0) break;
+      }
+      lines.splice(insertAt, 0, '{comment: ♩ REVISAR ACORDES}');
+      this.editor.content = lines.join('\n');
+      this.editor.dirty = true;
+      this.editor.meta.has_chord_review = true;
+    },
+    unmarkChordReview() {
+      const lines = this.editor.content.split('\n');
+      const filtered = lines.filter(ln => !/\{\s*comment\s*:[^}]*♩\s*REVISAR\s*ACORDES[^}]*\}/i.test(ln));
+      if (filtered.length !== lines.length) {
+        this.editor.content = filtered.join('\n');
+        this.editor.dirty = true;
+        this.editor.meta.has_chord_review = false;
       }
     },
 

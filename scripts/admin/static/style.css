@@ -161,6 +161,8 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .badge.ok { color: var(--ok); }
 .badge.info { color: var(--info); }
 .badge.todo { color: var(--todo); }
+.badge.chord-review { color: var(--info); }
+.stat.chord-review { border-left: 4px solid var(--info); }
 .warn-cell { font-size: 11px; color: var(--warn); }
 
 /* Import results */
@@ -213,6 +215,11 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .editor-meta input { width: 100%; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 4px; font-size: 13px; background: var(--bg); color: var(--fg); }
 .editor-meta .path-info { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .editor-meta .path-info small { color: var(--fg-3); font-family: monospace; word-break: break-all; }
+.meta-chuleta { margin-top: 14px; padding: 10px; background: var(--bg-3); border-radius: 6px; border: 1px solid var(--border); }
+.chuleta-title { font-size: 10px; text-transform: uppercase; color: var(--fg-3); letter-spacing: 0.06em; margin-bottom: 6px; font-weight: 600; }
+.chuleta-row { font-size: 11px; color: var(--fg-2); padding: 2px 0; display: flex; gap: 5px; align-items: baseline; flex-wrap: wrap; }
+.chuleta-row em { color: var(--fg-3); font-style: normal; font-size: 10px; }
+.chuleta-key { background: var(--bg-2); border: 1px solid var(--border-strong); border-radius: 3px; padding: 0 4px; font-size: 10px; white-space: nowrap; color: var(--fg); font-family: inherit; flex-shrink: 0; }
 
 .editor-pane { flex: 1; padding: 16px; overflow: auto; }
 .editor-pane.raw textarea {
@@ -264,7 +271,7 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .ed-marker .link-mini { background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; opacity: 0.6; }
 .ed-marker .link-mini:hover { opacity: 1; color: var(--danger); }
 
-.ed-line-row { position: relative; margin: 18px 0 2px; min-height: 2em; padding-left: 28px; }
+.ed-line-row { position: relative; margin: 18px 0 2px; min-height: 1.4em; padding-left: 28px; }
 .ed-chords-layer { position: absolute; top: -1.05em; left: 28px; right: 0; height: 1.1em; pointer-events: none; }
 .ed-lyric-row { white-space: pre; font-size: 15px; line-height: 1.25; }
 .ed-char {
@@ -284,7 +291,7 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
 .ed-line.ed-soc + .ed-line.ed-lyric .ed-line-row,
 .ed-line.ed-lyric + .ed-line.ed-lyric .ed-line-row {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(202, 138, 4, 0.06), transparent 30%); }
 .theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(234, 179, 8, 0.12), transparent 30%); }

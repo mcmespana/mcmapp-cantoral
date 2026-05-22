@@ -81,6 +81,10 @@
         <div class="stat-val" x-text="data.stats.todo_count"></div>
         <div class="stat-lbl">con TO DO pendiente</div>
       </div>
+      <div class="stat chord-review">
+        <div class="stat-val" x-text="data.stats.chord_review_count"></div>
+        <div class="stat-lbl">🎵 pendientes revisar acordes</div>
+      </div>
       <div class="stat info">
         <div class="stat-val" x-text="data.stats.only_in_repo"></div>
         <div class="stat-lbl">solo en repo (manuales)</div>
@@ -89,6 +93,7 @@
     <div class="actions-row">
       <button class="btn primary" @click="view = 'import'">📥 Importar del cantoral</button>
       <button class="btn" @click="view = 'catalog'; todoFilter = true">📝 Ver pendientes de revisión</button>
+      <button class="btn" @click="view = 'catalog'; chordReviewFilter = true">🎵 Ver pendientes acordes</button>
       <button class="btn" @click="openNewSongModal()">➕ Nueva canción a mano</button>
     </div>
 
@@ -116,8 +121,9 @@
     <div class="filter-bar">
       <input type="search" placeholder="Buscar título o autor…" x-model="search" />
       <label><input type="checkbox" x-model="todoFilter" /> Solo TO DO</label>
+      <label><input type="checkbox" x-model="chordReviewFilter" /> 🎵 Revisar acordes</label>
       <label><input type="checkbox" x-model="onlyInRepoFilter" /> Solo manuales (no en cantoral)</label>
-      <button @click="search = ''; todoFilter = false; onlyInRepoFilter = false; categoryFilter = ''">Limpiar</button>
+      <button @click="search = ''; todoFilter = false; chordReviewFilter = false; onlyInRepoFilter = false; categoryFilter = ''">Limpiar</button>
       <span class="count" x-text="filteredRepoSongs().length + ' canciones'"></span>
     </div>
 
@@ -141,6 +147,7 @@
               <span class="badge ok" x-show="r.in_docx" title="También en el cantoral">✅</span>
               <span class="badge info" x-show="!r.in_docx" title="Solo en repo (manual)">➕</span>
               <span class="badge todo" x-show="r.has_todo" title="TO DO pendiente revisión">📝</span>
+              <span class="badge chord-review" x-show="r.has_chord_review" title="Pendiente revisar acordes">🎵</span>
             </td>
             <td x-text="r.number"></td>
             <td><a href="#" @click.prevent="openEditor(r.path)" x-text="r.title"></a></td>
@@ -260,9 +267,12 @@
         <h2>
           <span x-text="editor.meta.title || editor.filename"></span>
           <span class="badge todo" x-show="editor.meta.has_todo">📝 TO DO</span>
+          <span class="badge chord-review" x-show="editor.meta.has_chord_review">🎵 Revisar acordes</span>
         </h2>
         <div class="editor-actions">
           <button x-show="editor.meta.has_todo" class="btn" @click="markReviewed()">✓ Revisada</button>
+          <button x-show="!editor.meta.has_chord_review" class="btn" @click="markChordReview()">🎵 Marcar revisar acordes</button>
+          <button x-show="editor.meta.has_chord_review" class="btn primary" @click="unmarkChordReview()">✓ Acordes revisados</button>
           <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
           <button class="btn" @click="closeEditor()">✕ Cerrar</button>
         </div>
@@ -290,6 +300,16 @@
           <input type="number" min="0" x-model="editor.meta.capo" @input="updateMetaInRaw('capo', $event.target.value)" />
           <div class="path-info">
             <small x-text="editor.path"></small>
+          </div>
+          <div class="meta-chuleta">
+            <div class="chuleta-title">Atajos rápidos</div>
+            <div class="chuleta-row"><span class="chuleta-key">○ margen</span> seleccionar línea</div>
+            <div class="chuleta-row"><span class="chuleta-key">Shift+click</span> rango</div>
+            <div class="chuleta-row"><span class="chuleta-key">📋 Copiar</span> guarda acordes <em>(limpia selección)</em></div>
+            <div class="chuleta-row"><span class="chuleta-key">📥 Pegar</span> aplica al destino</div>
+            <div class="chuleta-row"><span class="chuleta-key">Ctrl+S</span> guardar</div>
+            <div class="chuleta-row"><span class="chuleta-key">2×click acorde</span> editar texto</div>
+            <div class="chuleta-row"><span class="chuleta-key">drag acorde</span> mover · Shift=sílaba · Alt=libre</div>
           </div>
         </div>
 

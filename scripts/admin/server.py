@@ -49,6 +49,10 @@ import docx2chordpro as d2c  # noqa: E402
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
 TODO_REGEX = re.compile(r"\bTO\s+DO\b", re.IGNORECASE)
 
+# Marca específica para revisión de acordes
+CHORD_REVIEW_COMMENT_LINE = "{comment: ♩ REVISAR ACORDES}"
+CHORD_REVIEW_REGEX = re.compile(r"♩\s*REVISAR\s*ACORDES", re.IGNORECASE)
+
 app = Flask(__name__, static_folder=str(SCRIPT_DIR / "static"), static_url_path="")
 
 
@@ -77,6 +81,7 @@ def parse_cho_metadata(content: str) -> Dict[str, str]:
         "key": get("key"),
         "capo": int(capo_raw) if capo_raw.isdigit() else 0,
         "has_todo": bool(TODO_REGEX.search(content)),
+        "has_chord_review": bool(CHORD_REVIEW_REGEX.search(content)),
     }
 
 
@@ -312,6 +317,7 @@ def api_catalog():
 
     # Contadores
     todo_count = sum(1 for r in repo_songs if r["has_todo"])
+    chord_review_count = sum(1 for r in repo_songs if r["has_chord_review"])
 
     return jsonify({
         "categories": list_categories(),
@@ -321,6 +327,7 @@ def api_catalog():
             "repo_total": len(repo_songs),
             "docx_total": len(docx_songs),
             "todo_count": todo_count,
+            "chord_review_count": chord_review_count,
             "missing_from_repo": len(missing),
             "only_in_repo": sum(1 for r in repo_songs if not r["in_docx"]),
         },
