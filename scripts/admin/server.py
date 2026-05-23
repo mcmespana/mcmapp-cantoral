@@ -575,6 +575,50 @@ def api_docx_import():
     return jsonify({"results": results})
 
 
+def _apply_status_to_content(content: str, status: Optional[str]) -> str:
+    """Quita ambos markers de revisión e inserta el nuevo si procede."""
+    lines = content.split('\n')
+    # Strip ambos markers
+    lines = [ln for ln in lines if not (
+        re.search(r'\{\s*comment\s*:[^}]*\bTO\s+DO\b[^}]*\}', ln, re.IGNORECASE) or
+        re.search(r'\{\s*comment\s*:[^}]*♩\s*REVISAR\s*ACORDES[^}]*\}', ln, re.IGNORECASE)
+    )]
+    if status in ("revisar", "revisar_acordes"):
+        marker = TODO_COMMENT_LINE if status == "revisar" else CHORD_REVIEW_COMMENT_LINE
+        # Insertar después del último metadato (title/artist/key/capo/comment al inicio)
+        insert_at = 0
+        for i, ln in enumerate(lines):
+            if re.match(r'^\{(title|comment|artist|author|key|capo)', ln, re.IGNORECASE):
+                insert_at = i + 1
+            elif ln.strip() == '' and insert_at > 0:
+                break
+        lines.insert(insert_at, marker)
+    return '\n'.join(lines)
+
+
+@app.route("/api/songs/bulk-status", methods=["POST"])
+def api_songs_bulk_status():
+    """Establece el estado de revisión de varias canciones de golpe."""
+    data = request.get_json(silent=True) or {}
+    paths = data.get("paths", [])
+    status = data.get("status")  # "revisar" | "revisar_acordes" | None
+    if status not in ("revisar", "revisar_acordes", None):
+        abort(400, "status debe ser 'revisar', 'revisar_acordes' o null")
+    results = []
+    for path_str in paths:
+        try:
+            p = safe_relpath(path_str)
+            content = p.read_text(encoding="utf-8")
+            new_content = _apply_status_to_content(content, status)
+            if new_content != content:
+                backup_file(p)
+                p.write_text(new_content, encoding="utf-8")
+            results.append({"path": path_str, "ok": True})
+        except Exception as e:
+            results.append({"path": path_str, "ok": False, "error": str(e)})
+    return jsonify({"ok": True, "results": results})
+
+
 # ─────────── API: reordenar y build-json ─────────── #
 
 

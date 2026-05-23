@@ -78,11 +78,11 @@
         <div class="stat-val" x-text="data.stats.missing_from_repo"></div>
         <div class="stat-lbl">faltan en el repo</div>
       </div>
-      <div class="stat todo">
+      <div class="stat todo" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar'">
         <div class="stat-val" x-text="data.stats.todo_count"></div>
-        <div class="stat-lbl">con TO DO pendiente</div>
+        <div class="stat-lbl">📝 pendientes revisar canción</div>
       </div>
-      <div class="stat chord-review">
+      <div class="stat chord-review" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar_acordes'">
         <div class="stat-val" x-text="data.stats.chord_review_count"></div>
         <div class="stat-lbl">🎵 pendientes revisar acordes</div>
       </div>
@@ -93,8 +93,7 @@
     </div>
     <div class="actions-row">
       <button class="btn primary" @click="view = 'import'">📥 Importar del cantoral</button>
-      <button class="btn" @click="view = 'catalog'; todoFilter = true">📝 Ver pendientes de revisión</button>
-      <button class="btn" @click="view = 'catalog'; chordReviewFilter = true">🎵 Ver pendientes acordes</button>
+      <button class="btn" @click="view = 'catalog'; statusFilter = 'any'">📋 Ver todas las pendientes</button>
       <button class="btn" @click="openNewSongModal()">➕ Nueva canción a mano</button>
     </div>
 
@@ -121,41 +120,59 @@
 
     <div class="filter-bar">
       <input type="search" placeholder="Buscar título o autor…" x-model="search" />
-      <label><input type="checkbox" x-model="todoFilter" /> Solo TO DO</label>
-      <label><input type="checkbox" x-model="chordReviewFilter" /> 🎵 Revisar acordes</label>
-      <label><input type="checkbox" x-model="onlyInRepoFilter" /> Solo manuales (no en cantoral)</label>
-      <button @click="search = ''; todoFilter = false; chordReviewFilter = false; onlyInRepoFilter = false; categoryFilter = ''">Limpiar</button>
+      <select x-model="statusFilter" class="status-filter-select">
+        <option value="">Todas las canciones</option>
+        <option value="any">Con revisión pendiente</option>
+        <option value="revisar">📝 Pendiente revisar canción</option>
+        <option value="revisar_acordes">🎵 Pendiente revisar acordes</option>
+        <option value="none">✅ Sin revisión pendiente</option>
+      </select>
+      <label><input type="checkbox" x-model="onlyInRepoFilter" /> Solo manuales</label>
+      <button @click="search=''; statusFilter=''; onlyInRepoFilter=false; categoryFilter=''; clearCatalogSelect()">Limpiar</button>
       <span class="count" x-text="filteredRepoSongs().length + ' canciones'"></span>
+    </div>
+
+    <!-- Bulk action bar -->
+    <div class="bulk-bar" x-show="selectedCatalogPaths.size > 0" x-cloak>
+      <span class="bulk-count" x-text="selectedCatalogPaths.size + ' seleccionada(s)'"></span>
+      <button class="btn-mini" @click="bulkSetStatus('revisar')">📝 Marcar revisar canción</button>
+      <button class="btn-mini" @click="bulkSetStatus('revisar_acordes')">🎵 Marcar revisar acordes</button>
+      <button class="btn-mini" @click="bulkSetStatus(null)">✅ Quitar revisión</button>
+      <button class="btn-mini" @click="selectAllCatalog()">Seleccionar todas (<span x-text="filteredRepoSongs().length"></span>)</button>
+      <button class="btn-mini" @click="clearCatalogSelect()">✕ Deseleccionar</button>
     </div>
 
     <table class="songs">
       <thead>
         <tr>
-          <th></th>
-          <th>#</th>
+          <th style="width:28px"><input type="checkbox"
+            :checked="selectedCatalogPaths.size > 0 && filteredRepoSongs().every(r => selectedCatalogPaths.has(r.path))"
+            @change="$event.target.checked ? selectAllCatalog() : clearCatalogSelect()" /></th>
+          <th style="width:36px">#</th>
           <th>Título</th>
           <th>Autor</th>
-          <th>Tono</th>
-          <th>Capo</th>
-          <th>Categoría</th>
+          <th style="width:46px">Tono</th>
+          <th style="width:90px">Categoría</th>
+          <th style="width:130px">Estado revisión</th>
           <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
         <template x-for="r in filteredRepoSongs()" :key="r.path">
-          <tr>
+          <tr :class="{'selected-row': selectedCatalogPaths.has(r.path)}">
+            <td><input type="checkbox" :checked="selectedCatalogPaths.has(r.path)" @change="toggleCatalogSelect(r.path)" /></td>
+            <td style="color:var(--fg-3);font-size:11px" x-text="r.number"></td>
             <td>
-              <span class="badge ok" x-show="r.in_docx" title="También en el cantoral">✅</span>
-              <span class="badge info" x-show="!r.in_docx" title="Solo en repo (manual)">➕</span>
-              <span class="badge todo" x-show="r.has_todo" title="TO DO pendiente revisión">📝</span>
-              <span class="badge chord-review" x-show="r.has_chord_review" title="Pendiente revisar acordes">🎵</span>
+              <a href="#" @click.prevent="openEditor(r.path)" x-text="r.title"></a>
+              <span x-show="!r.in_docx" class="badge-manual" title="Solo en repo, no en cantoral">manual</span>
             </td>
-            <td x-text="r.number"></td>
-            <td><a href="#" @click.prevent="openEditor(r.path)" x-text="r.title"></a></td>
-            <td x-text="r.artist"></td>
-            <td x-text="r.key"></td>
-            <td x-text="r.capo || ''"></td>
-            <td x-text="r.category_letter + '. ' + r.category_folder.replace(/^[A-Z+\d]+\.\s*/, '')"></td>
+            <td style="color:var(--fg-2)" x-text="r.artist"></td>
+            <td style="font-family:monospace;font-size:12px" x-text="r.key"></td>
+            <td style="font-size:12px;color:var(--fg-3)" x-text="r.category_letter"></td>
+            <td>
+              <span class="status-pill status-revisar" x-show="r.has_todo">📝 Revisar</span>
+              <span class="status-pill status-acordes" x-show="r.has_chord_review">🎵 Acordes</span>
+            </td>
             <td>
               <button class="btn-mini" @click="openEditor(r.path)">Editar</button>
               <button class="btn-mini danger" @click="deleteSong(r)">Borrar</button>
@@ -361,13 +378,10 @@
       <div class="editor-header">
         <h2>
           <span x-text="editor.meta.title || editor.filename"></span>
-          <span class="badge todo" x-show="editor.meta.has_todo">📝 TO DO</span>
-          <span class="badge chord-review" x-show="editor.meta.has_chord_review">🎵 Revisar acordes</span>
+          <span class="status-pill status-revisar" x-show="editor.meta.has_todo">📝 Revisar canción</span>
+          <span class="status-pill status-acordes" x-show="editor.meta.has_chord_review">🎵 Revisar acordes</span>
         </h2>
         <div class="editor-actions">
-          <button x-show="editor.meta.has_todo" class="btn" @click="markReviewed()">✓ Revisada</button>
-          <button x-show="!editor.meta.has_chord_review" class="btn" @click="markChordReview()">🎵 Marcar revisar acordes</button>
-          <button x-show="editor.meta.has_chord_review" class="btn primary" @click="unmarkChordReview()">✓ Acordes revisados</button>
           <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
           <button class="btn" @click="closeEditor()">✕ Cerrar</button>
         </div>
@@ -393,6 +407,17 @@
           <input type="text" x-model="editor.meta.key" @input="updateMetaInRaw('key', $event.target.value)" />
           <label>Capo</label>
           <input type="number" min="0" x-model="editor.meta.capo" @input="updateMetaInRaw('capo', $event.target.value)" />
+          <div class="editor-status-selector">
+            <div class="chuleta-title" style="margin-bottom:6px">Estado de revisión</div>
+            <div class="status-seg">
+              <button class="status-seg-btn" :class="{active: editorStatus() === null}"
+                      @click="setEditorStatus(null)">✅ OK</button>
+              <button class="status-seg-btn status-seg-revisar" :class="{active: editorStatus() === 'revisar'}"
+                      @click="setEditorStatus(editorStatus() === 'revisar' ? null : 'revisar')">📝 Revisar</button>
+              <button class="status-seg-btn status-seg-acordes" :class="{active: editorStatus() === 'revisar_acordes'}"
+                      @click="setEditorStatus(editorStatus() === 'revisar_acordes' ? null : 'revisar_acordes')">🎵 Acordes</button>
+            </div>
+          </div>
           <div class="path-info">
             <small x-text="editor.path"></small>
           </div>
@@ -404,7 +429,7 @@
             <div class="chuleta-row"><span class="chuleta-key">📥 Pegar</span> aplica al destino</div>
             <div class="chuleta-row"><span class="chuleta-key">Ctrl+S</span> guardar</div>
             <div class="chuleta-row"><span class="chuleta-key">2×click acorde</span> editar texto</div>
-            <div class="chuleta-row"><span class="chuleta-key">drag acorde</span> mover · Shift=sílaba · Alt=libre</div>
+            <div class="chuleta-row"><span class="chuleta-key">drag acorde</span> sílaba · Shift=palabra · Alt=libre</div>
           </div>
         </div>
 
@@ -516,8 +541,8 @@
           <h3>Editor visual</h3>
           <table class="kbd-help">
             <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Durante el drag verás en azul la letra donde caerá y una etiqueta del modo (PALABRA/SÍLABA/LIBRE).</td></tr>
-            <tr><th>(sin modificador)</th><td>Snap al inicio de <strong>palabra</strong> más cercano.</td></tr>
-            <tr><th><kbd>Shift</kbd> al soltar</th><td>Snap a inicio de <strong>sílaba</strong> (silabeado español).</td></tr>
+            <tr><th>(sin modificador)</th><td>Snap al inicio de <strong>sílaba</strong> más cercano (silabeado español).</td></tr>
+            <tr><th><kbd>Shift</kbd> al soltar</th><td>Snap a inicio de <strong>palabra</strong>.</td></tr>
             <tr><th><kbd>Alt</kbd> al soltar</th><td>Sin snap — colocación libre carácter a carácter (pixel-perfect).</td></tr>
             <tr><th>Hover sobre línea</th><td>Muestra puntos grises (<code>·</code>) en los inicios de sílaba y barras azules en los inicios de palabra, para ver visualmente dónde puedes anclar.</td></tr>
             <tr><th>Doble-click acorde</th><td>Edita texto del acorde (vacío = borrar).</td></tr>

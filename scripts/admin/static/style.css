@@ -162,6 +162,8 @@ table.songs a { color: var(--accent); text-decoration: none; font-weight: 500; }
 table.songs a:hover { text-decoration: underline; }
 table.songs tr.has-warn td { background: #fffbeb; }
 .theme-dark table.songs tr.has-warn td { background: #422006; }
+table.songs tr.selected-row td { background: rgba(37,99,235,0.07); }
+.theme-dark table.songs tr.selected-row td { background: rgba(59,130,246,0.13); }
 
 /* Badges */
 .badge { font-size: 14px; margin-right: 2px; cursor: help; }
@@ -171,6 +173,28 @@ table.songs tr.has-warn td { background: #fffbeb; }
 .badge.chord-review { color: var(--info); }
 .stat.chord-review { border-left: 4px solid var(--info); }
 .warn-cell { font-size: 11px; color: var(--warn); }
+
+/* Status pills */
+.status-pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+.status-pill.status-revisar { background: rgba(234,88,12,0.12); color: var(--todo); border: 1px solid rgba(234,88,12,0.25); }
+.status-pill.status-acordes { background: rgba(8,145,178,0.1); color: var(--info); border: 1px solid rgba(8,145,178,0.25); }
+.badge-manual { font-size: 10px; background: var(--bg-3); color: var(--fg-3); border-radius: 3px; padding: 0 4px; margin-left: 5px; border: 1px solid var(--border-strong); }
+
+/* Bulk action bar */
+.bulk-bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.bulk-count { font-size: 13px; font-weight: 600; color: var(--accent); margin-right: 4px; }
+
+/* Status filter select */
+.status-filter-select { padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 4px; font-size: 13px; background: var(--bg-2); color: var(--fg); }
+
+/* Editor status segmented control */
+.editor-status-selector { margin: 16px 0 12px; padding: 12px; background: var(--bg-3); border-radius: 6px; border: 1px solid var(--border); }
+.status-seg { display: flex; gap: 4px; }
+.status-seg-btn { flex: 1; padding: 5px 4px; font-size: 11px; border: 1px solid var(--border-strong); border-radius: 4px; cursor: pointer; background: var(--bg-2); color: var(--fg-2); text-align: center; transition: all 0.15s; }
+.status-seg-btn:hover { background: var(--bg-3); color: var(--fg); }
+.status-seg-btn.active { background: var(--ok); color: white; border-color: var(--ok); font-weight: 600; }
+.status-seg-revisar.active { background: var(--todo); border-color: var(--todo); }
+.status-seg-acordes.active { background: var(--info); border-color: var(--info); }
 
 /* Import results */
 .import-results { margin-top: 20px; background: var(--bg-2); padding: 16px; border-radius: 6px; border: 1px solid var(--border); }
@@ -328,8 +352,8 @@ body.adding .ed-char:hover { background: rgba(37, 99, 235, 0.15); cursor: pointe
   background: var(--accent); color: white; font-size: 9px; padding: 1px 5px; border-radius: 8px;
   text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
 }
-.ed-chord.dragging[data-snap-mode="word"]::after { content: "palabra"; }
-.ed-chord.dragging[data-snap-mode="syl"]::after { content: "sílaba (shift)"; background: var(--info); }
+.ed-chord.dragging[data-snap-mode="syl"]::after { content: "sílaba"; }
+.ed-chord.dragging[data-snap-mode="word"]::after { content: "palabra (shift)"; background: var(--info); }
 .ed-chord.dragging[data-snap-mode="free"]::after { content: "libre (alt)"; background: var(--todo); }
 
 /* Indicador del snap target: la letra donde caerá el acorde */

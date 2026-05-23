@@ -15,9 +15,9 @@ function app() {
     // Catalog filters
     categoryFilter: '',
     search: '',
-    todoFilter: false,
-    chordReviewFilter: false,
+    statusFilter: '',       // '' | 'revisar' | 'revisar_acordes' | 'any' | 'none'
     onlyInRepoFilter: false,
+    selectedCatalogPaths: new Set(),
 
     // Import view
     importSearch: '',
@@ -107,8 +107,10 @@ function app() {
       if (!this.data) return [];
       let list = this.data.repo_songs;
       if (this.categoryFilter) list = list.filter(r => r.category_letter === this.categoryFilter);
-      if (this.todoFilter) list = list.filter(r => r.has_todo);
-      if (this.chordReviewFilter) list = list.filter(r => r.has_chord_review);
+      if (this.statusFilter === 'revisar')         list = list.filter(r => r.has_todo);
+      else if (this.statusFilter === 'revisar_acordes') list = list.filter(r => r.has_chord_review);
+      else if (this.statusFilter === 'any')         list = list.filter(r => r.has_todo || r.has_chord_review);
+      else if (this.statusFilter === 'none')        list = list.filter(r => !r.has_todo && !r.has_chord_review);
       if (this.onlyInRepoFilter) list = list.filter(r => !r.in_docx);
       if (this.search) {
         const q = this.normalizeSearch(this.search);
@@ -415,11 +417,11 @@ function app() {
           });
           const ln = self.editor.parsed[dragState.lineIdx];
           if (eventLikeEv.altKey) {
-            return bestIdx;  // sin snap
+            return bestIdx;  // sin snap — libre
           } else if (eventLikeEv.shiftKey) {
-            return snapToSyllable(bestIdx, ln.lyric);
+            return snapToWordStart(bestIdx, ln.lyric);  // shift → palabra
           } else {
-            return snapToWordStart(bestIdx, ln.lyric);
+            return snapToSyllable(bestIdx, ln.lyric);   // por defecto → sílaba
           }
         }
 
@@ -434,7 +436,7 @@ function app() {
             const snapIdx = computeSnapIdx(e);
             self.highlightSnapTarget(dragState.lineIdx, snapIdx);
             // Etiqueta del modo activo
-            el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'syl' : 'word');
+            el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'word' : 'syl');
           }
         }
         function onUp(e) {
@@ -811,37 +813,66 @@ function app() {
         alert('Error: ' + e.message);
       }
     },
-    markReviewed() {
-      // Remove the TO DO comment line
-      const lines = this.editor.content.split('\n');
-      const filtered = lines.filter(ln => !/\{\s*comment\s*:[^}]*\bTO\s+DO\b[^}]*\}/i.test(ln));
-      if (filtered.length !== lines.length) {
-        this.editor.content = filtered.join('\n');
-        this.editor.dirty = true;
-        this.editor.meta.has_todo = false;
-      }
+    // ─────────── Estado de revisión (editor individual) ───────────
+    editorStatus() {
+      if (this.editor.meta.has_todo) return 'revisar';
+      if (this.editor.meta.has_chord_review) return 'revisar_acordes';
+      return null;
     },
-    markChordReview() {
-      if (this.editor.meta.has_chord_review) return;
-      const lines = this.editor.content.split('\n');
-      // Insertar después del primer bloque de metadatos
-      let insertAt = 0;
-      for (let i = 0; i < lines.length; i++) {
-        if (/^\{(title|comment|artist|author|key|capo)/i.test(lines[i])) insertAt = i + 1;
-        else if (lines[i].trim() === '' && insertAt > 0) break;
+    setEditorStatus(status) {
+      // Quita ambos markers y añade el que corresponde
+      let lines = this.editor.content.split('\n');
+      lines = lines.filter(ln =>
+        !/\{\s*comment\s*:[^}]*\bTO\s+DO\b[^}]*\}/i.test(ln) &&
+        !/\{\s*comment\s*:[^}]*♩\s*REVISAR\s*ACORDES[^}]*\}/i.test(ln)
+      );
+      if (status === 'revisar' || status === 'revisar_acordes') {
+        const marker = status === 'revisar'
+          ? '{comment: TO DO: PENDIENTE REVISIÓN ACORDES}'
+          : '{comment: ♩ REVISAR ACORDES}';
+        let insertAt = 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (/^\{(title|comment|artist|author|key|capo)/i.test(lines[i])) insertAt = i + 1;
+          else if (lines[i].trim() === '' && insertAt > 0) break;
+        }
+        lines.splice(insertAt, 0, marker);
       }
-      lines.splice(insertAt, 0, '{comment: ♩ REVISAR ACORDES}');
       this.editor.content = lines.join('\n');
       this.editor.dirty = true;
-      this.editor.meta.has_chord_review = true;
+      this.editor.meta.has_todo = status === 'revisar';
+      this.editor.meta.has_chord_review = status === 'revisar_acordes';
     },
-    unmarkChordReview() {
-      const lines = this.editor.content.split('\n');
-      const filtered = lines.filter(ln => !/\{\s*comment\s*:[^}]*♩\s*REVISAR\s*ACORDES[^}]*\}/i.test(ln));
-      if (filtered.length !== lines.length) {
-        this.editor.content = filtered.join('\n');
-        this.editor.dirty = true;
-        this.editor.meta.has_chord_review = false;
+
+    // ─────────── Selección bulk en catálogo ───────────
+    toggleCatalogSelect(path) {
+      if (this.selectedCatalogPaths.has(path)) this.selectedCatalogPaths.delete(path);
+      else this.selectedCatalogPaths.add(path);
+      this.selectedCatalogPaths = new Set(this.selectedCatalogPaths);
+    },
+    selectAllCatalog() {
+      this.selectedCatalogPaths = new Set(this.filteredRepoSongs().map(r => r.path));
+    },
+    clearCatalogSelect() {
+      this.selectedCatalogPaths = new Set();
+    },
+    async bulkSetStatus(status) {
+      const n = this.selectedCatalogPaths.size;
+      if (n === 0) return;
+      const label = status === 'revisar' ? 'Revisar canción'
+                  : status === 'revisar_acordes' ? 'Revisar acordes'
+                  : 'Sin revisión pendiente';
+      if (!confirm(`¿Marcar ${n} canción(es) como "${label}"?`)) return;
+      try {
+        const r = await fetch('/api/songs/bulk-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths: [...this.selectedCatalogPaths], status: status || null }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.selectedCatalogPaths = new Set();
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error: ' + e.message);
       }
     },
 
