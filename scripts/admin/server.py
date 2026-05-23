@@ -194,6 +194,7 @@ def list_repo_songs(category_letter: Optional[str] = None) -> List[dict]:
                 "key": meta.get("key", ""),
                 "capo": meta.get("capo", 0),
                 "has_todo": meta.get("has_todo", False),
+                "has_chord_review": meta.get("has_chord_review", False),
                 "error": meta_err,
             })
     return out
