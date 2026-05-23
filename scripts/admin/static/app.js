@@ -417,11 +417,11 @@ function app() {
           });
           const ln = self.editor.parsed[dragState.lineIdx];
           if (eventLikeEv.altKey) {
-            return bestIdx;  // sin snap
+            return bestIdx;  // sin snap — libre
           } else if (eventLikeEv.shiftKey) {
-            return snapToSyllable(bestIdx, ln.lyric);
+            return snapToWordStart(bestIdx, ln.lyric);  // shift → palabra
           } else {
-            return snapToWordStart(bestIdx, ln.lyric);
+            return snapToSyllable(bestIdx, ln.lyric);   // por defecto → sílaba
           }
         }
 
@@ -436,7 +436,7 @@ function app() {
             const snapIdx = computeSnapIdx(e);
             self.highlightSnapTarget(dragState.lineIdx, snapIdx);
             // Etiqueta del modo activo
-            el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'syl' : 'word');
+            el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'word' : 'syl');
           }
         }
         function onUp(e) {

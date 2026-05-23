@@ -352,8 +352,8 @@ body.adding .ed-char:hover { background: rgba(37, 99, 235, 0.15); cursor: pointe
   background: var(--accent); color: white; font-size: 9px; padding: 1px 5px; border-radius: 8px;
   text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
 }
-.ed-chord.dragging[data-snap-mode="word"]::after { content: "palabra"; }
-.ed-chord.dragging[data-snap-mode="syl"]::after { content: "sílaba (shift)"; background: var(--info); }
+.ed-chord.dragging[data-snap-mode="syl"]::after { content: "sílaba"; }
+.ed-chord.dragging[data-snap-mode="word"]::after { content: "palabra (shift)"; background: var(--info); }
 .ed-chord.dragging[data-snap-mode="free"]::after { content: "libre (alt)"; background: var(--todo); }
 
 /* Indicador del snap target: la letra donde caerá el acorde */
