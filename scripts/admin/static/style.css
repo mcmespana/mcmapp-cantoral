@@ -284,7 +284,7 @@ table.songs tr.selected-row td { background: rgba(37,99,235,0.07); }
   user-select: text;
 }
 .visual-doc:focus { box-shadow: 0 0 0 2px var(--accent); }
-.ed-line { margin: 0; }
+.ed-line { margin: 0; position: relative; }
 .ed-line.ed-blank { height: 14px; }
 .ed-line.ed-directive .ed-meta-line,
 .ed-line.ed-comment .ed-meta-line {
