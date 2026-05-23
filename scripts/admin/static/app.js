@@ -55,6 +55,9 @@ function app() {
     saveIndicator: { text: 'Sin cambios', cls: 'saved' },
     lastSaveAt: null,
 
+    // Backups
+    backups: { sessions: [], total_size_bytes: 0, loading: false, keepLast: 5 },
+
     // ─────────── Lifecycle ───────────
     async boot() {
       this.$watch('editor.dirty', (v) => {
@@ -805,6 +808,69 @@ function app() {
         this.editor.dirty = true;
         this.editor.meta.has_chord_review = false;
       }
+    },
+
+    // ─────────── Backups ───────────
+    async loadBackups() {
+      this.backups.loading = true;
+      try {
+        const r = await fetch('/api/backups');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        this.backups.sessions = d.sessions;
+        this.backups.total_size_bytes = d.total_size_bytes;
+      } catch (e) {
+        alert('Error cargando backups: ' + e.message);
+      } finally {
+        this.backups.loading = false;
+      }
+    },
+    async deleteBackupSession(id) {
+      if (!confirm(`¿Borrar la sesión de backup ${id}? Esta acción no se puede deshacer.`)) return;
+      try {
+        const r = await fetch('/api/backups/' + id, { method: 'DELETE' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await this.loadBackups();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    },
+    async cleanupBackups() {
+      const keep = parseInt(this.backups.keepLast);
+      const toDelete = Math.max(0, this.backups.sessions.length - keep);
+      if (toDelete === 0) return;
+      if (!confirm(`¿Borrar ${toDelete} sesión(es) antigua(s) y conservar las ${keep} más recientes?`)) return;
+      try {
+        const r = await fetch('/api/backups/cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keep_last: keep }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await this.loadBackups();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    },
+    async deleteAllBackups() {
+      if (this.backups.sessions.length === 0) return;
+      if (!confirm(`¿Borrar TODOS los ${this.backups.sessions.length} backups? Esta acción no se puede deshacer.`)) return;
+      try {
+        const r = await fetch('/api/backups/cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keep_last: 0 }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await this.loadBackups();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    },
+    formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     },
 
     // ─────────── Nueva canción ───────────

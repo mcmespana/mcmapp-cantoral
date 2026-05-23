@@ -26,6 +26,7 @@
     <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
     <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
+    <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
   </nav>
 
   <div class="sidebar-section" x-show="data">
@@ -258,6 +259,69 @@
         </li>
       </template>
     </ul>
+  </section>
+
+  <!-- BACKUPS -->
+  <section x-show="view === 'backups'" x-cloak>
+    <h1>🗂 Gestión de backups</h1>
+    <p class="muted">Cada vez que guardas o borras una canción se crea una copia en
+       <code>songs-backup-edits/</code>. Aquí puedes limpiarlos manualmente cuando ya no los necesites.</p>
+
+    <div class="filter-bar" style="justify-content: flex-start;">
+      <button class="btn" @click="loadBackups()" :disabled="backups.loading">🔄 Actualizar</button>
+      <span class="muted" style="font-size:12px" x-show="backups.sessions.length > 0"
+            x-text="backups.sessions.length + ' sesiones · ' + formatBytes(backups.total_size_bytes)"></span>
+      <span class="muted" style="font-size:12px" x-show="backups.sessions.length === 0 && !backups.loading">Sin backups almacenados</span>
+
+      <template x-if="backups.sessions.length > 0">
+        <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
+          <span style="font-size:13px">Conservar las</span>
+          <select x-model="backups.keepLast" style="padding:4px 8px;border:1px solid var(--border-strong);border-radius:4px;font-size:13px;background:var(--bg-2);color:var(--fg);">
+            <option value="1">1</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="10">10</option>
+          </select>
+          <span style="font-size:13px">más recientes y borrar el resto</span>
+          <button class="btn" @click="cleanupBackups()"
+                  x-text="'Limpiar (' + Math.max(0, backups.sessions.length - backups.keepLast) + ' a borrar)'"
+                  :disabled="backups.sessions.length <= backups.keepLast"></button>
+          <button class="btn danger" @click="deleteAllBackups()">Borrar todos</button>
+        </div>
+      </template>
+    </div>
+
+    <div x-show="backups.loading" class="muted" style="padding:20px">Cargando…</div>
+
+    <template x-if="!backups.loading && backups.sessions.length > 0">
+      <table class="songs">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Archivos</th>
+            <th>Tamaño</th>
+            <th>Contenido</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="s in backups.sessions" :key="s.id">
+            <tr>
+              <td style="white-space:nowrap" x-text="s.display"></td>
+              <td x-text="s.file_count"></td>
+              <td style="white-space:nowrap" x-text="formatBytes(s.size_bytes)"></td>
+              <td>
+                <span class="muted" style="font-size:11px;font-family:monospace"
+                      x-text="s.files.join(' · ')"></span>
+              </td>
+              <td>
+                <button class="btn-mini danger" @click="deleteBackupSession(s.id)">Borrar</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </template>
   </section>
 
   <!-- EDITOR MODAL -->

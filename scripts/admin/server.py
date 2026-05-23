@@ -584,6 +584,70 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+# ─────────── API: Backups ─────────── #
+
+def _list_backup_sessions() -> list:
+    """Devuelve lista de sesiones de backup ordenadas de más reciente a más antigua."""
+    if not BACKUP_DIR.exists():
+        return []
+    sessions = []
+    for session_dir in sorted(BACKUP_DIR.iterdir(), reverse=True):
+        if not session_dir.is_dir():
+            continue
+        files = [str(f.relative_to(session_dir)) for f in session_dir.rglob("*") if f.is_file()]
+        size = sum(f.stat().st_size for f in session_dir.rglob("*") if f.is_file())
+        # Parsear timestamp del nombre: YYYYMMDD-HHMMSS
+        ts = session_dir.name
+        try:
+            dt = datetime.strptime(ts, "%Y%m%d-%H%M%S")
+            ts_display = dt.strftime("%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            ts_display = ts
+        sessions.append({
+            "id": ts,
+            "display": ts_display,
+            "file_count": len(files),
+            "files": sorted(files),
+            "size_bytes": size,
+        })
+    return sessions
+
+
+@app.route("/api/backups")
+def api_backups_list():
+    sessions = _list_backup_sessions()
+    total = sum(s["size_bytes"] for s in sessions)
+    return jsonify({"sessions": sessions, "total_size_bytes": total})
+
+
+@app.route("/api/backups/<session_id>", methods=["DELETE"])
+def api_backup_delete(session_id: str):
+    # Validar que el ID solo tenga caracteres seguros
+    if not re.match(r"^\d{8}-\d{6}$", session_id):
+        abort(400, "ID de sesión no válido")
+    target = BACKUP_DIR / session_id
+    if not target.exists() or not target.is_dir():
+        abort(404, "Sesión no encontrada")
+    shutil.rmtree(target)
+    return jsonify({"ok": True, "deleted": session_id})
+
+
+@app.route("/api/backups/cleanup", methods=["POST"])
+def api_backups_cleanup():
+    """Elimina sesiones antiguas, conservando las N más recientes."""
+    data = request.get_json(silent=True) or {}
+    keep = int(data.get("keep_last", 5))
+    sessions = _list_backup_sessions()  # ya vienen de más reciente a más antigua
+    to_delete = sessions[keep:]
+    deleted = []
+    for s in to_delete:
+        target = BACKUP_DIR / s["id"]
+        if target.exists():
+            shutil.rmtree(target)
+            deleted.append(s["id"])
+    return jsonify({"ok": True, "deleted": deleted, "kept": min(keep, len(sessions))})
+
+
 @app.route("/api/health")
 def api_health():
     try:
