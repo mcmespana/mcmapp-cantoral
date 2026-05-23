@@ -167,7 +167,7 @@
   </section>
 
   <!-- IMPORTAR -->
-  <section x-show="view === 'import' && data" x-cloak>
+  <section x-show="view === 'import' && data" x-cloak x-init="loadIgnored()">
     <h1>📥 Importar del cantoral</h1>
     <p class="muted">
       Canciones del Word que <strong>aún no existen</strong> en <code>/songs/</code>.
@@ -207,7 +207,10 @@
             <td x-text="m.key"></td>
             <td x-text="m.capo || ''"></td>
             <td class="warn-cell" x-text="m.warnings.join('; ')"></td>
-            <td><button class="btn-mini" @click="previewDocx(m.docx_id)">👁 Ver</button></td>
+            <td style="white-space:nowrap">
+              <button class="btn-mini" @click="previewDocx(m.docx_id)">👁 Ver</button>
+              <button class="btn-mini btn-archive" @click="archiveSong(m.docx_id, m.title)" title="Archivar — no mostrar nunca para importar">🚫 Archivar</button>
+            </td>
           </tr>
         </template>
       </tbody>
@@ -225,6 +228,34 @@
           </li>
         </template>
       </ul>
+    </div>
+
+    <!-- Archivadas -->
+    <div class="ignored-section" x-show="importIgnored.length > 0">
+      <button class="ignored-toggle" @click="showIgnored = !showIgnored">
+        <span x-text="showIgnored ? '▾' : '▸'"></span>
+        🚫 Archivadas (nunca importar) —
+        <span x-text="importIgnored.length + ' canción' + (importIgnored.length !== 1 ? 'es' : '')"></span>
+      </button>
+      <div x-show="showIgnored" x-cloak>
+        <table class="songs" style="margin-top:8px">
+          <thead>
+            <tr><th>Sección</th><th>Título</th><th>Archivada</th><th></th></tr>
+          </thead>
+          <tbody>
+            <template x-for="ig in importIgnored" :key="ig.title_raw">
+              <tr>
+                <td x-text="ig.section_letter"></td>
+                <td x-text="ig.title"></td>
+                <td style="font-size:11px;color:var(--fg-3)" x-text="ig.archived_at ? ig.archived_at.slice(0,10) : ''"></td>
+                <td>
+                  <button class="btn-mini" @click="restoreSong(ig.title_raw, ig.title)">↩ Restaurar</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 

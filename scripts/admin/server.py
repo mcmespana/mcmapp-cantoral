@@ -41,6 +41,7 @@ REPO_DIR = SCRIPTS_DIR.parent
 SONGS_DIR = REPO_DIR / "songs"
 BACKUP_DIR = REPO_DIR / "songs-backup-edits"
 INDICE_JSON = SONGS_DIR / "indice.json"
+IGNORED_FILE = SCRIPT_DIR / "import-ignored.json"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import docx2chordpro as d2c  # noqa: E402
@@ -252,6 +253,66 @@ def render_cho_with_todo(conv: dict) -> str:
     return "\n".join(header_lines) + "\n\n" + conv["body"] + "\n"
 
 
+# ─────────── Ignorados (nunca importar) ─────────── #
+
+def load_ignored() -> dict:
+    """Devuelve {title_raw: {title, section, archived_at}} de las canciones archivadas."""
+    if not IGNORED_FILE.exists():
+        return {}
+    try:
+        return json.loads(IGNORED_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_ignored(ignored: dict) -> None:
+    IGNORED_FILE.write_text(
+        json.dumps(ignored, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+@app.route("/api/docx/ignore", methods=["POST"])
+def api_docx_ignore():
+    """Archiva una canción del docx (nunca mostrar para importar)."""
+    data = request.get_json(silent=True) or {}
+    docx_id = data.get("docx_id")
+    if docx_id is None:
+        abort(400, "Falta docx_id")
+    songs = load_docx_songs()
+    song = next((s for s in songs if s["id"] == int(docx_id)), None)
+    if not song:
+        abort(404, "Canción no encontrada en el docx")
+    conv = d2c.convert_song(song["_song"])
+    ignored = load_ignored()
+    ignored[song["title_raw"]] = {
+        "title": conv["title"],
+        "section": song["section"],
+        "section_letter": song["section_letter"],
+        "archived_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    save_ignored(ignored)
+    return jsonify({"ok": True, "title_raw": song["title_raw"]})
+
+
+@app.route("/api/docx/ignore/<path:title_raw>", methods=["DELETE"])
+def api_docx_ignore_delete(title_raw: str):
+    """Restaura una canción archivada (vuelve a aparecer en la lista de importar)."""
+    ignored = load_ignored()
+    if title_raw not in ignored:
+        abort(404, "No estaba archivada")
+    del ignored[title_raw]
+    save_ignored(ignored)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/docx/ignored")
+def api_docx_ignored_list():
+    ignored = load_ignored()
+    items = [{"title_raw": k, **v} for k, v in ignored.items()]
+    items.sort(key=lambda x: x.get("section_letter", "") + x.get("title", ""))
+    return jsonify({"ignored": items})
+
+
 # ─────────── Backup ─────────── #
 
 
@@ -299,10 +360,13 @@ def api_catalog():
             r["in_docx"] = False
             r["docx_id"] = None
 
-    # Canciones del docx que NO están en repo
+    # Canciones del docx que NO están en repo (excluidas las archivadas)
+    ignored = load_ignored()
     missing = []
     for s in docx_songs:
         if s["id"] in matched_docx_ids:
+            continue
+        if s["title_raw"] in ignored:
             continue
         conv = docx_convs[s["id"]]
         missing.append({

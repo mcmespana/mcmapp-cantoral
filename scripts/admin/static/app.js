@@ -26,6 +26,8 @@ function app() {
     importing: false,
     importResults: [],
     docxPreview: null,
+    importIgnored: [],
+    showIgnored: false,
 
     // Reorder
     reorderCategory: '',
@@ -171,6 +173,39 @@ function app() {
         this.docxPreview.id = id;
       } catch (e) {
         alert('No pude generar el preview: ' + e.message);
+      }
+    },
+    async loadIgnored() {
+      try {
+        const r = await fetch('/api/docx/ignored');
+        const d = await r.json();
+        this.importIgnored = d.ignored || [];
+      } catch (_) {
+        this.importIgnored = [];
+      }
+    },
+    async archiveSong(docx_id, title) {
+      if (!confirm(`¿Archivar "${title}"?\nDesaparecerá de la lista de importar. Podrás restaurarla desde la sección "Archivadas".`)) return;
+      try {
+        const r = await fetch('/api/docx/ignore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ docx_id }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await Promise.all([this.loadCatalog(), this.loadIgnored()]);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    },
+    async restoreSong(title_raw, title) {
+      if (!confirm(`¿Restaurar "${title}"?\nVolverá a aparecer en la lista de importar.`)) return;
+      try {
+        const r = await fetch('/api/docx/ignore/' + encodeURIComponent(title_raw), { method: 'DELETE' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await Promise.all([this.loadCatalog(), this.loadIgnored()]);
+      } catch (e) {
+        alert('Error: ' + e.message);
       }
     },
 

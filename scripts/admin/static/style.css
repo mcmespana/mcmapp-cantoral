@@ -136,7 +136,14 @@ code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size:
 .btn.danger { background: var(--danger); color: white; border-color: var(--danger); }
 .btn-mini { font-size: 12px; padding: 3px 8px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; color: var(--fg); margin-right: 4px; }
 .btn-mini.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+.btn-mini.btn-archive { background: transparent; border-color: var(--fg-3); color: var(--fg-3); }
+.btn-mini.btn-archive:hover { background: var(--danger); color: white; border-color: var(--danger); }
 .btn-mini:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+/* Sección archivadas en importar */
+.ignored-section { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 16px; }
+.ignored-toggle { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--fg-2); padding: 4px 0; display: flex; align-items: center; gap: 6px; }
+.ignored-toggle:hover { color: var(--fg); }
 
 /* Filter bar */
 .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 16px 0; padding: 12px; background: var(--bg-2); border-radius: 6px; border: 1px solid var(--border); }
