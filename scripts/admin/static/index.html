@@ -26,6 +26,7 @@
     <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
     <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
     <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
+    <a :class="{active: view === 'doce'}" @click.prevent="view = 'doce'; loadDoce()" href="#">🎸 Importar de doceacordes</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
     <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
   </nav>
@@ -66,34 +67,81 @@
   <!-- DASHBOARD -->
   <section x-show="view === 'dashboard' && data" x-cloak>
     <h1>📊 Dashboard</h1>
-    <div class="stats-grid">
-      <div class="stat">
-        <div class="stat-val" x-text="data.stats.repo_total"></div>
-        <div class="stat-lbl">canciones en el repo</div>
+
+    <div class="stats-group">
+      <h3 class="stats-group-title">📚 Catálogo</h3>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-val" x-text="data.stats.repo_total"></div>
+          <div class="stat-lbl">canciones en el repo</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" x-text="data.stats.docx_total"></div>
+          <div class="stat-lbl">canciones en el cantoral</div>
+        </div>
+        <div class="stat info">
+          <div class="stat-val" x-text="data.stats.only_in_repo"></div>
+          <div class="stat-lbl">solo en repo (manuales)</div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-val" x-text="data.stats.docx_total"></div>
-        <div class="stat-lbl">canciones en el cantoral</div>
+    </div>
+
+    <div class="stats-group">
+      <h3 class="stats-group-title">📝 Pendiente de revisión</h3>
+      <div class="stats-grid">
+        <div class="stat warn">
+          <div class="stat-val" x-text="data.stats.missing_from_repo"></div>
+          <div class="stat-lbl">faltan en el repo</div>
+        </div>
+        <div class="stat todo" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar'">
+          <div class="stat-val" x-text="data.stats.todo_count"></div>
+          <div class="stat-lbl">📝 revisar canción</div>
+        </div>
+        <div class="stat chord-review" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar_acordes'">
+          <div class="stat-val" x-text="data.stats.chord_review_count"></div>
+          <div class="stat-lbl">🎵 revisar acordes</div>
+        </div>
       </div>
-      <div class="stat warn">
-        <div class="stat-val" x-text="data.stats.missing_from_repo"></div>
-        <div class="stat-lbl">faltan en el repo</div>
+    </div>
+
+    <div class="stats-group">
+      <h3 class="stats-group-title">📥 Fuentes de importación</h3>
+      <div class="stats-grid">
+        <div class="stat" style="background: rgba(139, 92, 246, 0.10); cursor: pointer" @click="view = 'latex'; loadLatex()">
+          <div class="stat-val" x-text="(data.stats.latex_new || 0) + '/' + (data.stats.latex_total || 0)"></div>
+          <div class="stat-lbl">📐 nuevas / total en LaTeX</div>
+        </div>
+        <div class="stat" style="background: rgba(234, 88, 12, 0.10); cursor: pointer"
+             @click="view = 'doce'; loadDoce()">
+          <div class="stat-val" x-text="'1.6k+'"></div>
+          <div class="stat-lbl">🎸 disponibles en doceacordes.es</div>
+        </div>
       </div>
-      <div class="stat todo" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar'">
-        <div class="stat-val" x-text="data.stats.todo_count"></div>
-        <div class="stat-lbl">📝 pendientes revisar canción</div>
-      </div>
-      <div class="stat chord-review" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar_acordes'">
-        <div class="stat-val" x-text="data.stats.chord_review_count"></div>
-        <div class="stat-lbl">🎵 pendientes revisar acordes</div>
-      </div>
-      <div class="stat info">
-        <div class="stat-val" x-text="data.stats.only_in_repo"></div>
-        <div class="stat-lbl">solo en repo (manuales)</div>
-      </div>
-      <div class="stat" style="background: rgba(139, 92, 246, 0.10); cursor: pointer" @click="view = 'latex'; loadLatex()">
-        <div class="stat-val" x-text="(data.stats.latex_new || 0) + '/' + (data.stats.latex_total || 0)"></div>
-        <div class="stat-lbl">📐 nuevas / total en LaTeX</div>
+    </div>
+
+    <div class="stats-group">
+      <h3 class="stats-group-title">🎬 Multimedia</h3>
+      <div class="stats-grid">
+        <div class="stat" style="background: rgba(14, 165, 233, 0.10); cursor: pointer"
+             @click="view='catalog'; mediaFilter='any_media'; categoryFilter=''"
+             title="Canciones con vídeo, YouTube o audio">
+          <div class="stat-val">
+            <span x-text="(data.stats.with_youtube || 0)"></span><span class="muted" style="font-size:13px"> / </span><span class="muted" style="font-size:13px" x-text="(data.stats.with_audio || 0)"></span>
+          </div>
+          <div class="stat-lbl">📺 con YouTube · 🎧 con Audio</div>
+        </div>
+        <div class="stat" style="background: rgba(239, 68, 68, 0.10); cursor: pointer"
+             @click="view='catalog'; mediaFilter='no_youtube'; categoryFilter=''"
+             title="Canciones sin link de YouTube ni vídeo">
+          <div class="stat-val" x-text="data.stats.without_youtube || 0"></div>
+          <div class="stat-lbl">📺 sin YouTube/Vídeo</div>
+        </div>
+        <div class="stat" style="background: rgba(20, 184, 166, 0.10); cursor: pointer"
+             @click="view='catalog'; mediaFilter='no_audio'; categoryFilter=''"
+             title="Canciones sin audio interno">
+          <div class="stat-val" x-text="data.stats.without_audio || 0"></div>
+          <div class="stat-lbl">🎧 sin Audio</div>
+        </div>
       </div>
     </div>
     <div class="actions-row">
@@ -132,8 +180,15 @@
         <option value="revisar_acordes">🎵 Pendiente revisar acordes</option>
         <option value="none">✅ Sin revisión pendiente</option>
       </select>
+      <select x-model="mediaFilter" class="status-filter-select" title="Filtrar por multimedia">
+        <option value="">📺🎧 Cualquier multimedia</option>
+        <option value="no_youtube">📺 Sin YouTube/Vídeo</option>
+        <option value="no_audio">🎧 Sin audio</option>
+        <option value="no_media">∅ Sin nada multimedia</option>
+        <option value="any_media">★ Con algo multimedia</option>
+      </select>
       <label><input type="checkbox" x-model="onlyInRepoFilter" /> Solo manuales</label>
-      <button @click="search=''; statusFilter=''; onlyInRepoFilter=false; categoryFilter=''; clearCatalogSelect()">Limpiar</button>
+      <button @click="search=''; statusFilter=''; mediaFilter=''; onlyInRepoFilter=false; categoryFilter=''; clearCatalogSelect()">Limpiar</button>
       <span class="count" x-text="filteredRepoSongs().length + ' canciones'"></span>
     </div>
 
@@ -158,6 +213,7 @@
           <th>Autor</th>
           <th style="width:46px">Tono</th>
           <th style="width:90px">Categoría</th>
+          <th style="width:80px" title="Multimedia">🎬</th>
           <th style="width:130px">Estado revisión</th>
           <th>Acciones</th>
         </tr>
@@ -174,6 +230,22 @@
             <td style="color:var(--fg-2)" x-text="r.artist"></td>
             <td style="font-family:monospace;font-size:12px" x-text="r.key"></td>
             <td style="font-size:12px;color:var(--fg-3)" x-text="r.category_letter"></td>
+            <td class="media-cell">
+              <button class="media-icon" :class="{ active: r.has_video || r.youtube_count > 0 }"
+                      :title="mediaYoutubeTooltip(r)"
+                      @click.stop="openQuickAddLink(r, 'youtube')">
+                <span x-text="(r.youtube_count > 0 || r.has_video) ? '📺' : '➕📺'"></span>
+                <span x-show="r.youtube_count + (r.has_video ? 1 : 0) > 0"
+                      class="media-count"
+                      x-text="r.youtube_count + (r.has_video ? 1 : 0)"></span>
+              </button>
+              <button class="media-icon" :class="{ active: r.audio_count > 0 }"
+                      :title="mediaAudioTooltip(r)"
+                      @click.stop="openQuickAddLink(r, 'audio')">
+                <span x-text="r.audio_count > 0 ? '🎧' : '➕🎧'"></span>
+                <span x-show="r.audio_count > 0" class="media-count" x-text="r.audio_count"></span>
+              </button>
+            </td>
             <td>
               <span class="status-pill status-revisar" x-show="r.has_todo">📝 Revisar</span>
               <span class="status-pill status-acordes" x-show="r.has_chord_review">🎵 Acordes</span>
@@ -218,7 +290,7 @@
       </thead>
       <tbody>
         <template x-for="m in filteredMissing()" :key="m.docx_id">
-          <tr :class="{ 'has-warn': m.warnings.length > 0, 'has-latex': m.latex_available }">
+          <tr :class="{ 'has-warn': m.warnings.length > 0, 'has-latex': m.latex_available, 'has-doce': m.doce_available }">
             <td>
               <input type="checkbox"
                      :checked="selectedImports.has(m.docx_id)"
@@ -227,10 +299,50 @@
             <td x-text="m.section_letter"></td>
             <td>
               <a href="#" @click.prevent="previewDocx(m.docx_id)" x-text="m.title"></a>
-              <span x-show="m.latex_available"
+              <template x-if="m.doce_available">
+                <span class="badge-doce-wrap">
+                  <span class="badge-doce"
+                        :title="m.doce_candidates.length === 1
+                                  ? 'Importar desde doceacordes.es (recomendado)'
+                                  : 'Hay ' + m.doce_candidates.length + ' candidatos — click para elegir'"
+                        @click.stop="onDoceBadgeClick(m, $event)">🎸 en doceacordes
+                    <span x-show="m.doce_candidates.length > 1"
+                          x-text="'(' + m.doce_candidates.length + ')'"></span>
+                  </span>
+                  <!-- Popover candidatos -->
+                  <div class="doce-popover"
+                       x-show="doceCandidatesPopover && doceCandidatesPopover.missingId === m.docx_id"
+                       @click.outside="doceCandidatesPopover = null"
+                       x-cloak>
+                    <div class="doce-popover-head">
+                      🎸 Elige qué canción de doceacordes:
+                      <button class="link-mini" @click.stop="doceCandidatesPopover = null">✕</button>
+                    </div>
+                    <template x-for="(c, i) in m.doce_candidates" :key="c.id">
+                      <div class="doce-cand"
+                           @click.stop="pickDoceCandidate(m, c)">
+                        <div class="doce-cand-main">
+                          <span class="doce-cand-num">#<span x-text="c.id"></span></span>
+                          <span class="doce-cand-title" x-text="c.title"></span>
+                          <span class="doce-cand-score" x-text="Math.round(c._score) + '%'"></span>
+                        </div>
+                        <div class="doce-cand-sub">
+                          <span x-text="c.artist || '(sin autor)'"></span>
+                          <span x-show="c.subtitle" x-text="'· ' + c.subtitle"></span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </span>
+              </template>
+              <span x-show="m.latex_available && !m.doce_available"
                     class="badge-latex"
                     title="Esta canción también está en LaTeX — se recomienda importarla desde LaTeX (mejor calidad)"
                     @click.stop="view = 'latex'; loadLatex().then(() => filterLatexById(m.latex_id))">📐 también en LaTeX</span>
+              <span x-show="m.latex_available && m.doce_available"
+                    class="badge-latex-mini"
+                    title="También en LaTeX"
+                    @click.stop="view = 'latex'; loadLatex().then(() => filterLatexById(m.latex_id))">📐 LaTeX</span>
             </td>
             <td x-text="m.key"></td>
             <td x-text="m.capo || ''"></td>
@@ -423,6 +535,225 @@
     </div>
   </section>
 
+  <!-- IMPORTAR DOCEACORDES -->
+  <section x-show="view === 'doce' && data" x-cloak>
+    <h1>🎸 Importar de doceacordes.es</h1>
+    <p class="muted">
+      Catálogo de <strong x-text="doceItems.length"></strong> canciones de
+      <a href="https://doceacordes.es" target="_blank">doceacordes.es</a>.
+      Se descarga el ChordPro original, se adapta al estilo MCM
+      (<code>{soc}</code>/<code>{eoc}</code>, acordes en inglés) y se guarda con
+      <code>{comment: TO DO: PENDIENTE REVISIÓN ACORDES}</code> al inicio.
+    </p>
+    <p class="muted" style="font-size:11px">
+      <strong>Tiene prioridad sobre LaTeX y DOCX</strong> — si una canción aparece
+      aquí, importa desde aquí (los acordes están bien posicionados y revisados).
+    </p>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Buscar título o autor…" x-model="doceSearch" />
+      <select x-model="doceMatchFilter">
+        <option value="">Todas</option>
+        <option value="new">Sólo nuevas (no en repo)</option>
+        <option value="match">Ya en repo</option>
+      </select>
+      <label class="muted" style="font-size:12px" title="Hace 1 request extra por canción">
+        <input type="checkbox" x-model="doceIncludeMeta" />
+        🎬 incluir metadatos (ritmo, álbum, YouTube, fiestas…)
+      </label>
+      <span class="count" x-text="filteredDoce().length + ' canciones'"></span>
+    </div>
+
+    <div x-show="doceLoading" class="muted" style="padding:10px">Cargando catálogo…</div>
+
+    <table class="songs">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Título</th>
+          <th>Autor</th>
+          <th>Subtítulo</th>
+          <th>En repo</th>
+          <th>Categoría destino</th>
+          <th>Nº</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="d in filteredDocePaged()" :key="d.id">
+          <tr :class="{ 'has-match': d.in_repo }">
+            <td style="font-family:monospace;font-size:11px" x-text="d.id"></td>
+            <td>
+              <a href="#" @click.prevent="previewDoce(d.id)" x-text="d.title"></a>
+            </td>
+            <td style="color:var(--fg-2);font-size:12px" x-text="d.artist"></td>
+            <td style="color:var(--fg-3);font-size:11px" x-text="d.subtitle"></td>
+            <td>
+              <template x-if="d.in_repo">
+                <a href="#" @click.prevent="openSongFromPath(d.repo_path)"
+                   class="badge-overwrite"
+                   x-text="'✓ ' + d.repo_category"></a>
+              </template>
+              <template x-if="!d.in_repo">
+                <span class="badge-new">nueva</span>
+              </template>
+            </td>
+            <td>
+              <select x-model="doceCategorySel[d.id]" class="cat-select-mini"
+                      @change="onDoceCategoryChange(d.id)">
+                <option value="">—</option>
+                <template x-for="cat in data.categories" :key="cat.letter">
+                  <option :value="cat.letter"
+                          x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '').slice(0,18)"></option>
+                </template>
+              </select>
+            </td>
+            <td>
+              <input type="number" min="1" max="99" style="width:50px"
+                     x-model.number="doceNumberSel[d.id]"
+                     :placeholder="doceSuggestedNumber[d.id] || '?'" />
+            </td>
+            <td style="white-space:nowrap">
+              <button class="btn-mini" @click="previewDoce(d.id)">👁 Ver</button>
+              <button class="btn-mini primary" :disabled="!doceCategorySel[d.id] || doceImporting"
+                      @click="importOneDoce(d.id)">📥 Importar</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <div class="filter-bar" x-show="filteredDoce().length > docePageSize">
+      <button @click="docePage = Math.max(0, docePage - 1)" :disabled="docePage === 0">← Anterior</button>
+      <span class="muted" x-text="'Página ' + (docePage + 1) + ' de ' + Math.ceil(filteredDoce().length / docePageSize)"></span>
+      <button @click="docePage = Math.min(Math.ceil(filteredDoce().length / docePageSize) - 1, docePage + 1)"
+              :disabled="(docePage + 1) * docePageSize >= filteredDoce().length">Siguiente →</button>
+    </div>
+
+    <div x-show="doceResults.length > 0" class="import-results" x-cloak>
+      <h3>Resultado:</h3>
+      <ul>
+        <template x-for="r in doceResults" :key="r.doce_id">
+          <li :class="{ ok: r.ok, err: !r.ok }">
+            <span x-text="r.ok ? '✓' : '✗'"></span>
+            <span x-text="'#' + r.doce_id + ' ' + (r.title || '')"></span>
+            <span x-show="r.path" class="path" x-text="r.path"></span>
+            <span x-show="r.error" class="error-msg" x-text="r.error"></span>
+          </li>
+        </template>
+      </ul>
+    </div>
+  </section>
+
+  <!-- DOCE PREVIEW MODAL -->
+  <div class="editor-overlay" x-show="docePreview" @click.self="docePreview = null" x-cloak>
+    <div class="editor-modal">
+      <div class="editor-header">
+        <h2>
+          🎸 <span x-text="docePreview ? docePreview.meta.title : ''"></span>
+          <span class="muted" style="font-size:13px;font-weight:normal"
+                x-text="docePreview ? ' — #' + docePreview.id : ''"></span>
+        </h2>
+        <div class="header-actions">
+          <select x-model="docePreviewCategory" style="margin-right:6px">
+            <option value="">— Categoría —</option>
+            <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+              <option :value="cat.letter"
+                      x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+            </template>
+          </select>
+          <button class="btn primary" :disabled="!docePreviewCategory || doceImporting"
+                  @click="importFromPreview()">📥 Importar</button>
+          <button class="btn" @click="reloadDocePreview()" :disabled="docePreviewReloading"
+                  title="Saltarse la caché local y volver a descargar"
+                  x-text="docePreviewReloading ? '⏳' : '↻ Re-descargar'"></button>
+          <a class="btn" :href="docePreview ? docePreview.entry.url : '#'" target="_blank">↗ Web</a>
+          <button class="btn" @click="docePreview = null">✕ Cerrar</button>
+        </div>
+      </div>
+      <div class="editor-body" x-show="docePreview">
+        <div class="editor-pane" style="overflow:auto">
+          <h4 style="margin:0 0 6px">.cho adaptado (estilo MCM)</h4>
+          <pre class="latex-preview" x-text="docePreview ? docePreview.content : ''"></pre>
+        </div>
+        <div class="editor-pane" style="overflow:auto;border-left:1px solid var(--border);padding:10px">
+          <h4 style="margin:0 0 6px">Datos básicos</h4>
+          <table class="meta-table" x-show="docePreview">
+            <tr><th>Título</th><td x-text="docePreview && docePreview.meta.title"></td></tr>
+            <tr><th>Artista</th><td x-text="docePreview && docePreview.meta.artist"></td></tr>
+            <tr><th>Tono</th><td x-text="docePreview && docePreview.meta.key"></td></tr>
+            <tr><th>Capo</th><td x-text="docePreview && (docePreview.meta.capo || '0')"></td></tr>
+            <tr x-show="docePreview && docePreview.entry.subtitle">
+              <th>Subtítulo</th><td x-text="docePreview && docePreview.entry.subtitle"></td>
+            </tr>
+          </table>
+
+          <template x-if="docePreview && hasExtras(docePreview.extras)">
+            <div>
+              <h4 style="margin:14px 0 6px">🎬 Multimedia & extras</h4>
+              <table class="meta-table">
+                <tr x-show="docePreview.extras.rhythm">
+                  <th>Ritmo</th><td x-text="docePreview.extras.rhythm"></td>
+                </tr>
+                <tr x-show="docePreview.extras.album">
+                  <th>Álbum</th><td x-text="docePreview.extras.album"></td>
+                </tr>
+                <tr x-show="docePreview.extras.liturgicalTime">
+                  <th>Tiempo</th><td x-text="docePreview.extras.liturgicalTime"></td>
+                </tr>
+                <tr x-show="docePreview.extras.source">
+                  <th>Fuente</th><td x-text="docePreview.extras.source"></td>
+                </tr>
+                <tr x-show="docePreview.extras.comment">
+                  <th>Comentario</th><td x-text="docePreview.extras.comment"></td>
+                </tr>
+                <tr x-show="docePreview.extras.videoEmbed">
+                  <th>Vídeo</th>
+                  <td><a :href="docePreview.extras.videoEmbed" target="_blank"
+                         class="link-url" x-text="docePreview.extras.videoEmbed"></a></td>
+                </tr>
+              </table>
+              <template x-if="docePreview.extras.youtubeLinks && docePreview.extras.youtubeLinks.length > 0">
+                <div style="margin-top:8px">
+                  <strong style="font-size:12px">📺 YouTube</strong>
+                  <ul class="link-list">
+                    <template x-for="(yt, i) in docePreview.extras.youtubeLinks" :key="'yt-'+i">
+                      <li>
+                        <span class="link-num" x-text="i+1"></span>
+                        <span class="link-label" x-text="yt.label || '(sin etiqueta)'"></span>
+                        <a :href="yt.url" target="_blank" class="link-url" x-text="yt.url"></a>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+              </template>
+              <template x-if="docePreview.extras.audioLinks && docePreview.extras.audioLinks.length > 0">
+                <div style="margin-top:8px">
+                  <strong style="font-size:12px">🎧 Audio</strong>
+                  <ul class="link-list">
+                    <template x-for="(au, i) in docePreview.extras.audioLinks" :key="'au-'+i">
+                      <li>
+                        <span class="link-num" x-text="i+1"></span>
+                        <span class="link-label" x-text="au.label || '(sin etiqueta)'"></span>
+                        <a :href="au.url" target="_blank" class="link-url" x-text="au.url"></a>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+              </template>
+            </div>
+          </template>
+          <div x-show="docePreview && !hasExtras(docePreview.extras)" class="muted" style="font-size:11px;margin-top:8px">
+            <span x-show="doceIncludeMeta">— Sin metadatos extras —</span>
+            <span x-show="!doceIncludeMeta">⚠ Importación rápida activa: los metadatos no se descargan.
+              <a href="#" @click.prevent="doceIncludeMeta = true; reloadDocePreview()">Activar y recargar →</a>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- LATEX PREVIEW MODAL -->
   <div class="editor-overlay" x-show="latexPreview" @click.self="latexPreview = null" x-cloak>
     <div class="editor-modal">
@@ -561,7 +892,13 @@
         <button :class="{active: editor.tab === 'visual'}" @click="setEditorTab('visual')">🎨 Visual</button>
         <button :class="{active: editor.tab === 'raw'}" @click="setEditorTab('raw')">📝 Raw</button>
         <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
+        <button :class="{active: editor.tab === 'media'}" @click="setEditorTab('media')">
+          🎬 Multimedia
+          <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) > 0"
+                x-text="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0)"></span>
+        </button>
         <span class="dirty" x-show="editor.dirty">● sin guardar</span>
+        <span class="dirty" x-show="mediaDirty" style="color:#0ea5e9">● multimedia sin guardar</span>
       </div>
 
       <div class="editor-body">
@@ -726,6 +1063,149 @@
         <!-- PREVIEW -->
         <div class="editor-pane preview" x-show="editor.tab === 'preview'" x-cloak>
           <div class="preview-render" x-html="renderPreviewHtml(editor.content)"></div>
+        </div>
+
+        <!-- MULTIMEDIA & META -->
+        <div class="editor-pane media-pane" x-show="editor.tab === 'media'" x-cloak>
+          <div class="media-toolbar">
+            <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
+                    @click="saveMediaMeta()"
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar metadatos'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar cambios</button>
+            <span class="muted" style="margin-left:auto;font-size:11px">
+              Estos datos NO aparecen en el chordpro que ve el cantor — solo en la ficha de la canción.
+            </span>
+          </div>
+
+          <div class="media-grid">
+            <div class="media-section">
+              <h4>📺 YouTube / Vídeo</h4>
+              <label>Vídeo principal (embed)</label>
+              <input type="url" x-model="mediaForm.videoEmbed" @input="mediaDirty = true"
+                     placeholder="https://www.youtube.com/embed/VIDEO_ID" />
+
+              <div class="link-list-editor">
+                <div class="link-list-header">
+                  <span>Links de YouTube (orden = prioridad)</span>
+                  <button class="btn-mini" @click="addMediaLink('youtubeLinks')">➕ Añadir</button>
+                </div>
+                <template x-for="(yt, i) in mediaForm.youtubeLinks" :key="'yt-'+i">
+                  <div class="link-row">
+                    <span class="link-num" x-text="i+1"></span>
+                    <input type="text" class="link-label-input" x-model="yt.label"
+                           @input="mediaDirty = true" placeholder="Etiqueta (ej: Original)" />
+                    <input type="url" class="link-url-input" x-model="yt.url"
+                           @input="mediaDirty = true" placeholder="https://www.youtube.com/watch?v=…" />
+                    <div class="link-actions">
+                      <button class="btn-mini" :disabled="i === 0"
+                              @click="moveMediaLink('youtubeLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.youtubeLinks.length - 1"
+                              @click="moveMediaLink('youtubeLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('youtubeLinks', i)">✕</button>
+                    </div>
+                  </div>
+                </template>
+                <div class="muted" x-show="mediaForm.youtubeLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Sin links de YouTube —</div>
+              </div>
+            </div>
+
+            <div class="media-section">
+              <h4>🎧 Audio interno</h4>
+              <p class="muted" style="font-size:11px;margin-top:0">
+                Grabaciones nuestras (ensayos, versión coro…). URLs a Drive, dropbox, S3, etc.
+              </p>
+              <div class="link-list-editor">
+                <div class="link-list-header">
+                  <span>Audios (orden = prioridad)</span>
+                  <button class="btn-mini" @click="addMediaLink('audioLinks')">➕ Añadir</button>
+                </div>
+                <template x-for="(au, i) in mediaForm.audioLinks" :key="'au-'+i">
+                  <div class="link-row">
+                    <span class="link-num" x-text="i+1"></span>
+                    <input type="text" class="link-label-input" x-model="au.label"
+                           @input="mediaDirty = true" placeholder="Etiqueta (ej: Ensayo voces)" />
+                    <input type="url" class="link-url-input" x-model="au.url"
+                           @input="mediaDirty = true" placeholder="https://…/audio.mp3" />
+                    <div class="link-actions">
+                      <button class="btn-mini" :disabled="i === 0"
+                              @click="moveMediaLink('audioLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.audioLinks.length - 1"
+                              @click="moveMediaLink('audioLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('audioLinks', i)">✕</button>
+                    </div>
+                  </div>
+                </template>
+                <div class="muted" x-show="mediaForm.audioLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Sin audios internos —</div>
+              </div>
+            </div>
+
+            <div class="media-section">
+              <h4>📝 Datos extra</h4>
+              <label>Ritmo</label>
+              <input type="text" x-model="mediaForm.rhythm" @input="mediaDirty = true"
+                     placeholder="parones+rasgueo, balada 6/8…" />
+              <label>Álbum</label>
+              <input type="text" x-model="mediaForm.album" @input="mediaDirty = true"
+                     placeholder="Capricho, 2023" />
+              <label>Tiempo litúrgico / Fiestas</label>
+              <input type="text" x-model="mediaForm.liturgicalTime" @input="mediaDirty = true"
+                     placeholder="Semana Santa | Vigilia Pascual" />
+              <label>Fuente</label>
+              <input type="text" x-model="mediaForm.source" @input="mediaDirty = true"
+                     placeholder="doceacordes.es - Parroquia San Bruno" />
+              <label>Comentario</label>
+              <textarea rows="2" x-model="mediaForm.comment" @input="mediaDirty = true"
+                        placeholder="María Magdalena, Versión Hakuna…"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUICK ADD LINK MODAL -->
+  <div class="editor-overlay" x-show="quickLink.open" @click.self="quickLink.open = false" x-cloak>
+    <div class="editor-modal small">
+      <div class="editor-header">
+        <h2>
+          <span x-text="quickLink.type === 'youtube' ? '📺 Añadir YouTube' : '🎧 Añadir Audio'"></span>
+          <span class="muted" style="font-size:13px;font-weight:normal"
+                x-text="quickLink.songTitle ? '— ' + quickLink.songTitle : ''"></span>
+        </h2>
+        <button class="btn" @click="quickLink.open = false">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <!-- Lista de links existentes -->
+          <div x-show="quickLink.existing.length > 0" style="margin-bottom:14px">
+            <h4 style="margin:0 0 6px;font-size:12px;color:var(--fg-3)">Existentes</h4>
+            <ul class="link-list">
+              <template x-for="(lk, i) in quickLink.existing" :key="i">
+                <li>
+                  <span class="link-num" x-text="i+1"></span>
+                  <span class="link-label" x-text="lk.label || '(sin etiqueta)'"></span>
+                  <a :href="lk.url" target="_blank" class="link-url" x-text="lk.url"></a>
+                  <button class="btn-mini danger" @click="removeQuickLink(i)">✕</button>
+                </li>
+              </template>
+            </ul>
+          </div>
+          <div class="form-grid">
+            <label>Etiqueta</label>
+            <input type="text" x-model="quickLink.label"
+                   :placeholder="quickLink.type === 'youtube' ? 'Original, Alternativo, En vivo…' : 'Ensayo voces, Versión coro…'" />
+            <label>URL</label>
+            <input type="url" x-model="quickLink.url"
+                   :placeholder="quickLink.type === 'youtube' ? 'https://www.youtube.com/watch?v=…' : 'https://drive.google.com/… o /audio.mp3'" />
+          </div>
+          <div class="actions-row">
+            <button class="btn primary" :disabled="!quickLink.url || quickLink.saving"
+                    @click="saveQuickAddLink()"
+                    x-text="quickLink.saving ? 'Guardando…' : 'Añadir y guardar'"></button>
+            <button class="btn" @click="openMultimediaTab(quickLink.path)">Editar todo →</button>
+          </div>
         </div>
       </div>
     </div>

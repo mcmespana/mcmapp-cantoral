@@ -1,5 +1,10 @@
 acceso-firebase.json
 
+# Admin local
+.claude/
+scripts/cache_doceacordes/
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

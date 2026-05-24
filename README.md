@@ -30,3 +30,30 @@ Una vez configurados, cualquier push a `main` crear\xC3\xA1 la nueva versi\xC3\x
 autom\xC3\xA1tica.
 
 El flujo solo se ejecuta cuando se env\xC3\xADan cambios a la carpeta `songs` en la rama `main`. Cuando esto ocurre se realizan las siguientes acciones:
+
+## Campos de canción en `songs-vX.json`
+
+Cada entrada de canción puede incluir, además de los clásicos
+(`title`, `filename`, `author`, `key`, `capo`, `content`), estos
+campos opcionales — emitidos sólo cuando existen — que provienen de
+*custom directives* MCM dentro del propio `.cho`:
+
+| Campo JSON       | Directive en `.cho`              | Tipo                       | Descripción |
+|------------------|----------------------------------|----------------------------|-------------|
+| `rhythm`         | `{ritmo: …}`                     | string                     | Patrón rítmico ("parones+rasgueo", "balada 6/8"…). |
+| `album`          | `{album: …}`                     | string                     | Álbum/disco donde aparece la versión de referencia. |
+| `liturgicalTime` | `{tiempo: …}`                    | string                     | Tiempo litúrgico y/o fiestas (separados por ` \| `). |
+| `source`         | `{fuente: …}`                    | string                     | Origen del chordpro (ej. `doceacordes.es - Parroquia San Bruno`). |
+| `videoEmbed`     | `{video: URL}`                   | string                     | URL embebible del vídeo principal. |
+| `youtubeLinks`   | `{youtube: Label \| URL}` (repetible) | `[{label, url}, …]`   | Lista ordenada de enlaces YouTube (orden = prioridad). |
+| `audioLinks`     | `{audio: Label \| URL}` (repetible)   | `[{label, url}, …]`   | Lista ordenada de grabaciones internas (Drive, mp3…). |
+| `comment`        | `{comentario: …}`                | string                     | Comentario libre (no se renderiza en el chordpro). |
+
+Estas directives **no se imprimen** en el cuerpo de la canción que ve
+el cantor: `scripts/crear_songs_json.py` las extrae a campos propios
+del JSON y las elimina del campo `content` antes de emitirlo.
+
+Edición desde el admin local: panel **🎬 Multimedia** del editor de
+canción + acción rápida (icono ➕📺 / ➕🎧) en el catálogo. Las
+canciones importadas con **🎸 Importar de doceacordes.es** rellenan
+estos campos automáticamente con un scraping de la página oficial.

@@ -16,8 +16,19 @@ function app() {
     categoryFilter: '',
     search: '',
     statusFilter: '',       // '' | 'revisar' | 'revisar_acordes' | 'any' | 'none'
+    mediaFilter: '',        // '' | 'no_youtube' | 'no_audio' | 'no_media' | 'any_media'
     onlyInRepoFilter: false,
     selectedCatalogPaths: new Set(),
+
+    // Quick add link modal
+    quickLink: { open: false, path: '', songTitle: '', type: '', label: '', url: '',
+                 existing: [], saving: false },
+    // Editor multimedia tab
+    mediaForm: { rhythm: '', album: '', liturgicalTime: '', source: '', videoEmbed: '',
+                 comment: '', youtubeLinks: [], audioLinks: [] },
+    mediaOriginal: '',
+    mediaDirty: false,
+    mediaSaving: false,
 
     // Import view (docx)
     importSearch: '',
@@ -41,6 +52,24 @@ function app() {
     importingLatex: false,
     latexResults: [],
     latexPreview: null,
+
+    // Doceacordes
+    doceItems: [],
+    doceLoading: false,
+    doceSearch: '',
+    doceMatchFilter: '',
+    docePage: 0,
+    docePageSize: 50,
+    doceCategorySel: {},      // { doce_id: 'A' }
+    doceNumberSel: {},        // { doce_id: 12 }
+    doceSuggestedNumber: {},  // { doce_id: 7 }
+    doceResults: [],
+    doceImporting: false,
+    doceIncludeMeta: true,
+    docePreview: null,
+    docePreviewCategory: '',
+    docePreviewReloading: false,
+    doceCandidatesPopover: null,  // {missingId, anchor, candidates, sectionLetter}
 
     // Reorder
     reorderCategory: '',
@@ -126,6 +155,15 @@ function app() {
       else if (this.statusFilter === 'any')         list = list.filter(r => r.has_todo || r.has_chord_review);
       else if (this.statusFilter === 'none')        list = list.filter(r => !r.has_todo && !r.has_chord_review);
       if (this.onlyInRepoFilter) list = list.filter(r => !r.in_docx);
+      if (this.mediaFilter === 'no_youtube') {
+        list = list.filter(r => (r.youtube_count || 0) === 0 && !r.has_video);
+      } else if (this.mediaFilter === 'no_audio') {
+        list = list.filter(r => (r.audio_count || 0) === 0);
+      } else if (this.mediaFilter === 'no_media') {
+        list = list.filter(r => (r.youtube_count || 0) === 0 && !r.has_video && (r.audio_count || 0) === 0);
+      } else if (this.mediaFilter === 'any_media') {
+        list = list.filter(r => (r.youtube_count || 0) > 0 || r.has_video || (r.audio_count || 0) > 0);
+      }
       if (this.search) {
         const q = this.normalizeSearch(this.search);
         list = list.filter(r =>
@@ -341,6 +379,335 @@ function app() {
         this.importingLatex = false;
       }
     },
+    // ─────────── Import view (doceacordes.es) ───────────
+    async loadDoce(force = false) {
+      if (this.doceItems.length > 0 && !force) return;
+      this.doceLoading = true;
+      try {
+        const r = await fetch('/api/doce/list');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        this.doceItems = d.items || [];
+      } catch (e) {
+        alert('No pude cargar el índice de doceacordes: ' + e.message);
+      } finally {
+        this.doceLoading = false;
+      }
+    },
+    filteredDoce() {
+      let list = this.doceItems;
+      if (this.doceMatchFilter === 'new') list = list.filter(d => !d.in_repo);
+      else if (this.doceMatchFilter === 'match') list = list.filter(d => d.in_repo);
+      if (this.doceSearch) {
+        const q = this.normalizeSearch(this.doceSearch);
+        list = list.filter(d =>
+          this.normalizeSearch(d.title).includes(q) ||
+          this.normalizeSearch(d.artist).includes(q) ||
+          d.id.includes(q)
+        );
+      }
+      return list;
+    },
+    filteredDocePaged() {
+      const list = this.filteredDoce();
+      const start = this.docePage * this.docePageSize;
+      return list.slice(start, start + this.docePageSize);
+    },
+    async onDoceCategoryChange(doceId) {
+      const cat = this.doceCategorySel[doceId];
+      if (!cat) return;
+      try {
+        const r = await fetch('/api/doce/suggest-number?category=' + cat);
+        if (r.ok) {
+          const j = await r.json();
+          this.doceSuggestedNumber = { ...this.doceSuggestedNumber, [doceId]: j.next_number };
+          if (!this.doceNumberSel[doceId]) {
+            this.doceNumberSel = { ...this.doceNumberSel, [doceId]: j.next_number };
+          }
+        }
+      } catch (e) { /* silencio */ }
+    },
+    async previewDoce(doceId, force = false) {
+      try {
+        const cat = this.doceCategorySel[doceId] || '';
+        const url = '/api/doce/preview?id=' + encodeURIComponent(doceId) +
+                    (cat ? '&category=' + cat : '') +
+                    (this.doceIncludeMeta ? '' : '&meta=0') +
+                    (force ? '&force=1' : '');
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        this.docePreview = j;
+        this.docePreviewCategory = cat;
+        if (j.suggested_number && !this.doceNumberSel[doceId]) {
+          this.doceNumberSel = { ...this.doceNumberSel, [doceId]: j.suggested_number };
+        }
+      } catch (e) {
+        alert('Error preview: ' + e.message);
+      }
+    },
+    async reloadDocePreview() {
+      if (!this.docePreview) return;
+      this.docePreviewReloading = true;
+      try {
+        await this.previewDoce(this.docePreview.id, true);
+      } finally {
+        this.docePreviewReloading = false;
+      }
+    },
+    hasExtras(extras) {
+      if (!extras) return false;
+      return !!(extras.rhythm || extras.album || extras.liturgicalTime || extras.source ||
+                extras.comment || extras.videoEmbed ||
+                (extras.youtubeLinks && extras.youtubeLinks.length) ||
+                (extras.audioLinks && extras.audioLinks.length));
+    },
+    async importFromPreview() {
+      if (!this.docePreview) return;
+      const id = this.docePreview.id;
+      this.doceCategorySel = { ...this.doceCategorySel, [id]: this.docePreviewCategory };
+      await this.importOneDoce(id);
+      this.docePreview = null;
+    },
+    async importOneDoce(doceId) {
+      const cat = this.doceCategorySel[doceId];
+      if (!cat) { alert('Elige categoría'); return; }
+      this.doceImporting = true;
+      try {
+        const item = {
+          doce_id: doceId,
+          category_letter: cat,
+          number: this.doceNumberSel[doceId] || undefined,
+          include_meta: this.doceIncludeMeta,
+        };
+        const r = await fetch('/api/doce/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: [item] }),
+        });
+        const json = await r.json();
+        this.doceResults = [...(json.results || []), ...this.doceResults].slice(0, 30);
+        // refrescar marcas in_repo
+        await this.loadDoce(true);
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error importando: ' + e.message);
+      } finally {
+        this.doceImporting = false;
+      }
+    },
+    onDoceBadgeClick(missing, event) {
+      // Si solo hay 1 candidato → ir directo al import
+      if (!missing.doce_candidates || missing.doce_candidates.length <= 1) {
+        this.doceCandidatesPopover = null;
+        this.goImportFromDoce(missing);
+        return;
+      }
+      // Toggle popover
+      if (this.doceCandidatesPopover && this.doceCandidatesPopover.missingId === missing.docx_id) {
+        this.doceCandidatesPopover = null;
+      } else {
+        this.doceCandidatesPopover = { missingId: missing.docx_id };
+      }
+    },
+    async pickDoceCandidate(missing, candidate) {
+      this.doceCandidatesPopover = null;
+      this.view = 'doce';
+      await this.loadDoce();
+      this.doceSearch = candidate.title;
+      this.docePage = 0;
+      if (missing.section_letter && !this.doceCategorySel[candidate.id]) {
+        this.doceCategorySel = { ...this.doceCategorySel, [candidate.id]: missing.section_letter };
+        await this.onDoceCategoryChange(candidate.id);
+      }
+      await this.previewDoce(candidate.id);
+      if (missing.section_letter) this.docePreviewCategory = missing.section_letter;
+    },
+    async goImportFromDoce(missing) {
+      // Llamado desde la vista "Importar del cantoral" al click en badge 🎸
+      // missing: {doce_candidates, title, section_letter, ...}
+      this.view = 'doce';
+      await this.loadDoce();
+      // Si hay un único candidato muy fiable, lo preselecciono con la sección sugerida
+      const cands = missing.doce_candidates || [];
+      if (cands.length === 0) return;
+      // Filtrar la tabla a esos candidatos
+      this.doceSearch = cands[0].title;
+      this.docePage = 0;
+      // Sugerir categoría del docx
+      for (const c of cands) {
+        if (missing.section_letter && !this.doceCategorySel[c.id]) {
+          this.doceCategorySel = { ...this.doceCategorySel, [c.id]: missing.section_letter };
+          this.onDoceCategoryChange(c.id);
+        }
+      }
+      // Si sólo hay uno, abrir preview directamente
+      if (cands.length === 1) {
+        await this.previewDoce(cands[0].id);
+        if (missing.section_letter) this.docePreviewCategory = missing.section_letter;
+      }
+    },
+
+    // ─────────── Multimedia / quick add ───────────
+    mediaYoutubeTooltip(r) {
+      const n = (r.youtube_count || 0) + (r.has_video ? 1 : 0);
+      if (n === 0) return 'Sin YouTube ni vídeo — click para añadir';
+      return `${n} link${n > 1 ? 's' : ''} de YouTube/vídeo · click para añadir más`;
+    },
+    mediaAudioTooltip(r) {
+      const n = r.audio_count || 0;
+      if (n === 0) return 'Sin audio interno — click para añadir';
+      return `${n} audio${n > 1 ? 's' : ''} interno${n > 1 ? 's' : ''} · click para añadir más`;
+    },
+    async openQuickAddLink(repoSong, type) {
+      // Carga el .cho actual para listar los links existentes
+      let existing = [];
+      try {
+        const r = await fetch('/api/song?path=' + encodeURIComponent(repoSong.path));
+        if (r.ok) {
+          const j = await r.json();
+          existing = type === 'youtube'
+            ? (j.meta.youtubeLinks || [])
+            : (j.meta.audioLinks || []);
+        }
+      } catch (_) { /* silence */ }
+      this.quickLink = {
+        open: true, path: repoSong.path, songTitle: repoSong.title,
+        type, label: '', url: '', existing, saving: false,
+      };
+    },
+    async removeQuickLink(idx) {
+      // Borra un link existente (reescribe meta entera sin él)
+      if (!confirm('¿Borrar este link?')) return;
+      try {
+        const r = await fetch('/api/song?path=' + encodeURIComponent(this.quickLink.path));
+        const j = await r.json();
+        const key = this.quickLink.type === 'youtube' ? 'youtubeLinks' : 'audioLinks';
+        const list = (j.meta[key] || []).slice();
+        list.splice(idx, 1);
+        const meta = { ...j.meta, [key]: list };
+        const r2 = await fetch('/api/song/meta?path=' + encodeURIComponent(this.quickLink.path), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(meta),
+        });
+        if (!r2.ok) throw new Error('HTTP ' + r2.status);
+        this.quickLink.existing = list;
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    },
+    async saveQuickAddLink() {
+      if (!this.quickLink.url) return;
+      this.quickLink.saving = true;
+      try {
+        const r = await fetch('/api/song/meta/quick-add', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: this.quickLink.path,
+            type: this.quickLink.type,
+            label: this.quickLink.label,
+            url: this.quickLink.url,
+          }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        // Actualizar lista existente + refrescar catálogo
+        const key = this.quickLink.type === 'youtube' ? 'youtubeLinks' : 'audioLinks';
+        this.quickLink.existing = j.meta[key] || [];
+        this.quickLink.label = '';
+        this.quickLink.url = '';
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      } finally {
+        this.quickLink.saving = false;
+      }
+    },
+    async openMultimediaTab(path) {
+      this.quickLink.open = false;
+      await this.openEditor(path);
+      this.setEditorTab('media');
+    },
+
+    // Tab Multimedia del editor
+    loadMediaForm() {
+      const m = this.editor.meta || {};
+      this.mediaForm = {
+        rhythm: m.rhythm || '',
+        album: m.album || '',
+        liturgicalTime: m.liturgicalTime || '',
+        source: m.source || '',
+        videoEmbed: m.videoEmbed || '',
+        comment: m.comment || '',
+        youtubeLinks: (m.youtubeLinks || []).map(l => ({ ...l })),
+        audioLinks: (m.audioLinks || []).map(l => ({ ...l })),
+      };
+      this.mediaOriginal = JSON.stringify(this.mediaForm);
+      this.mediaDirty = false;
+    },
+    resetMediaMeta() { this.loadMediaForm(); },
+    addMediaLink(key) {
+      this.mediaForm[key] = [...this.mediaForm[key], { label: '', url: '' }];
+      this.mediaDirty = true;
+    },
+    removeMediaLink(key, idx) {
+      const arr = this.mediaForm[key].slice();
+      arr.splice(idx, 1);
+      this.mediaForm[key] = arr;
+      this.mediaDirty = true;
+    },
+    moveMediaLink(key, idx, delta) {
+      const arr = this.mediaForm[key].slice();
+      const j = idx + delta;
+      if (j < 0 || j >= arr.length) return;
+      [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      this.mediaForm[key] = arr;
+      this.mediaDirty = true;
+    },
+    async saveMediaMeta() {
+      if (!this.editor.path) return;
+      // Bug 1: si hay cambios sin guardar en el cuerpo (visual/raw), avisar
+      if (this.editor.dirty) {
+        const choice = confirm(
+          'Tienes cambios en el cuerpo de la canción SIN GUARDAR.\n\n' +
+          'Si continúas guardando solo los metadatos, los cambios del cuerpo se perderán ' +
+          '(se recargará desde disco).\n\n' +
+          'Pulsa Aceptar para PRIMERO guardar el cuerpo y LUEGO los metadatos.\n' +
+          'Pulsa Cancelar para abortar (vuelve al editor y guarda manualmente).'
+        );
+        if (!choice) return;
+        // Guardar cuerpo primero
+        await this.saveSong();
+        if (this.editor.dirty) return; // saveSong falló
+      }
+      this.mediaSaving = true;
+      try {
+        // Limpiar links vacíos
+        const payload = { ...this.mediaForm,
+          youtubeLinks: this.mediaForm.youtubeLinks.filter(l => l.url && l.url.trim()),
+          audioLinks: this.mediaForm.audioLinks.filter(l => l.url && l.url.trim()),
+        };
+        const r = await fetch('/api/song/meta?path=' + encodeURIComponent(this.editor.path), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        // Refrescar editor content (el cuerpo del .cho cambió por las directives)
+        const r2 = await fetch('/api/song?path=' + encodeURIComponent(this.editor.path));
+        const sj = await r2.json();
+        this.editor.content = sj.content;
+        this.editor.originalContent = sj.content;
+        this.editor.meta = sj.meta;
+        this.loadMediaForm();
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error guardando metadatos: ' + e.message);
+      } finally {
+        this.mediaSaving = false;
+      }
+    },
+
     async openSongFromPath(path) {
       // Reusa la apertura del editor por path
       try {
@@ -442,11 +809,19 @@ function app() {
       this.setSaveIndicator('saved', 'Sin cambios');
     },
     setEditorTab(t) {
+      // Warn si dejamos el tab media con cambios sin guardar
+      if (this.editor.tab === 'media' && t !== 'media' && this.mediaDirty) {
+        if (!confirm('Hay metadatos sin guardar en el tab Multimedia. ¿Descartar cambios?')) return;
+        this.loadMediaForm(); // resetea
+      }
       if (this.editor.tab === 'visual' && t !== 'visual') {
         this.editor.content = serializeCho(this.editor.parsed);
         this.refreshMetaFromRaw();
       }
       this.editor.tab = t;
+      if (t === 'media') {
+        this.loadMediaForm();
+      }
       if (t === 'visual') {
         this.editor.parsed = parseCho(this.editor.content);
         this.markChorusFlags();
