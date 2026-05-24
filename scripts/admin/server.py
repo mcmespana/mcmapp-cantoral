@@ -45,6 +45,7 @@ IGNORED_FILE = SCRIPT_DIR / "import-ignored.json"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import docx2chordpro as d2c  # noqa: E402
+import latex_import as lx  # noqa: E402
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -200,6 +201,47 @@ def list_repo_songs(category_letter: Optional[str] = None) -> List[dict]:
     return out
 
 
+# ─────────── LaTeX (input/*.tex) ─────────── #
+
+_latex_cache: Dict[str, object] = {"items": None, "snapshot": None}
+
+
+def _latex_snapshot() -> str:
+    """Devuelve una "huella" de los .tex (paths + mtimes) para invalidar cache."""
+    if not lx.INPUT_DIR.exists():
+        return ""
+    parts: List[str] = []
+    for cat in sorted(lx.INPUT_DIR.iterdir()):
+        if not cat.is_dir() or cat.name == "processed":
+            continue
+        for tex in sorted(cat.glob("*.tex")):
+            parts.append(f"{tex.name}:{int(tex.stat().st_mtime)}:{tex.stat().st_size}")
+    return "|".join(parts)
+
+
+def load_latex_items(force: bool = False) -> List[dict]:
+    snap = _latex_snapshot()
+    if not force and _latex_cache["items"] is not None and _latex_cache["snapshot"] == snap:
+        return _latex_cache["items"]  # type: ignore
+    items = lx.scan_latex_files(include_parsed=False)
+    _latex_cache["items"] = items
+    _latex_cache["snapshot"] = snap
+    return items
+
+
+def find_repo_match(title: str, repo_index: Dict[str, dict]) -> Optional[dict]:
+    return best_match(title_keys(title), repo_index)
+
+
+def build_repo_title_index(repo_songs: List[dict]) -> Dict[str, dict]:
+    idx: Dict[str, dict] = {}
+    for r in repo_songs:
+        for k in title_keys(r["title"]):
+            if k:
+                idx.setdefault(k, r)
+    return idx
+
+
 # ─────────── Cantoral docx ─────────── #
 
 _docx_cache: Dict[str, object] = {"songs": None, "mtime": 0}
@@ -335,6 +377,7 @@ def backup_file(path: Path) -> Path:
 def api_catalog():
     repo_songs = list_repo_songs()
     docx_songs = load_docx_songs()
+    latex_items = load_latex_items()
 
     # Cachear conversiones (caras): solo para usar el title aquí
     docx_convs: Dict[int, dict] = {}
@@ -349,8 +392,15 @@ def api_catalog():
                 "section_letter": s["section_letter"],
             })
 
-    # Marcar repo_songs con si está en docx
+    # Índice latex por título (para detectar duplicados desde el repo / docx)
+    latex_index: Dict[str, dict] = {}
+    for lt in latex_items:
+        for k in title_keys(lt["title"]):
+            latex_index.setdefault(k, lt)
+
+    # Marcar repo_songs con si está en docx y/o en LaTeX
     matched_docx_ids: set = set()
+    matched_latex_ids: set = set()
     for r in repo_songs:
         match = best_match(title_keys(r["title"]), docx_index)
         if match:
@@ -360,6 +410,15 @@ def api_catalog():
         else:
             r["in_docx"] = False
             r["docx_id"] = None
+        lmatch = best_match(title_keys(r["title"]), latex_index)
+        if lmatch:
+            r["in_latex"] = True
+            r["latex_id"] = lmatch["id"]
+            r["latex_title"] = lmatch["title"]
+            matched_latex_ids.add(lmatch["id"])
+        else:
+            r["in_latex"] = False
+            r["latex_id"] = None
 
     # Canciones del docx que NO están en repo (excluidas las archivadas)
     ignored = load_ignored()
@@ -370,6 +429,9 @@ def api_catalog():
         if s["title_raw"] in ignored:
             continue
         conv = docx_convs[s["id"]]
+        # ¿Está disponible esta misma canción en LaTeX? Si sí, avisamos y damos
+        # prioridad a la versión LaTeX (el usuario debería importar de LaTeX, no de docx).
+        latex_alt = best_match(title_keys(conv["title"]), latex_index)
         missing.append({
             "docx_id": s["id"],
             "title": conv["title"],
@@ -378,11 +440,15 @@ def api_catalog():
             "key": conv.get("key"),
             "capo": conv.get("capo"),
             "warnings": conv.get("warnings", []),
+            "latex_available": bool(latex_alt),
+            "latex_id": latex_alt["id"] if latex_alt else None,
         })
 
     # Contadores
     todo_count = sum(1 for r in repo_songs if r["has_todo"])
     chord_review_count = sum(1 for r in repo_songs if r["has_chord_review"])
+    latex_total = len(latex_items)
+    latex_only_new = sum(1 for lt in latex_items if lt["id"] not in matched_latex_ids)
 
     return jsonify({
         "categories": list_categories(),
@@ -395,6 +461,9 @@ def api_catalog():
             "chord_review_count": chord_review_count,
             "missing_from_repo": len(missing),
             "only_in_repo": sum(1 for r in repo_songs if not r["in_docx"]),
+            "latex_total": latex_total,
+            "latex_new": latex_only_new,
+            "latex_matches_repo": len(matched_latex_ids),
         },
     })
 
@@ -573,6 +642,143 @@ def api_docx_import():
             "warnings": conv.get("warnings", []),
         })
     return jsonify({"results": results})
+
+
+# ─────────── API: LaTeX (input/*.tex) ─────────── #
+
+
+@app.route("/api/latex/list")
+def api_latex_list():
+    """Lista todos los .tex de scripts/input/ y los enriquece con la coincidencia
+    en el repo (si la hay) para poder elegir entre crear nueva o sobrescribir.
+    """
+    force = request.args.get("force") == "1"
+    latex_items = load_latex_items(force=force)
+    repo_songs = list_repo_songs()
+    repo_index = build_repo_title_index(repo_songs)
+
+    out = []
+    for lt in latex_items:
+        match = find_repo_match(lt["title"], repo_index)
+        target_letter = lt.get("category_letter")
+        # Si no tenemos mapeo de carpeta pero hay match, usamos la categoría del match
+        if not target_letter and match:
+            target_letter = match["category_letter"]
+        item = dict(lt)
+        item["repo_match"] = None
+        if match:
+            item["repo_match"] = {
+                "path": match["path"],
+                "filename": match["filename"],
+                "number": match["number"],
+                "category_letter": match["category_letter"],
+                "category_folder": match["category_folder"],
+                "title": match["title"],
+            }
+        item["target_letter"] = target_letter
+        out.append(item)
+    # Categorías existentes para que el cliente sepa los nombres legibles
+    cats = list_categories()
+    return jsonify({"items": out, "categories": cats})
+
+
+@app.route("/api/latex/preview")
+def api_latex_preview():
+    rel = request.args.get("id", "")
+    if not rel:
+        abort(400, "Falta id")
+    try:
+        p = lx.resolve_tex_path(rel)
+    except (ValueError, FileNotFoundError) as e:
+        abort(404, str(e))
+    parsed = lx.parse_latex_song(p)
+    raw_tex = p.read_text(encoding="utf-8")
+    return jsonify({
+        "id": rel,
+        "filename": p.name,
+        "latex_raw": raw_tex,
+        "parsed": parsed,
+        "content": lx.render_latex_cho(parsed),
+    })
+
+
+@app.route("/api/latex/import", methods=["POST"])
+def api_latex_import():
+    """Importa los .tex elegidos. Cada item puede ser:
+      - { "id": "scripts/input/.../foo.tex", "mode": "new", "category_letter": "A", "slug": "..." }
+      - { "id": "...", "mode": "overwrite", "repo_path": "songs/A. .../03.foo.cho" }
+    """
+    body = request.get_json(silent=True) or {}
+    items = body.get("items") or []
+    move_processed = body.get("move_to_processed", True)
+    if not isinstance(items, list) or not items:
+        abort(400, "Falta items")
+    results = []
+    for it in items:
+        rel = it.get("id")
+        mode = (it.get("mode") or "new").lower()
+        try:
+            tex_path = lx.resolve_tex_path(rel)
+            parsed = lx.parse_latex_song(tex_path)
+            content = lx.render_latex_cho(parsed)
+
+            if mode == "overwrite":
+                repo_path_str = it.get("repo_path")
+                if not repo_path_str:
+                    raise ValueError("Falta repo_path para overwrite")
+                target = safe_relpath(repo_path_str)
+                if not target.exists():
+                    raise FileNotFoundError(f"No existe destino: {repo_path_str}")
+                backup_file(target)
+                target.write_text(content, encoding="utf-8")
+                final_path = target
+                action = "overwritten"
+            else:
+                cat_letter = (it.get("category_letter") or "").upper()
+                if not cat_letter:
+                    raise ValueError("Falta category_letter")
+                cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+                if not cat:
+                    raise ValueError(f"Categoría {cat_letter} no encontrada")
+                folder = SONGS_DIR / cat["folder"]
+                folder.mkdir(exist_ok=True)
+                slug = it.get("slug") or parsed.get("suggested_slug") or lx.slugify(parsed["title"])
+                slug = re.sub(r"[^a-z0-9_]+", "_", slug.lower()).strip("_") or "cancion"
+                num = it.get("number")
+                if not (isinstance(num, int) and num > 0):
+                    num = d2c.next_song_number(folder)
+                fname = f"{num:02d}.{slug}.cho"
+                fpath = folder / fname
+                if fpath.exists():
+                    raise FileExistsError(f"Ya existe {fname}")
+                fpath.write_text(content, encoding="utf-8")
+                final_path = fpath
+                action = "created"
+
+            moved_to = None
+            if move_processed:
+                moved = lx.move_to_processed(tex_path)
+                moved_to = str(moved.relative_to(REPO_DIR))
+            results.append({
+                "id": rel,
+                "ok": True,
+                "action": action,
+                "path": str(final_path.relative_to(REPO_DIR)),
+                "moved_to": moved_to,
+                "warnings": parsed.get("unknown_chords", []),
+            })
+        except Exception as e:
+            results.append({"id": rel, "ok": False, "error": str(e)})
+    # Invalidar cache
+    _latex_cache["snapshot"] = None
+    return jsonify({"results": results})
+
+
+@app.route("/api/latex/rescan", methods=["POST"])
+def api_latex_rescan():
+    _latex_cache["snapshot"] = None
+    load_latex_items(force=True)
+    return jsonify({"ok": True})
 
 
 def _apply_status_to_content(content: str, status: Optional[str]) -> str:

@@ -19,7 +19,7 @@ function app() {
     onlyInRepoFilter: false,
     selectedCatalogPaths: new Set(),
 
-    // Import view
+    // Import view (docx)
     importSearch: '',
     importSectionFilter: '',
     selectedImports: new Set(),
@@ -28,6 +28,19 @@ function app() {
     docxPreview: null,
     importIgnored: [],
     showIgnored: false,
+
+    // Import view (LaTeX)
+    latexItems: [],
+    latexLoading: false,
+    latexSearch: '',
+    latexFolderFilter: '',
+    latexMatchFilter: '',
+    selectedLatex: new Set(),
+    latexImportMode: {},        // { latex_id: 'overwrite' | 'new' }
+    latexCategoryOverride: {},  // { latex_id: 'A' | '' }
+    importingLatex: false,
+    latexResults: [],
+    latexPreview: null,
 
     // Reorder
     reorderCategory: '',
@@ -209,6 +222,142 @@ function app() {
         await Promise.all([this.loadCatalog(), this.loadIgnored()]);
       } catch (e) {
         alert('Error: ' + e.message);
+      }
+    },
+
+    // ─────────── Import view (LaTeX) ───────────
+    async loadLatex(force = false) {
+      this.latexLoading = true;
+      try {
+        const r = await fetch('/api/latex/list' + (force ? '?force=1' : ''));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        this.latexItems = d.items || [];
+        // Inicializar modo por defecto: si hay match, overwrite; si no, new
+        for (const it of this.latexItems) {
+          if (this.latexImportMode[it.id] == null) {
+            this.latexImportMode[it.id] = it.repo_match ? 'overwrite' : 'new';
+          }
+          if (this.latexCategoryOverride[it.id] == null) {
+            this.latexCategoryOverride[it.id] = '';
+          }
+        }
+      } catch (e) {
+        alert('No pude cargar los .tex: ' + e.message);
+      } finally {
+        this.latexLoading = false;
+      }
+    },
+    async rescanLatex() {
+      await fetch('/api/latex/rescan', { method: 'POST' });
+      await this.loadLatex(true);
+    },
+    latexFolders() {
+      const s = new Set(this.latexItems.map(l => l.latex_folder));
+      return [...s].sort();
+    },
+    filteredLatex() {
+      let list = this.latexItems;
+      if (this.latexFolderFilter) list = list.filter(l => l.latex_folder === this.latexFolderFilter);
+      if (this.latexMatchFilter === 'new') list = list.filter(l => !l.repo_match);
+      else if (this.latexMatchFilter === 'match') list = list.filter(l => !!l.repo_match);
+      else if (this.latexMatchFilter === 'warn') list = list.filter(l => l.unknown_chords.length > 0);
+      if (this.latexSearch) {
+        const q = this.normalizeSearch(this.latexSearch);
+        list = list.filter(l => this.normalizeSearch(l.title).includes(q) || this.normalizeSearch(l.filename).includes(q));
+      }
+      return list;
+    },
+    filterLatexById(id) {
+      this.latexSearch = '';
+      this.latexFolderFilter = '';
+      this.latexMatchFilter = '';
+      // Pequeño truco para destacar visualmente
+      this.$nextTick(() => {
+        const row = document.querySelector(`[data-latex-id="${id}"]`);
+        if (row) row.scrollIntoView({ block: 'center' });
+      });
+    },
+    toggleLatex(id) {
+      if (this.selectedLatex.has(id)) this.selectedLatex.delete(id);
+      else this.selectedLatex.add(id);
+      this.selectedLatex = new Set(this.selectedLatex);
+    },
+    selectAllLatex() {
+      const ids = this.filteredLatex().map(l => l.id);
+      this.selectedLatex = new Set([...this.selectedLatex, ...ids]);
+    },
+    setLatexMode(id, mode) {
+      this.latexImportMode = { ...this.latexImportMode, [id]: mode };
+    },
+    async previewLatex(id) {
+      try {
+        const r = await fetch('/api/latex/preview?id=' + encodeURIComponent(id));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.latexPreview = await r.json();
+      } catch (e) {
+        alert('Error preview: ' + e.message);
+      }
+    },
+    async importOneLatex(id) {
+      this.selectedLatex = new Set([id]);
+      await this.doImportLatex();
+      this.latexPreview = null;
+    },
+    async doImportLatex() {
+      if (this.selectedLatex.size === 0) return;
+      this.importingLatex = true;
+      this.latexResults = [];
+      const items = [];
+      for (const id of this.selectedLatex) {
+        const it = this.latexItems.find(l => l.id === id);
+        if (!it) continue;
+        const mode = this.latexImportMode[id] || (it.repo_match ? 'overwrite' : 'new');
+        if (mode === 'overwrite' && it.repo_match) {
+          items.push({ id, mode: 'overwrite', repo_path: it.repo_match.path });
+        } else {
+          const cat = this.latexCategoryOverride[id] || it.target_letter;
+          if (!cat) {
+            this.latexResults.push({ id, ok: false, error: 'No tiene categoría destino — selecciónala' });
+            continue;
+          }
+          items.push({ id, mode: 'new', category_letter: cat, slug: it.suggested_slug });
+        }
+      }
+      if (items.length === 0) { this.importingLatex = false; return; }
+      try {
+        const r = await fetch('/api/latex/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, move_to_processed: true }),
+        });
+        const json = await r.json();
+        this.latexResults = [...this.latexResults, ...(json.results || [])];
+        this.selectedLatex = new Set();
+        await Promise.all([this.loadCatalog(), this.loadLatex(true)]);
+      } catch (e) {
+        alert('Error importando LaTeX: ' + e.message);
+      } finally {
+        this.importingLatex = false;
+      }
+    },
+    async openSongFromPath(path) {
+      // Reusa la apertura del editor por path
+      try {
+        const r = await fetch('/api/song?path=' + encodeURIComponent(path));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const json = await r.json();
+        this.editor = {
+          path: json.path, filename: json.filename, content: json.content,
+          originalContent: json.content, dirty: false, tab: 'visual',
+          meta: { ...json.meta }, parsed: [],
+        };
+        this.editor.parsed = parseCho(this.editor.content);
+        this.markChorusFlags();
+        this.setSaveIndicator('saved', '✓ Cargada');
+        this.$nextTick(() => this.layoutChords());
+      } catch (e) {
+        alert('No pude abrir: ' + e.message);
       }
     },
 

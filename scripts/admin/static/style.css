@@ -174,6 +174,41 @@ table.songs tr.selected-row td { background: rgba(37,99,235,0.07); }
 .stat.chord-review { border-left: 4px solid var(--info); }
 .warn-cell { font-size: 11px; color: var(--warn); }
 
+/* ─────── Importar LaTeX ─────── */
+table.songs tr.has-match td { background: rgba(139, 92, 246, 0.06); }
+.theme-dark table.songs tr.has-match td { background: rgba(139, 92, 246, 0.14); }
+.badge-latex {
+  display: inline-block; margin-left: 8px; padding: 1px 6px; font-size: 10px;
+  background: rgba(139, 92, 246, 0.18); color: #6d28d9; border-radius: 3px;
+  cursor: pointer; border: 1px solid rgba(139, 92, 246, 0.35);
+}
+.badge-latex:hover { background: rgba(139, 92, 246, 0.30); }
+.theme-dark .badge-latex { color: #c4b5fd; }
+.badge-overwrite {
+  display: inline-block; padding: 1px 6px; font-size: 11px; border-radius: 3px;
+  background: rgba(202, 138, 4, 0.18); color: var(--warn); border: 1px solid rgba(202, 138, 4, 0.4);
+  font-weight: 600;
+}
+.badge-new {
+  display: inline-block; padding: 1px 6px; font-size: 11px; border-radius: 3px;
+  background: rgba(22, 163, 74, 0.15); color: var(--ok); border: 1px solid rgba(22, 163, 74, 0.4);
+  font-weight: 600;
+}
+.repo-match { font-size: 12px; }
+.repo-match .match-num { display: inline-block; background: var(--accent); color: white; padding: 1px 6px; border-radius: 3px; font-weight: 700; font-size: 11px; margin-right: 4px; }
+.row-meta { font-size: 10px; color: var(--fg-3); margin-top: 2px; }
+.muted-mini { font-size: 11px; color: var(--fg-3); font-style: italic; }
+.mode-toggle { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+.mode-toggle label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+.cat-select-mini { padding: 3px 6px; font-size: 11px; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--bg-2); color: var(--fg); max-width: 140px; }
+.cat-select-mini:disabled { opacity: 0.45; cursor: not-allowed; }
+.latex-preview {
+  background: var(--bg-3); padding: 12px; border-radius: 4px;
+  font-family: "Carlito", "Calibri", monospace; font-size: 12px;
+  white-space: pre-wrap; word-break: break-word; line-height: 1.4;
+  max-height: 70vh; overflow: auto; margin: 0;
+}
+
 /* Status pills */
 .status-pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
 .status-pill.status-revisar { background: rgba(234,88,12,0.12); color: var(--todo); border: 1px solid rgba(234,88,12,0.25); }
