@@ -361,7 +361,7 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 .editor-modal .editor-body { grid-template-columns: 280px 1fr; }
 .editor-modal .editor-body.single { grid-template-columns: 1fr; }
 /* Modal preview doceacordes: 2 columnas (chordpro ancho + meta) sin editor-meta */
-.doce-preview-body { display: grid; grid-template-columns: 3fr 1fr; }
+.doce-preview-body { display: grid; grid-template-columns: 1fr 1fr; }
 .doce-preview-body .chordpro-pane { padding: 16px; overflow: auto; background: var(--bg); }
 .doce-preview-body .chordpro-pane pre {
   margin: 0; font-family: 'SF Mono', Menlo, Consolas, monospace;
