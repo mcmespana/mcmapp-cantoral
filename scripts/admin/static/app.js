@@ -1168,16 +1168,26 @@ function app() {
 
     // ─────────── Selección de líneas (gutter) ───────────
     toggleLineSelection(idx, ev) {
+      // Trabajamos sobre una COPIA y la reasignamos al final → reactividad fiable.
+      const next = new Set(this.visualSelectedLines);
       if (ev && ev.shiftKey && this.visualLastClickedLine != null) {
         const lo = Math.min(this.visualLastClickedLine, idx);
         const hi = Math.max(this.visualLastClickedLine, idx);
-        for (let i = lo; i <= hi; i++) this.visualSelectedLines.add(i);
+        for (let i = lo; i <= hi; i++) next.add(i);
       } else {
-        if (this.visualSelectedLines.has(idx)) this.visualSelectedLines.delete(idx);
-        else this.visualSelectedLines.add(idx);
+        if (next.has(idx)) next.delete(idx);
+        else next.add(idx);
         this.visualLastClickedLine = idx;
       }
-      this.visualSelectedLines = new Set(this.visualSelectedLines);  // trigger Alpine
+      this.visualSelectedLines = next;
+      // Refresh DOM por si el class binding tarda en re-evaluarse
+      this.$nextTick(() => {
+        document.querySelectorAll('.ed-line').forEach(el => {
+          const i = parseInt(el.dataset.lineIdx, 10);
+          if (this.visualSelectedLines.has(i)) el.classList.add('selected');
+          else el.classList.remove('selected');
+        });
+      });
     },
     clearLineSelection() {
       this.visualSelectedLines = new Set();

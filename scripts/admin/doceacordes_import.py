@@ -113,37 +113,97 @@ def _uppercase_lyrics_outside_chords(line: str) -> str:
     return "".join(p if p.startswith("[") else p.upper() for p in parts)
 
 
-def _strip_chorus_parens(line: str) -> str:
-    """Si la línea va envuelta en paréntesis (a veces sucede en estribillos
-    de doceacordes), los quita. Tolera [acordes] al principio.
+def _strip_envelope_parens_from_block(block_lines: List[str]) -> List[str]:
+    """Si todo el bloque de estribillo está envuelto por un par '(' … ')' externo,
+    los quita. Preserva paréntesis internos balanceados (ej. '(bis)', '(x2)').
+
+    Algoritmo:
+      1. Concatena todo el bloque ignorando [acordes].
+      2. Localiza el primer '(' del bloque y su ')' correspondiente
+         (matching paren).
+      3. Si entre el inicio del bloque y ese '(' solo hay whitespace,
+         y entre ese ')' y el final solo hay whitespace o sufijos
+         tipo '(bis)' / '(x2)' / '(2 veces)', se considera envoltorio
+         y se elimina del texto original (manteniendo los [acordes]).
     """
-    s = line
-    # Quitar paréntesis exterior si abre con '(' y cierra con ')'
-    # incluso si hay [acorde] al principio
-    m = re.match(r"^(\s*(?:\[[^\]]*\]\s*)*)\((.*)\)(\s*)$", s)
-    if m:
-        return m.group(1) + m.group(2) + m.group(3)
-    return s
+    if not block_lines:
+        return block_lines
+    text = "\n".join(block_lines)
+    # Texto sin acordes para análisis posicional
+    no_chords_parts: List[Tuple[int, str]] = []  # (pos_real, char)
+    i = 0
+    while i < len(text):
+        if text[i] == "[":
+            end = text.find("]", i)
+            if end == -1:
+                end = len(text) - 1
+            i = end + 1
+            continue
+        no_chords_parts.append((i, text[i]))
+        i += 1
+    clean = "".join(ch for _, ch in no_chords_parts)
+    pos_map = [p for p, _ in no_chords_parts]  # clean[k] → text[pos_map[k]]
+
+    # Localizar primer '(' y su matching ')'
+    first_open = -1
+    matching_close = -1
+    depth = 0
+    for k, ch in enumerate(clean):
+        if ch == "(":
+            if depth == 0 and first_open == -1:
+                first_open = k
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and first_open != -1:
+                matching_close = k
+                break
+    if first_open == -1 or matching_close == -1:
+        return block_lines
+
+    # Antes del '(': solo whitespace
+    if clean[:first_open].strip():
+        return block_lines
+    # Después del ')': solo whitespace y/o un sufijo tipo (bis), (x2), (2 veces)
+    tail = clean[matching_close + 1:].strip()
+    if tail and not re.fullmatch(
+        r"\(\s*(?:bis|x\s*\d+|\d+\s*veces?|repetir)\s*\)", tail, re.IGNORECASE
+    ):
+        return block_lines
+
+    # Eliminar los caracteres en text correspondientes a first_open y matching_close
+    p_open = pos_map[first_open]
+    p_close = pos_map[matching_close]
+    new_text = text[:p_open] + text[p_open + 1:p_close] + text[p_close + 1:]
+    return new_text.split("\n")
 
 
 def _process_chorus_blocks(text: str) -> str:
-    """Dentro de cada {soc}...{eoc}: quita paréntesis envolventes y pone
-    la letra en MAYÚSCULAS para que el estribillo destaque visualmente."""
+    """Dentro de cada {soc}...{eoc}: quita paréntesis envolventes del bloque
+    y pone la letra (no acordes) en MAYÚSCULAS para que destaque.
+    """
     out_lines: List[str] = []
+    chorus_buf: List[str] = []
     in_chorus = False
     for ln in text.split("\n"):
         if re.match(r"\s*\{\s*soc\s*\}", ln, re.IGNORECASE):
             in_chorus = True
+            chorus_buf = []
             out_lines.append(ln)
             continue
         if re.match(r"\s*\{\s*eoc\s*\}", ln, re.IGNORECASE):
+            # Procesar el buffer: quitar paréntesis envolventes y subir letras
+            cleaned_block = _strip_envelope_parens_from_block(chorus_buf)
+            for bln in cleaned_block:
+                if bln.strip() and not re.match(r"\s*\{", bln):
+                    bln = _uppercase_lyrics_outside_chords(bln)
+                out_lines.append(bln)
             in_chorus = False
+            chorus_buf = []
             out_lines.append(ln)
             continue
-        if in_chorus and ln.strip() and not re.match(r"\s*\{", ln):
-            cleaned = _strip_chorus_parens(ln)
-            cleaned = _uppercase_lyrics_outside_chords(cleaned)
-            out_lines.append(cleaned)
+        if in_chorus:
+            chorus_buf.append(ln)
         else:
             out_lines.append(ln)
     return "\n".join(out_lines)

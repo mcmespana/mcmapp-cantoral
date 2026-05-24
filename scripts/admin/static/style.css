@@ -601,14 +601,18 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 .ed-char.ed-end { color: var(--fg-3); margin-left: 4px; font-size: 0.7em; }
 .ed-line.ed-blank { height: 8px; }
 .ed-line .line-gutter {
-  position: absolute; left: 0; top: 0; width: 24px; height: 100%;
+  position: absolute; left: 0; top: 0; width: 28px; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; color: var(--fg-3); opacity: 0.4;
-  font-size: 14px; user-select: none;
-  transition: opacity 0.12s, color 0.12s, transform 0.1s;
+  cursor: pointer; color: var(--fg-3); opacity: 0.55;
+  font-size: 16px; user-select: none; z-index: 4;
+  transition: opacity 0.12s, color 0.12s, transform 0.1s, background 0.12s;
 }
-.ed-line.ed-lyric .line-gutter { opacity: 0.55; }
-.ed-line:hover .line-gutter { color: var(--accent); opacity: 1; transform: scale(1.15); }
+/* Glifo del círculo controlado por CSS — no por x-text. Cambia automáticamente
+   con la clase .selected del .ed-line. Así no depende de reactividad de Alpine. */
+.ed-line .line-gutter::before { content: '○'; }
+.ed-line.selected .line-gutter::before { content: '◉'; }
+.ed-line.ed-lyric .line-gutter { opacity: 0.7; }
+.ed-line .line-gutter:hover { background: rgba(37, 99, 235, 0.12); opacity: 1; color: var(--accent); transform: scale(1.1); }
 .ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }

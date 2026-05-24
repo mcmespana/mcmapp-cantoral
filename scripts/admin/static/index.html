@@ -1046,9 +1046,9 @@
             <template x-for="(ln, idx) in editor.parsed" :key="idx">
               <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
                 <div class="line-gutter"
-                     @click.stop="toggleLineSelection(idx, $event)"
-                     title="Click selecciona · Shift+click rango"
-                     x-text="visualSelectedLines.has(idx) ? '◉' : '○'"></div>
+                     @click.stop.prevent="toggleLineSelection(idx, $event)"
+                     @mousedown.stop
+                     title="Click selecciona · Shift+click rango"></div>
                 <template x-if="ln.type === 'directive' || ln.type === 'comment'">
                   <div class="ed-meta-line" x-text="ln.raw"></div>
                 </template>
