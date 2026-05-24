@@ -52,6 +52,64 @@ def parse_metadata(text):
     meta['capo'] = int(capo.group(1)) if capo and capo.group(1).isdigit() else 0
     return meta
 
+
+# Custom directives MCM que NO son parte del cuerpo ChordPro. Se extraen a
+# campos JSON y se eliminan del `content` para que el renderer móvil no
+# las imprima como comentarios visibles.
+CUSTOM_META_KEYS = ('ritmo', 'album', 'tiempo', 'fuente', 'video',
+                    'youtube', 'audio', 'comentario')
+
+
+def _parse_label_url(value):
+    """Convierte 'Label | https://url' en {label, url}. Si no hay '|', label='' y url=value."""
+    if '|' in value:
+        label, _, url = value.partition('|')
+        return {'label': label.strip(), 'url': url.strip()}
+    return {'label': '', 'url': value.strip()}
+
+
+def parse_custom_meta(text):
+    """Extrae las custom directives MCM. Devuelve dict con campos JSON-friendly."""
+    extra = {
+        'rhythm': '',
+        'album': '',
+        'liturgicalTime': '',
+        'source': '',
+        'videoEmbed': '',
+        'youtubeLinks': [],
+        'audioLinks': [],
+        'comment': '',
+    }
+    for m in re.finditer(r'\{\s*(ritmo|album|tiempo|fuente|video|youtube|audio|comentario)\s*:\s*(.*?)\s*\}',
+                         text, re.IGNORECASE):
+        key = m.group(1).lower()
+        val = m.group(2).strip()
+        if not val:
+            continue
+        if key == 'ritmo':
+            extra['rhythm'] = val
+        elif key == 'album':
+            extra['album'] = val
+        elif key == 'tiempo':
+            extra['liturgicalTime'] = val
+        elif key == 'fuente':
+            extra['source'] = val
+        elif key == 'video':
+            extra['videoEmbed'] = val
+        elif key == 'comentario':
+            extra['comment'] = val
+        elif key == 'youtube':
+            extra['youtubeLinks'].append(_parse_label_url(val))
+        elif key == 'audio':
+            extra['audioLinks'].append(_parse_label_url(val))
+    return extra
+
+
+def strip_custom_meta_from_content(text):
+    """Elimina las líneas de custom directives MCM del contenido."""
+    pattern = r'^[ \t]*\{\s*(?:' + '|'.join(CUSTOM_META_KEYS) + r')\s*:[^}]*\}[ \t]*\r?\n?'
+    return re.sub(pattern, '', text, flags=re.IGNORECASE | re.MULTILINE)
+
 # Función principal
 def main():
     # Directorio donde está este script
@@ -104,6 +162,8 @@ def main():
             path = os.path.join(cat_path, fname)
             text = open(path, encoding='utf-8').read()
             meta = parse_metadata(text)  # Extrae metadatos
+            extra = parse_custom_meta(text)  # Multimedia + meta extra
+            clean_content = strip_custom_meta_from_content(text)
 
             # Extrae código numérico inicial, ej. "01" → "01. "
             code = ''
@@ -119,8 +179,17 @@ def main():
                 'key':      meta['key'],
                 'capo':     meta['capo'],
                 'info':     '',
-                'content':  text  # Contenido completo con saltos de línea
+                'content':  clean_content  # Cuerpo sin custom meta directives
             }
+            # Emitir campos extra solo si tienen valor (evita inflar el JSON)
+            if extra['rhythm']:         entry['rhythm'] = extra['rhythm']
+            if extra['album']:          entry['album'] = extra['album']
+            if extra['liturgicalTime']: entry['liturgicalTime'] = extra['liturgicalTime']
+            if extra['source']:         entry['source'] = extra['source']
+            if extra['videoEmbed']:     entry['videoEmbed'] = extra['videoEmbed']
+            if extra['youtubeLinks']:   entry['youtubeLinks'] = extra['youtubeLinks']
+            if extra['audioLinks']:     entry['audioLinks'] = extra['audioLinks']
+            if extra['comment']:        entry['comment'] = extra['comment']
             print(f"   🎵 {fname} -> {entry['title']} (Key={entry['key']}, Capo={entry['capo']})")
             songs.append(entry)
 

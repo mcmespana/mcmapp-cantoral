@@ -46,6 +46,7 @@ IGNORED_FILE = SCRIPT_DIR / "import-ignored.json"
 sys.path.insert(0, str(SCRIPTS_DIR))
 import docx2chordpro as d2c  # noqa: E402
 import latex_import as lx  # noqa: E402
+import doceacordes_import as da  # noqa: E402
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -70,13 +71,46 @@ def safe_relpath(path_str: str) -> Path:
     return p
 
 
-def parse_cho_metadata(content: str) -> Dict[str, str]:
-    """Extrae metadata básica de un .cho."""
+def _parse_label_url(value: str) -> Dict[str, str]:
+    if "|" in value:
+        label, _, url = value.partition("|")
+        return {"label": label.strip(), "url": url.strip()}
+    return {"label": "", "url": value.strip()}
+
+
+def parse_extra_meta(content: str) -> Dict[str, object]:
+    """Extrae las custom directives multimedia/meta MCM."""
+    extra: Dict[str, object] = {
+        "rhythm": "", "album": "", "liturgicalTime": "", "source": "",
+        "videoEmbed": "", "youtubeLinks": [], "audioLinks": [], "comment": "",
+    }
+    for m in re.finditer(
+        r"\{\s*(ritmo|album|tiempo|fuente|video|youtube|audio|comentario)\s*:\s*(.*?)\s*\}",
+        content, re.IGNORECASE,
+    ):
+        k = m.group(1).lower()
+        v = m.group(2).strip()
+        if not v:
+            continue
+        if k == "ritmo":         extra["rhythm"] = v
+        elif k == "album":       extra["album"] = v
+        elif k == "tiempo":      extra["liturgicalTime"] = v
+        elif k == "fuente":      extra["source"] = v
+        elif k == "video":       extra["videoEmbed"] = v
+        elif k == "comentario":  extra["comment"] = v
+        elif k == "youtube":     extra["youtubeLinks"].append(_parse_label_url(v))
+        elif k == "audio":       extra["audioLinks"].append(_parse_label_url(v))
+    return extra
+
+
+def parse_cho_metadata(content: str) -> Dict[str, object]:
+    """Extrae metadata básica + flags multimedia de un .cho."""
     def get(key: str) -> str:
         m = re.search(r"\{\s*" + key + r"\s*:\s*(.*?)\s*\}", content, re.IGNORECASE)
         return m.group(1).strip() if m else ""
 
     capo_raw = get("capo")
+    extra = parse_extra_meta(content)
     return {
         "title": get("title"),
         "artist": get("artist") or get("author"),
@@ -84,6 +118,17 @@ def parse_cho_metadata(content: str) -> Dict[str, str]:
         "capo": int(capo_raw) if capo_raw.isdigit() else 0,
         "has_todo": bool(TODO_REGEX.search(content)),
         "has_chord_review": bool(CHORD_REVIEW_REGEX.search(content)),
+        "has_video": bool(extra["videoEmbed"]),
+        "youtube_count": len(extra["youtubeLinks"]),
+        "audio_count": len(extra["audioLinks"]),
+        "rhythm": extra["rhythm"],
+        "album": extra["album"],
+        "liturgicalTime": extra["liturgicalTime"],
+        "source": extra["source"],
+        "videoEmbed": extra["videoEmbed"],
+        "youtubeLinks": extra["youtubeLinks"],
+        "audioLinks": extra["audioLinks"],
+        "comment": extra["comment"],
     }
 
 
@@ -196,6 +241,11 @@ def list_repo_songs(category_letter: Optional[str] = None) -> List[dict]:
                 "capo": meta.get("capo", 0),
                 "has_todo": meta.get("has_todo", False),
                 "has_chord_review": meta.get("has_chord_review", False),
+                "has_video": meta.get("has_video", False),
+                "youtube_count": meta.get("youtube_count", 0),
+                "audio_count": meta.get("audio_count", 0),
+                "rhythm": meta.get("rhythm", ""),
+                "album": meta.get("album", ""),
                 "error": meta_err,
             })
     return out
@@ -256,17 +306,52 @@ def load_docx_songs(force: bool = False) -> List[dict]:
     paras = d2c.load_paragraphs(docx_path)
     raw_songs = d2c.split_into_songs(paras)
     indexed = []
+    # Contador por sección para asignar position_in_section (1-based) — usado
+    # como sugerencia de número de archivo al importar.
+    pos_by_section: Dict[str, int] = {}
     for i, s in enumerate(raw_songs):
+        letter = d2c.section_letter(s["section"])
+        pos_by_section[letter or ""] = pos_by_section.get(letter or "", 0) + 1
         indexed.append({
             "id": i,
             "title_raw": s["title_raw"],
             "section": s["section"],
-            "section_letter": d2c.section_letter(s["section"]),
+            "section_letter": letter,
+            "position_in_section": pos_by_section[letter or ""],
             "_song": s,
         })
     _docx_cache["songs"] = indexed
     _docx_cache["mtime"] = mtime
     return indexed
+
+
+def first_free_number(folder: Path, start: int = 1) -> int:
+    """Devuelve el primer número de slot libre en la carpeta (busca huecos)."""
+    used = set()
+    if folder.exists():
+        for f in folder.iterdir():
+            m = re.match(r"(\d+)\.", f.name)
+            if m:
+                try:
+                    used.add(int(m.group(1)))
+                except ValueError:
+                    pass
+    n = start
+    while n in used:
+        n += 1
+    return n
+
+
+def preferred_number(folder: Path, hint: Optional[int] = None) -> int:
+    """Si el número 'hint' está libre, lo usa. Si no, primer hueco libre desde 1."""
+    if isinstance(hint, int) and hint > 0:
+        if not folder.exists():
+            return hint
+        used = {int(m.group(1)) for f in folder.iterdir()
+                if (m := re.match(r"(\d+)\.", f.name))}
+        if hint not in used:
+            return hint
+    return first_free_number(folder)
 
 
 def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
@@ -276,6 +361,7 @@ def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
         "title": conv["title"],
         "section": s["section"],
         "section_letter": s["section_letter"],
+        "position_in_section": s.get("position_in_section"),
         "key": conv.get("key"),
         "capo": conv.get("capo"),
         "warnings": conv.get("warnings", []),
@@ -401,6 +487,7 @@ def api_catalog():
     # Marcar repo_songs con si está en docx y/o en LaTeX
     matched_docx_ids: set = set()
     matched_latex_ids: set = set()
+    matched_doce_ids: set = set()
     for r in repo_songs:
         match = best_match(title_keys(r["title"]), docx_index)
         if match:
@@ -419,6 +506,15 @@ def api_catalog():
         else:
             r["in_latex"] = False
             r["latex_id"] = None
+        # doceacordes (sólo el mejor match, alto score)
+        doce_id = da.find_best_id(r["title"], r.get("artist", ""))
+        if doce_id:
+            r["in_doce"] = True
+            r["doce_id"] = doce_id
+            matched_doce_ids.add(doce_id)
+        else:
+            r["in_doce"] = False
+            r["doce_id"] = None
 
     # Canciones del docx que NO están en repo (excluidas las archivadas)
     ignored = load_ignored()
@@ -432,16 +528,21 @@ def api_catalog():
         # ¿Está disponible esta misma canción en LaTeX? Si sí, avisamos y damos
         # prioridad a la versión LaTeX (el usuario debería importar de LaTeX, no de docx).
         latex_alt = best_match(title_keys(conv["title"]), latex_index)
+        # Candidatos doceacordes (top 3 difuso)
+        doce_cands = da.find_candidates(conv["title"], top=3)
         missing.append({
             "docx_id": s["id"],
             "title": conv["title"],
             "title_raw": s["title_raw"],
             "section_letter": s["section_letter"],
+            "position_in_section": s.get("position_in_section"),
             "key": conv.get("key"),
             "capo": conv.get("capo"),
             "warnings": conv.get("warnings", []),
             "latex_available": bool(latex_alt),
             "latex_id": latex_alt["id"] if latex_alt else None,
+            "doce_available": bool(doce_cands),
+            "doce_candidates": doce_cands,
         })
 
     # Contadores
@@ -449,6 +550,8 @@ def api_catalog():
     chord_review_count = sum(1 for r in repo_songs if r["has_chord_review"])
     latex_total = len(latex_items)
     latex_only_new = sum(1 for lt in latex_items if lt["id"] not in matched_latex_ids)
+    with_youtube = sum(1 for r in repo_songs if r.get("youtube_count", 0) > 0 or r.get("has_video"))
+    with_audio = sum(1 for r in repo_songs if r.get("audio_count", 0) > 0)
 
     return jsonify({
         "categories": list_categories(),
@@ -464,6 +567,10 @@ def api_catalog():
             "latex_total": latex_total,
             "latex_new": latex_only_new,
             "latex_matches_repo": len(matched_latex_ids),
+            "with_youtube": with_youtube,
+            "with_audio": with_audio,
+            "without_youtube": len(repo_songs) - with_youtube,
+            "without_audio": len(repo_songs) - with_audio,
         },
     })
 
@@ -505,6 +612,133 @@ def api_song_put():
     p.write_text(content, encoding="utf-8")
     meta = parse_cho_metadata(content)
     return jsonify({"ok": True, "path": str(p.relative_to(REPO_DIR)), "meta": meta})
+
+
+def _sanitize_directive_value(s: str) -> str:
+    """Limpia caracteres que romperían el parseo del .cho.
+    '}' cierra la directive; lo reemplaza por ')'.
+    '\\n' la divide en varias líneas; lo aplana a espacio.
+    """
+    if not s:
+        return ""
+    return str(s).replace("}", ")").replace("\n", " ").replace("\r", " ").strip()
+
+
+def _sanitize_link_label(s: str) -> str:
+    """Para labels: además del cleanup base, quitar '|' que es nuestro separador."""
+    return _sanitize_directive_value(s).replace("|", "/").strip()
+
+
+def _render_meta_directive_lines(meta: Dict[str, object]) -> List[str]:
+    """Genera las líneas de custom directives a partir de un dict de meta."""
+    lines: List[str] = []
+    if meta.get("rhythm"):
+        lines.append(f"{{ritmo: {_sanitize_directive_value(meta['rhythm'])}}}")
+    if meta.get("album"):
+        lines.append(f"{{album: {_sanitize_directive_value(meta['album'])}}}")
+    if meta.get("liturgicalTime"):
+        lines.append(f"{{tiempo: {_sanitize_directive_value(meta['liturgicalTime'])}}}")
+    if meta.get("source"):
+        lines.append(f"{{fuente: {_sanitize_directive_value(meta['source'])}}}")
+    if meta.get("videoEmbed"):
+        lines.append(f"{{video: {_sanitize_directive_value(meta['videoEmbed'])}}}")
+    for yt in (meta.get("youtubeLinks") or []):
+        label = _sanitize_link_label(yt.get("label") or "")
+        url = _sanitize_directive_value(yt.get("url") or "")
+        if not url:
+            continue
+        lines.append(f"{{youtube: {label} | {url}}}" if label else f"{{youtube: {url}}}")
+    for au in (meta.get("audioLinks") or []):
+        label = _sanitize_link_label(au.get("label") or "")
+        url = _sanitize_directive_value(au.get("url") or "")
+        if not url:
+            continue
+        lines.append(f"{{audio: {label} | {url}}}" if label else f"{{audio: {url}}}")
+    if meta.get("comment"):
+        lines.append(f"{{comentario: {_sanitize_directive_value(meta['comment'])}}}")
+    return lines
+
+
+_META_DIRECTIVE_RE = re.compile(
+    r"^[ \t]*\{\s*(ritmo|album|tiempo|fuente|video|youtube|audio|comentario)\s*:[^}]*\}[ \t]*\r?\n?",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _replace_meta_block(content: str, new_lines: List[str]) -> str:
+    """Borra todas las custom-meta directives existentes e inserta las nuevas
+    justo después del último directive de cabecera (title/artist/key/capo/comment)."""
+    stripped = _META_DIRECTIVE_RE.sub("", content)
+    if not new_lines:
+        return stripped
+    lines = stripped.split("\n")
+    insert_at = 0
+    for i, ln in enumerate(lines):
+        if re.match(r"\s*\{\s*(title|artist|author|key|capo|comment)\s*:", ln, re.IGNORECASE):
+            insert_at = i + 1
+        elif ln.strip() == "":
+            break
+        else:
+            break
+    new = lines[:insert_at] + new_lines + lines[insert_at:]
+    return "\n".join(new)
+
+
+@app.route("/api/song/meta", methods=["PUT"])
+def api_song_meta_put():
+    """Actualiza SOLO las custom directives multimedia/meta del .cho.
+
+    Body: {rhythm, album, liturgicalTime, source, videoEmbed,
+           youtubeLinks: [{label, url}], audioLinks: [{label, url}], comment}
+    """
+    path_str = request.args.get("path", "")
+    if not path_str:
+        abort(400, "Falta 'path'")
+    p = safe_relpath(path_str)
+    if not p.exists():
+        abort(404, "No existe")
+    body = request.get_json(silent=True) or {}
+    new_lines = _render_meta_directive_lines(body)
+    original = p.read_text(encoding="utf-8")
+    new_content = _replace_meta_block(original, new_lines)
+    if new_content == original:
+        return jsonify({"ok": True, "path": str(p.relative_to(REPO_DIR)),
+                        "meta": parse_cho_metadata(new_content), "unchanged": True})
+    backup_file(p)
+    p.write_text(new_content, encoding="utf-8")
+    return jsonify({"ok": True, "path": str(p.relative_to(REPO_DIR)),
+                    "meta": parse_cho_metadata(new_content)})
+
+
+@app.route("/api/song/meta/quick-add", methods=["POST"])
+def api_song_meta_quick_add():
+    """Atajo: añade UN link (youtube o audio) sin tener que mandar todo el meta.
+
+    Body: {path, type: 'youtube'|'audio', label, url, prepend?: bool}
+    """
+    body = request.get_json(silent=True) or {}
+    path_str = body.get("path", "")
+    link_type = (body.get("type") or "").lower()
+    label = (body.get("label") or "").strip()
+    url = (body.get("url") or "").strip()
+    if not path_str or link_type not in ("youtube", "audio") or not url:
+        abort(400, "Faltan campos (path, type=youtube|audio, url)")
+    p = safe_relpath(path_str)
+    if not p.exists():
+        abort(404, "No existe")
+    content = p.read_text(encoding="utf-8")
+    meta = parse_cho_metadata(content)
+    key = "youtubeLinks" if link_type == "youtube" else "audioLinks"
+    entry = {"label": label, "url": url}
+    if body.get("prepend"):
+        meta[key] = [entry] + list(meta.get(key) or [])
+    else:
+        meta[key] = list(meta.get(key) or []) + [entry]
+    new_lines = _render_meta_directive_lines(meta)
+    new_content = _replace_meta_block(content, new_lines)
+    backup_file(p)
+    p.write_text(new_content, encoding="utf-8")
+    return jsonify({"ok": True, "meta": parse_cho_metadata(new_content)})
 
 
 @app.route("/api/song/new", methods=["POST"])
@@ -626,7 +860,9 @@ def api_docx_import():
         if folder is None:
             results.append({"id": i, "ok": False, "error": "sin carpeta destino"})
             continue
-        num = d2c.next_song_number(folder)
+        # Sugerencia de número: posición de la canción dentro de su sección
+        # en el DOCX. Si está libre se respeta; si no, primer hueco libre.
+        num = preferred_number(folder, s.get("position_in_section"))
         fname = f"{num:02d}.{conv['slug']}.cho"
         fpath = folder / fname
         if fpath.exists():
@@ -825,11 +1061,181 @@ def api_songs_bulk_status():
     return jsonify({"ok": True, "results": results})
 
 
+# ─────────── API: doceacordes.es ─────────── #
+
+
+@app.route("/api/doce/list")
+def api_doce_list():
+    """Lista todas las canciones del índice JSON, enriquecidas con match en repo."""
+    items = da.doce_items()
+    repo_songs = list_repo_songs()
+    # Índice repo por título normalizado para detectar duplicados rápido
+    repo_by_norm: Dict[str, dict] = {}
+    for r in repo_songs:
+        for k in title_keys(r["title"]):
+            repo_by_norm.setdefault(k, r)
+
+    out = []
+    for entry in items:
+        r = best_match(title_keys(entry["title"]), repo_by_norm)
+        out.append({
+            "id": entry["id"],
+            "title": entry.get("title", ""),
+            "artist": entry.get("artist", ""),
+            "subtitle": entry.get("subtitle", ""),
+            "url": entry.get("url", ""),
+            "in_repo": bool(r),
+            "repo_path": r["path"] if r else None,
+            "repo_category": r["category_letter"] if r else None,
+        })
+    return jsonify({"items": out, "categories": list_categories()})
+
+
+@app.route("/api/doce/preview")
+def api_doce_preview():
+    doce_id = request.args.get("id", "").strip()
+    if not doce_id:
+        abort(400, "Falta id")
+    force = request.args.get("force") == "1"
+    include_meta = request.args.get("meta", "1") != "0"
+    try:
+        content, meta = da.fetch_and_adapt(
+            doce_id, use_cache=not force, include_meta=include_meta,
+        )
+    except Exception as e:
+        abort(502, f"Error descargando doceacordes id={doce_id}: {e}")
+    entry = da.get_entry(doce_id) or {}
+    # Sugerir slug y número
+    suggested_slug = d2c.slugify(d2c.pretty_title_case(meta.get("title") or entry.get("title", "")))
+    suggested_number = None
+    cat_letter = request.args.get("category", "").upper().strip()
+    hint_raw = request.args.get("position_hint", "").strip()
+    hint = int(hint_raw) if hint_raw.isdigit() else None
+    if cat_letter:
+        cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+        if cat:
+            suggested_number = preferred_number(SONGS_DIR / cat["folder"], hint)
+    extras = parse_extra_meta(content)
+    return jsonify({
+        "id": doce_id,
+        "entry": entry,
+        "content": content,
+        "meta": meta,
+        "extras": extras,
+        "suggested_slug": suggested_slug,
+        "suggested_number": suggested_number,
+    })
+
+
+@app.route("/api/doce/suggest-number")
+def api_doce_suggest_number():
+    """Devuelve un número sugerido (primer hueco libre, o el hint si está libre)."""
+    cat_letter = request.args.get("category", "").upper().strip()
+    cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    hint_raw = request.args.get("position_hint", "").strip()
+    hint = int(hint_raw) if hint_raw.isdigit() else None
+    return jsonify({"category": cat_letter, "next_number": preferred_number(folder, hint)})
+
+
+@app.route("/api/doce/import", methods=["POST"])
+def api_doce_import():
+    """Importa canciones desde doceacordes.es.
+
+    Body: {items: [{doce_id, category_letter, number?, slug?, force_refresh?}]}
+    """
+    body = request.get_json(silent=True) or {}
+    items = body.get("items") or []
+    if not isinstance(items, list) or not items:
+        abort(400, "Falta items")
+    results = []
+    for it in items:
+        doce_id = str(it.get("doce_id") or "").strip()
+        cat_letter = (it.get("category_letter") or "").upper().strip()
+        force = bool(it.get("force_refresh"))
+        try:
+            if not doce_id:
+                raise ValueError("Falta doce_id")
+            if not cat_letter:
+                raise ValueError("Falta category_letter")
+            cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+            if not cat:
+                raise ValueError(f"Categoría {cat_letter} no encontrada")
+            folder = SONGS_DIR / cat["folder"]
+            folder.mkdir(exist_ok=True)
+
+            include_meta = it.get("include_meta", True)
+            content, meta = da.fetch_and_adapt(
+                doce_id, use_cache=not force, include_meta=include_meta,
+            )
+
+            title = meta.get("title") or (da.get_entry(doce_id) or {}).get("title") or f"cancion-{doce_id}"
+            slug = it.get("slug") or d2c.slugify(d2c.pretty_title_case(title))
+            slug = re.sub(r"[^a-z0-9_]+", "_", slug.lower()).strip("_") or "cancion"
+
+            num = it.get("number")
+            if not (isinstance(num, int) and num > 0):
+                hint = it.get("position_hint")
+                hint_int = hint if (isinstance(hint, int) and hint > 0) else None
+                num = preferred_number(folder, hint_int)
+            fname = f"{num:02d}.{slug}.cho"
+            fpath = folder / fname
+            if fpath.exists():
+                raise FileExistsError(f"Ya existe {fname}")
+            fpath.write_text(content, encoding="utf-8")
+            results.append({
+                "doce_id": doce_id,
+                "ok": True,
+                "path": str(fpath.relative_to(REPO_DIR)),
+                "title": title,
+            })
+        except Exception as e:
+            results.append({"doce_id": doce_id, "ok": False, "error": str(e)})
+    return jsonify({"results": results})
+
+
 # ─────────── API: reordenar y build-json ─────────── #
+
+
+@app.route("/api/category/slots")
+def api_category_slots():
+    """Devuelve la representación 'con huecos' de una categoría: lista de
+    `{number, filename}` donde filename es null en los slots vacíos."""
+    letter = request.args.get("category", "").upper().strip()
+    cat = next((c for c in list_categories() if c["letter"] == letter), None)
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    by_num: Dict[int, str] = {}
+    unnumbered: List[str] = []
+    for p in sorted(folder.glob("*.cho")):
+        m = re.match(r"(\d+)\.", p.name)
+        if m:
+            by_num[int(m.group(1))] = p.name
+        else:
+            unnumbered.append(p.name)
+    slots: List[dict] = []
+    if by_num:
+        max_num = max(by_num)
+        for n in range(1, max_num + 1):
+            slots.append({"number": n, "filename": by_num.get(n)})
+    # Sin numerar al final
+    for fn in unnumbered:
+        slots.append({"number": None, "filename": fn})
+    return jsonify({"category": letter, "slots": slots})
 
 
 @app.route("/api/reorder", methods=["POST"])
 def api_reorder():
+    """Reordena una categoría aceptando huecos.
+
+    Body: {category: "A", order: [<filename> | null, ...]}
+      - Cada índice i (1-based) es el número que tendrá esa canción.
+      - `null` = slot vacío (no se asigna ningún archivo a ese número).
+      - Compatible con el formato antiguo `order: [filename, ...]` (sin nulls).
+    """
     body = request.get_json(silent=True) or {}
     letter = body.get("category", "").upper()
     order = body.get("order", [])
@@ -840,38 +1246,53 @@ def api_reorder():
         abort(404, "Categoría no encontrada")
     folder = SONGS_DIR / cat["folder"]
     current = {p.name: p for p in folder.glob("*.cho")}
-    # Validar que todos los filenames existen
-    for fn in order:
-        if fn not in current:
-            abort(400, f"Archivo no existe: {fn}")
-    # Hacer backup de la categoría completa
+    # Validar: todos los filenames no-null deben existir y ser únicos
+    seen = set()
+    for item in order:
+        if item is None:
+            continue
+        if not isinstance(item, str):
+            abort(400, f"Item inválido: {item!r}")
+        if item not in current:
+            abort(400, f"Archivo no existe: {item}")
+        if item in seen:
+            abort(400, f"Archivo duplicado en order: {item}")
+        seen.add(item)
+    # Crítico: el order debe cubrir TODOS los .cho de la carpeta, si no
+    # quedarían archivos con número duplicado tras el rename.
+    missing = set(current.keys()) - seen
+    if missing:
+        abort(400, f"Faltan archivos en order: {sorted(missing)}")
+    # Quitar trailing nulls (huecos al final no tienen sentido)
+    while order and order[-1] is None:
+        order.pop()
+    if not order:
+        abort(400, "order vacío")
+    # Backup
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_folder = BACKUP_DIR / ts / cat["folder"]
     backup_folder.mkdir(parents=True, exist_ok=True)
     for p in folder.glob("*.cho"):
         shutil.copy2(p, backup_folder / p.name)
-    # Renombrar: paso intermedio con prefijo temporal para evitar colisiones
+    # Paso 1: mover todo a temporales
     tmp_prefix = f".reorder-{int(time.time())}-"
-    intermediate: List[tuple[Path, str]] = []
-    for fn in order:
+    temp_pairs: List[tuple] = []  # (slot_number, tmp_path, base_name)
+    for idx, fn in enumerate(order, start=1):
+        if fn is None:
+            continue
         p = folder / fn
-        # Quitar prefijo numérico viejo si existe
         base = re.sub(r"^\d+\.", "", fn)
-        intermediate.append((p, base))
-    # Renombrar a temporales
-    temp_paths: List[tuple[Path, str]] = []
-    for p, base in intermediate:
-        tp = folder / (tmp_prefix + base)
+        tp = folder / (tmp_prefix + str(idx) + "-" + base)
         p.rename(tp)
-        temp_paths.append((tp, base))
-    # Renombrar a finales con números
-    final_paths = []
-    for idx, (tp, base) in enumerate(temp_paths, start=1):
-        final_name = f"{idx:02d}.{base}"
-        final = folder / final_name
-        tp.rename(final)
-        final_paths.append(final.name)
-    return jsonify({"ok": True, "category": letter, "new_order": final_paths})
+        temp_pairs.append((idx, tp, base))
+    # Paso 2: renombrar al número final
+    final_names: List[Optional[str]] = [None] * len(order)
+    for slot, tp, base in temp_pairs:
+        final_name = f"{slot:02d}.{base}"
+        (folder / final_name).exists()  # no debería existir; backup ya hecho
+        tp.rename(folder / final_name)
+        final_names[slot - 1] = final_name
+    return jsonify({"ok": True, "category": letter, "new_order": final_names})
 
 
 @app.route("/api/build-json", methods=["POST"])

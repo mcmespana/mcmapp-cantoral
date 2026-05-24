@@ -184,6 +184,179 @@ table.songs tr.has-match td { background: rgba(139, 92, 246, 0.06); }
 }
 .badge-latex:hover { background: rgba(139, 92, 246, 0.30); }
 .theme-dark .badge-latex { color: #c4b5fd; }
+.badge-latex-mini {
+  display: inline-block; margin-left: 6px; padding: 0 4px; font-size: 9px;
+  background: rgba(139, 92, 246, 0.10); color: #6d28d9; border-radius: 2px; cursor: pointer;
+}
+.theme-dark .badge-latex-mini { color: #c4b5fd; }
+
+/* ─────── Importar doceacordes (prioridad alta) ─────── */
+.badge-doce {
+  display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px;
+  background: rgba(234, 88, 12, 0.20); color: #c2410c; border-radius: 3px;
+  cursor: pointer; border: 1px solid rgba(234, 88, 12, 0.45); font-weight: 700;
+}
+.badge-doce:hover { background: rgba(234, 88, 12, 0.35); }
+.theme-dark .badge-doce { color: #fdba74; }
+table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
+.theme-dark table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.16); }
+
+/* ─────── Multimedia (catálogo + editor) ─────── */
+.media-cell { white-space: nowrap; }
+.media-icon {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 6px; margin-right: 4px; font-size: 13px;
+  background: transparent; border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; opacity: 0.4; transition: opacity 0.15s, background 0.15s;
+}
+.media-icon:hover { opacity: 1; background: var(--bg-2); }
+.media-icon.active { opacity: 1; background: rgba(14, 165, 233, 0.10); border-color: rgba(14, 165, 233, 0.35); }
+.media-icon .media-count {
+  font-size: 10px; font-weight: 700; color: var(--fg-2);
+  background: var(--bg-2); padding: 0 4px; border-radius: 8px; margin-left: 2px;
+}
+.tab-badge {
+  display: inline-block; min-width: 16px; height: 16px; padding: 0 4px;
+  margin-left: 4px; font-size: 10px; font-weight: 700; line-height: 16px;
+  background: rgba(14, 165, 233, 0.2); color: #0369a1; border-radius: 8px;
+  text-align: center;
+}
+.theme-dark .tab-badge { color: #7dd3fc; }
+
+.media-pane { padding: 0; overflow: auto; }
+.media-toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); background: var(--bg-2); position: sticky; top: 0; z-index: 1;
+}
+.media-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 16px;
+}
+.media-section {
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+}
+.media-section:nth-child(3) { grid-column: 1 / -1; }
+.media-section h4 { margin: 0 0 10px; font-size: 14px; }
+.media-section label { display: block; font-size: 11px; color: var(--fg-3);
+  margin: 8px 0 3px; font-weight: 600; }
+.media-section input[type="text"], .media-section input[type="url"], .media-section textarea {
+  width: 100%; padding: 5px 7px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 3px; color: var(--fg);
+}
+.link-list-editor { margin-top: 10px; }
+.link-list-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 600; color: var(--fg-3); margin-bottom: 4px;
+}
+.link-row {
+  display: grid; grid-template-columns: 24px 130px 1fr auto;
+  gap: 4px; align-items: center; padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.link-num {
+  display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center;
+  background: var(--accent); color: white; border-radius: 3px; font-size: 11px; font-weight: 700;
+}
+.link-label-input { font-size: 12px !important; }
+.link-url-input { font-size: 11px !important; font-family: monospace; }
+.link-actions { display: flex; gap: 2px; }
+.link-actions .btn-mini { padding: 2px 5px; font-size: 11px; min-width: 22px; }
+
+/* Quick-add modal lista existentes */
+.link-list { list-style: none; margin: 0; padding: 0; }
+.link-list li {
+  display: grid; grid-template-columns: 24px 130px 1fr auto; gap: 6px; align-items: center;
+  padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 12px;
+}
+.link-list .link-url {
+  color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-family: monospace; font-size: 11px;
+}
+.link-list .link-url:hover { text-decoration: underline; }
+.link-list .link-label { font-weight: 600; }
+
+/* ─────── Dashboard groups ─────── */
+.stats-group { margin-bottom: 18px; }
+.stats-group-title {
+  font-size: 12px; font-weight: 700; color: var(--fg-3);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin: 0 0 8px 2px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ─────── Meta table (preview modals) ─────── */
+.meta-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.meta-table th {
+  text-align: left; font-weight: 600; color: var(--fg-3);
+  padding: 3px 6px 3px 0; vertical-align: top; width: 80px; white-space: nowrap;
+}
+.meta-table td { padding: 3px 0; vertical-align: top; word-break: break-word; }
+
+/* ─────── Doceacordes candidates popover ─────── */
+.badge-doce-wrap { position: relative; display: inline-block; }
+.doce-popover {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  margin-top: 4px; min-width: 320px; max-width: 480px;
+  background: var(--bg); border: 1px solid rgba(234, 88, 12, 0.45);
+  border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 6px;
+}
+.theme-dark .doce-popover { box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.doce-popover-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; font-weight: 700; color: var(--fg-2);
+  padding: 4px 6px 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.doce-cand {
+  padding: 6px 8px; border-radius: 4px; cursor: pointer;
+  transition: background 0.1s;
+}
+.doce-cand:hover { background: rgba(234, 88, 12, 0.10); }
+.doce-cand-main { display: flex; align-items: baseline; gap: 6px; }
+.doce-cand-num {
+  font-family: monospace; font-size: 10px; padding: 1px 5px;
+  background: rgba(234, 88, 12, 0.18); color: #c2410c; border-radius: 3px; font-weight: 700;
+}
+.theme-dark .doce-cand-num { color: #fdba74; }
+.doce-cand-title { font-weight: 600; flex: 1; font-size: 13px; }
+.doce-cand-score {
+  font-size: 10px; color: var(--fg-3); font-family: monospace;
+  background: var(--bg-2); padding: 0 4px; border-radius: 3px;
+}
+.doce-cand-sub { font-size: 11px; color: var(--fg-3); margin-top: 2px; padding-left: 32px; }
+
+/* ─────── Reorder gaps ─────── */
+.reorder-row-main { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.reorder-row-main .link-mini { margin-left: auto; opacity: 0; transition: opacity 0.1s; }
+.reorder-list li:hover .reorder-row-main .link-mini { opacity: 1; }
+.reorder-gap {
+  background: repeating-linear-gradient(
+    -45deg, transparent, transparent 6px,
+    rgba(0,0,0,0.04) 6px, rgba(0,0,0,0.04) 12px
+  ) !important;
+  color: var(--fg-3);
+  border-left: 3px solid rgba(0,0,0,0.10);
+}
+.theme-dark .reorder-gap {
+  background: repeating-linear-gradient(
+    -45deg, transparent, transparent 6px,
+    rgba(255,255,255,0.04) 6px, rgba(255,255,255,0.04) 12px
+  ) !important;
+  border-left-color: rgba(255,255,255,0.10);
+}
+.reorder-gap .new-num { background: var(--fg-3) !important; }
+.reorder-gap .reorder-row-main .link-mini { opacity: 1; }
+.gap-label { font-style: italic; font-size: 12px; color: var(--fg-3); }
+
+/* ─────── Editor queue progress ─────── */
+.queue-progress {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-right: 12px; padding: 4px 10px;
+  background: rgba(14, 165, 233, 0.12); color: #0369a1;
+  border: 1px solid rgba(14, 165, 233, 0.30); border-radius: 4px;
+  font-size: 12px;
+}
+.theme-dark .queue-progress { color: #7dd3fc; }
+.queue-progress strong { font-weight: 700; }
 .badge-overwrite {
   display: inline-block; padding: 1px 6px; font-size: 11px; border-radius: 3px;
   background: rgba(202, 138, 4, 0.18); color: var(--warn); border: 1px solid rgba(202, 138, 4, 0.4);
@@ -366,7 +539,8 @@ table.songs tr.has-match td { background: rgba(139, 92, 246, 0.06); }
 .ed-marker .link-mini { background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; opacity: 0.6; }
 .ed-marker .link-mini:hover { opacity: 1; color: var(--danger); }
 
-.ed-line-row { position: relative; margin: 18px 0 2px; min-height: 1.4em; padding-left: 28px; }
+.ed-line.ed-lyric { padding-top: 18px; padding-bottom: 2px; }
+.ed-line-row { position: relative; margin: 0; min-height: 1.4em; padding-left: 28px; }
 .ed-chords-layer { position: absolute; top: -1.05em; left: 28px; right: 0; height: 1.1em; pointer-events: none; }
 .ed-lyric-row { white-space: pre; font-size: 15px; line-height: 1.25; }
 .ed-char {
@@ -387,9 +561,9 @@ table.songs tr.has-match td { background: rgba(139, 92, 246, 0.06); }
 .ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
-.ed-line.ed-soc + .ed-line.ed-lyric .ed-line-row,
-.ed-line.ed-lyric + .ed-line.ed-lyric .ed-line-row {
-  margin-top: 10px;
+.ed-line.ed-soc + .ed-line.ed-lyric,
+.ed-line.ed-lyric + .ed-line.ed-lyric {
+  padding-top: 10px;
 }
 .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(202, 138, 4, 0.06), transparent 30%); }
 .theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(234, 179, 8, 0.12), transparent 30%); }
