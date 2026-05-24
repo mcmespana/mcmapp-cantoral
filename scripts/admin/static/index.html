@@ -405,6 +405,23 @@
           <input type="text" x-model="editor.meta.artist" @input="updateMetaInRaw('artist', $event.target.value)" />
           <label>Tono (key)</label>
           <input type="text" x-model="editor.meta.key" @input="updateMetaInRaw('key', $event.target.value)" />
+          <div class="transpose-box">
+            <div class="transpose-row">
+              <button type="button" class="btn-mini transpose-btn" @click="transposeSong(-1)" title="Bajar medio tono (todos los acordes)">−½ tono</button>
+              <button type="button" class="btn-mini transpose-btn" @click="transposeSong(1)" title="Subir medio tono (todos los acordes)">+½ tono</button>
+            </div>
+            <div class="transpose-row">
+              <select class="transpose-select"
+                      @change="transposeSongToKey($event.target.value); $event.target.value=''"
+                      title="Transpone toda la canción al tono elegido y machaca el campo Tono">
+                <option value="">🎵 Llevar a tono…</option>
+                <template x-for="k in commonKeyOptions()" :key="k">
+                  <option :value="k" x-text="k"></option>
+                </template>
+              </select>
+            </div>
+            <div class="transpose-help">Mueve <strong>todos</strong> los acordes y sobrescribe el campo Tono. Pulsa 💾 para guardar el cambio definitivo.</div>
+          </div>
           <label>Capo</label>
           <input type="number" min="0" x-model="editor.meta.capo" @input="updateMetaInRaw('capo', $event.target.value)" />
           <div class="editor-status-selector">
@@ -422,13 +439,18 @@
             <small x-text="editor.path"></small>
           </div>
           <div class="meta-chuleta">
-            <div class="chuleta-title">Atajos rápidos</div>
-            <div class="chuleta-row"><span class="chuleta-key">○ margen</span> seleccionar línea</div>
-            <div class="chuleta-row"><span class="chuleta-key">Shift+click</span> rango</div>
-            <div class="chuleta-row"><span class="chuleta-key">📋 Copiar</span> guarda acordes <em>(limpia selección)</em></div>
-            <div class="chuleta-row"><span class="chuleta-key">📥 Pegar</span> aplica al destino</div>
-            <div class="chuleta-row"><span class="chuleta-key">Ctrl+S</span> guardar</div>
+            <div class="chuleta-title">Copiar acordes entre estrofas (paso a paso)</div>
+            <div class="chuleta-step"><span class="step-num">1</span> Click en el círculo <span class="chuleta-key">○</span> del margen izquierdo de cada línea con los acordes que quieres copiar (se pondrá <span class="chuleta-key chuleta-on">◉</span> azul).</div>
+            <div class="chuleta-step"><span class="step-num">2</span> Pulsa <span class="chuleta-key">📋 Copiar acordes</span> en la barra de arriba.</div>
+            <div class="chuleta-step"><span class="step-num">3</span> Marca ahora las líneas DESTINO con sus círculos.</div>
+            <div class="chuleta-step"><span class="step-num">4</span> Pulsa <span class="chuleta-key">📥 Pegar acordes</span>.</div>
+          </div>
+          <div class="meta-chuleta">
+            <div class="chuleta-title">Otros atajos</div>
+            <div class="chuleta-row"><span class="chuleta-key">Shift+click ○</span> selección de rango</div>
+            <div class="chuleta-row"><span class="chuleta-key">Ctrl+S</span> guardar canción</div>
             <div class="chuleta-row"><span class="chuleta-key">2×click acorde</span> editar texto</div>
+            <div class="chuleta-row"><span class="chuleta-key">2×click letra</span> editar letra</div>
             <div class="chuleta-row"><span class="chuleta-key">drag acorde</span> sílaba · Shift=palabra · Alt=libre</div>
           </div>
         </div>
@@ -468,6 +490,16 @@
 
           <div class="visual-add-hint" x-show="visualAddMode" x-cloak>
             🟢 Modo añadir activado — pincha sobre cualquier letra para insertar un acorde nuevo.
+          </div>
+
+          <div class="copypaste-banner"
+               x-show="visualChordClipboard || visualSelectedLines.size > 0"
+               :class="{ 'cp-ready': visualChordClipboard }"
+               x-cloak>
+            <span class="cp-text" x-text="copyPasteHint()"></span>
+            <span class="cp-info" x-show="clipboardInfo" x-text="clipboardInfo"></span>
+            <button class="link-mini" x-show="visualChordClipboard"
+                    @click="cancelChordClipboard()" title="Cancelar el patrón copiado">✕ cancelar copia</button>
           </div>
 
           <div class="visual-doc"

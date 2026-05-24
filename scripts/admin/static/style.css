@@ -276,6 +276,35 @@ table.songs tr.selected-row td { background: rgba(37,99,235,0.07); }
 
 .visual-add-hint { background: rgba(22, 163, 74, 0.12); color: var(--ok); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 6px; }
 
+.copypaste-banner {
+  background: rgba(37, 99, 235, 0.10); color: var(--accent);
+  border: 1px solid rgba(37, 99, 235, 0.30); border-radius: 6px;
+  padding: 8px 12px; font-size: 13px; margin-bottom: 8px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+}
+.copypaste-banner.cp-ready { background: rgba(202, 138, 4, 0.12); color: var(--warn); border-color: rgba(202, 138, 4, 0.35); }
+.copypaste-banner .cp-text { flex: 1; min-width: 200px; font-weight: 500; }
+.copypaste-banner .cp-info { font-size: 11px; opacity: 0.85; background: rgba(0,0,0,0.06); padding: 2px 8px; border-radius: 3px; }
+.copypaste-banner .link-mini { background: transparent; border: 1px solid currentColor; color: inherit; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; opacity: 0.75; }
+.copypaste-banner .link-mini:hover { opacity: 1; }
+
+.transpose-box {
+  margin-top: 6px; padding: 8px; background: var(--bg-3);
+  border-radius: 6px; border: 1px solid var(--border);
+}
+.transpose-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.transpose-row:last-child { margin-bottom: 0; }
+.transpose-btn { flex: 1; font-weight: 600; font-size: 12px; padding: 5px 6px; }
+.transpose-select {
+  width: 100%; padding: 5px 6px; border: 1px solid var(--border-strong);
+  border-radius: 4px; background: var(--bg-2); color: var(--fg); font-size: 12px; cursor: pointer;
+}
+.transpose-help { font-size: 10px; color: var(--fg-3); margin-top: 6px; line-height: 1.3; }
+
+.chuleta-step { font-size: 11px; color: var(--fg-2); padding: 3px 0; line-height: 1.4; display: flex; gap: 6px; align-items: flex-start; }
+.chuleta-step .step-num { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; background: var(--accent); color: white; border-radius: 50%; font-size: 10px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+.chuleta-key.chuleta-on { background: var(--accent); color: white; border-color: var(--accent); }
+
 .visual-doc {
   outline: none; padding: 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
   /* Carlito = clon métrico de Calibri (mismas anchuras de caracteres).
@@ -314,10 +343,13 @@ table.songs tr.selected-row td { background: rgba(37,99,235,0.07); }
 .ed-line .line-gutter {
   position: absolute; left: 0; top: 0; width: 24px; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; color: transparent; font-size: 12px; user-select: none;
+  cursor: pointer; color: var(--fg-3); opacity: 0.4;
+  font-size: 14px; user-select: none;
+  transition: opacity 0.12s, color 0.12s, transform 0.1s;
 }
-.ed-line:hover .line-gutter { color: var(--fg-3); }
-.ed-line.selected .line-gutter { color: var(--accent); }
+.ed-line.ed-lyric .line-gutter { opacity: 0.55; }
+.ed-line:hover .line-gutter { color: var(--accent); opacity: 1; transform: scale(1.15); }
+.ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
 .ed-line.ed-soc + .ed-line.ed-lyric .ed-line-row,
