@@ -347,6 +347,54 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 .reorder-gap .reorder-row-main .link-mini { opacity: 1; }
 .gap-label { font-style: italic; font-size: 12px; color: var(--fg-3); }
 
+/* ─────── Editor header: estado de revisión y layout ─────── */
+.editor-header-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.editor-header-left h2 { margin: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.editor-status-bar {
+  display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+}
+.status-bar-label { font-size: 11px; color: var(--fg-3); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+
+/* ─────── Doceacordes preview: chordpro grande, datos a la derecha ─────── */
+.editor-modal .editor-body { grid-template-columns: 280px 1fr; }
+.editor-modal .editor-body.single { grid-template-columns: 1fr; }
+/* Modal preview doceacordes: 2 columnas (chordpro ancho + meta) sin editor-meta */
+.doce-preview-body { display: grid; grid-template-columns: 3fr 1fr; }
+.doce-preview-body .chordpro-pane { padding: 16px; overflow: auto; background: var(--bg); }
+.doce-preview-body .chordpro-pane pre {
+  margin: 0; font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+}
+.doce-preview-body .meta-pane {
+  padding: 14px 18px; overflow: auto; background: var(--bg-2);
+  border-left: 1px solid var(--border);
+}
+
+/* ─────── Datos extra (tab solo de meta) ─────── */
+.extra-grid { padding: 18px; max-width: 720px; margin: 0 auto; width: 100%; }
+.extra-section { background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; }
+.extra-section h4 { margin: 0 0 12px; font-size: 14px; }
+.extra-section label { display: block; font-size: 11px; color: var(--fg-3); font-weight: 600;
+  text-transform: uppercase; margin: 12px 0 4px; }
+.extra-section input[type="text"], .extra-section input[type="url"], .extra-section textarea {
+  width: 100%; padding: 7px 9px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 4px; color: var(--fg);
+}
+.extra-section textarea { font-family: inherit; resize: vertical; }
+
+/* ─────── Artist match perfect ─────── */
+.doce-cand.artist-perfect {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.12), transparent);
+  border-left: 3px solid rgba(34, 197, 94, 0.6);
+}
+.doce-cand.artist-perfect:hover { background: linear-gradient(90deg, rgba(34, 197, 94, 0.20), transparent); }
+.doce-cand-score.score-perfect {
+  background: rgba(34, 197, 94, 0.20); color: #166534; font-weight: 700;
+}
+.theme-dark .doce-cand-score.score-perfect { color: #86efac; }
+
 /* ─────── Editor queue progress ─────── */
 .queue-progress {
   display: inline-flex; align-items: center; gap: 8px;
@@ -428,13 +476,16 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 /* Editor overlay */
 .editor-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100;
-  display: flex; align-items: center; justify-content: center; padding: 24px;
+  display: flex; align-items: center; justify-content: center; padding: 12px;
 }
 .editor-modal {
   background: var(--bg); border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-  width: 95vw; max-width: 1200px; height: 90vh; display: flex; flex-direction: column;
+  width: 98vw; max-width: none; height: 96vh; display: flex; flex-direction: column;
 }
-.editor-modal.small { max-width: 800px; height: 80vh; }
+/* `small` ya solo modifica un poco menos de alto, no de ancho */
+.editor-modal.small { max-width: 1100px; height: 90vh; }
+/* Modales realmente compactos (quick-add link, nueva canción): contenido breve */
+.editor-modal.compact { max-width: 640px; height: auto; max-height: 90vh; }
 .editor-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border); }
 .editor-header h2 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 10px; }
 .editor-actions { display: flex; gap: 8px; }

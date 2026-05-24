@@ -93,6 +93,67 @@ def translate_key_value(key_es: str) -> str:
 
 # ─────────── Adaptación del .cho completo ─────────── #
 
+def _ensure_trailing_space_after_chord(line: str) -> str:
+    """Si la línea acaba en un acorde [X], añade un espacio final.
+    Así ninguna línea termina con un acorde 'suelto' sin texto/espacio detrás.
+    """
+    if re.search(r"\][^\]]*$", line):
+        # último ] está después del último '['; comprobamos si es justo el final
+        pass
+    # Más simple: si el último carácter no-whitespace es ']'
+    rstripped = line.rstrip()
+    if rstripped.endswith("]"):
+        return rstripped + " "
+    return line
+
+
+def _uppercase_lyrics_outside_chords(line: str) -> str:
+    """Pone en MAYÚSCULAS solo las letras (texto fuera de [acordes])."""
+    parts = re.split(r"(\[[^\]]*\])", line)
+    return "".join(p if p.startswith("[") else p.upper() for p in parts)
+
+
+def _strip_chorus_parens(line: str) -> str:
+    """Si la línea va envuelta en paréntesis (a veces sucede en estribillos
+    de doceacordes), los quita. Tolera [acordes] al principio.
+    """
+    s = line
+    # Quitar paréntesis exterior si abre con '(' y cierra con ')'
+    # incluso si hay [acorde] al principio
+    m = re.match(r"^(\s*(?:\[[^\]]*\]\s*)*)\((.*)\)(\s*)$", s)
+    if m:
+        return m.group(1) + m.group(2) + m.group(3)
+    return s
+
+
+def _process_chorus_blocks(text: str) -> str:
+    """Dentro de cada {soc}...{eoc}: quita paréntesis envolventes y pone
+    la letra en MAYÚSCULAS para que el estribillo destaque visualmente."""
+    out_lines: List[str] = []
+    in_chorus = False
+    for ln in text.split("\n"):
+        if re.match(r"\s*\{\s*soc\s*\}", ln, re.IGNORECASE):
+            in_chorus = True
+            out_lines.append(ln)
+            continue
+        if re.match(r"\s*\{\s*eoc\s*\}", ln, re.IGNORECASE):
+            in_chorus = False
+            out_lines.append(ln)
+            continue
+        if in_chorus and ln.strip() and not re.match(r"\s*\{", ln):
+            cleaned = _strip_chorus_parens(ln)
+            cleaned = _uppercase_lyrics_outside_chords(cleaned)
+            out_lines.append(cleaned)
+        else:
+            out_lines.append(ln)
+    return "\n".join(out_lines)
+
+
+def ensure_no_dangling_chords(text: str) -> str:
+    """Aplica `_ensure_trailing_space_after_chord` línea a línea."""
+    return "\n".join(_ensure_trailing_space_after_chord(ln) for ln in text.split("\n"))
+
+
 def adapt_chordpro(raw: str) -> str:
     """Toma el .cho crudo de doceacordes y lo deja estilo MCM."""
     text = raw.replace("\r\n", "\n").replace("\r", "\n")
@@ -127,6 +188,13 @@ def adapt_chordpro(raw: str) -> str:
 
     # Traducir acordes dentro de [...]
     text = translate_chord_in_brackets(text)
+
+    # Procesar bloques de estribillo: quitar paréntesis envolventes y
+    # poner las letras (no acordes) en MAYÚSCULAS para que destaquen.
+    text = _process_chorus_blocks(text)
+
+    # Que ninguna línea termine en un acorde 'suelto': añadir espacio final.
+    text = ensure_no_dangling_chords(text)
 
     # Prepend TO DO si no está
     if not re.search(r"\bTO\s+DO\b", text):
@@ -369,42 +437,52 @@ def doce_items() -> List[dict]:
 def find_candidates(title: str, artist: str = "", top: int = 3) -> List[dict]:
     """Devuelve top-N candidatos del JSON con un score de similitud por tokens.
 
-    Devuelve dicts con todos los campos del entry + `_score`.
+    Cuando el artista coincide:
+      - perfecto (igual normalizado): score *= 2.0  → hasta 200 %, _artist_match='perfect'
+      - parcial (al menos 1 token común):  score *= 1.3, _artist_match='partial'
+    Sin coincidencia (o sin artist input): _artist_match='none'.
     """
     norm_t = _normalize(title)
     toks_t = _tokens(title)
     if not toks_t:
         return []
     norm_a = _normalize(artist)
-    out: List[Tuple[float, dict]] = []
+    toks_a = _tokens(artist)
+    out: List[Tuple[float, dict, str]] = []
     for entry in doce_items():
-        # Exact normalized match
+        # Score base por título
         if entry["_norm_title"] == norm_t:
-            score = 100.0
+            base = 100.0
         else:
             inter = toks_t & entry["_tok_title"]
             if not inter:
                 continue
-            # Jaccard scaled to 0-100
             union = toks_t | entry["_tok_title"]
-            score = 100.0 * len(inter) / len(union)
-        # Boost si artista coincide aunque sea parcial
-        if norm_a and entry["_norm_artist"]:
-            artist_toks_in = _tokens(artist) & _tokens(entry["artist"])
-            if artist_toks_in:
-                score += 15.0
+            base = 100.0 * len(inter) / len(union)
         # Penaliza si tamaños muy distintos
         size_ratio = min(len(toks_t), len(entry["_tok_title"])) / max(len(toks_t), len(entry["_tok_title"]))
-        score *= 0.5 + 0.5 * size_ratio
+        base *= 0.5 + 0.5 * size_ratio
+        # Match de artista
+        artist_match = "none"
+        if norm_a and entry["_norm_artist"]:
+            if norm_a == entry["_norm_artist"]:
+                artist_match = "perfect"
+                base *= 2.0
+            else:
+                entry_toks_a = _tokens(entry["artist"])
+                if toks_a & entry_toks_a:
+                    artist_match = "partial"
+                    base *= 1.3
         # Umbral mínimo
-        if score < 30:
+        if base < 30:
             continue
-        out.append((score, entry))
+        out.append((base, entry, artist_match))
     out.sort(key=lambda x: -x[0])
     result = []
-    for score, entry in out[:top]:
+    for score, entry, am in out[:top]:
         e = {k: v for k, v in entry.items() if not k.startswith("_")}
         e["_score"] = round(score, 1)
+        e["_artist_match"] = am
         result.append(e)
     return result
 

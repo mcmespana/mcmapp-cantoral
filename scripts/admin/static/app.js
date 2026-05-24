@@ -909,17 +909,19 @@ function app() {
       return `${this.editorQueueIdx + 1} / ${this.editorQueue.length}`;
     },
     setEditorTab(t) {
-      // Warn si dejamos el tab media con cambios sin guardar
-      if (this.editor.tab === 'media' && t !== 'media' && this.mediaDirty) {
-        if (!confirm('Hay metadatos sin guardar en el tab Multimedia. ¿Descartar cambios?')) return;
-        this.loadMediaForm(); // resetea
+      // Warn si dejamos un tab de meta (media/extra) con cambios sin guardar y vamos a otro tab no-meta
+      const fromMeta = (this.editor.tab === 'media' || this.editor.tab === 'extra');
+      const toMeta = (t === 'media' || t === 'extra');
+      if (fromMeta && !toMeta && this.mediaDirty) {
+        if (!confirm('Hay metadatos sin guardar. ¿Descartar cambios?')) return;
+        this.loadMediaForm();
       }
       if (this.editor.tab === 'visual' && t !== 'visual') {
         this.editor.content = serializeCho(this.editor.parsed);
         this.refreshMetaFromRaw();
       }
       this.editor.tab = t;
-      if (t === 'media') {
+      if (toMeta && !fromMeta) {
         this.loadMediaForm();
       }
       if (t === 'visual') {

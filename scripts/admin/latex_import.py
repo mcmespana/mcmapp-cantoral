@@ -132,6 +132,18 @@ def parse_latex_song(tex_path: Path) -> dict:
     }
 
 
+def _add_trailing_space_after_chord(text: str) -> str:
+    """Si una línea acaba en ']' (acorde suelto), añade un espacio final."""
+    out = []
+    for ln in text.split("\n"):
+        rstripped = ln.rstrip()
+        if rstripped.endswith("]"):
+            out.append(rstripped + " ")
+        else:
+            out.append(ln)
+    return "\n".join(out)
+
+
 def render_latex_cho(parsed: dict) -> str:
     """Construye el contenido .cho con cabecera TO DO + metadatos."""
     todo = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -146,7 +158,7 @@ def render_latex_cho(parsed: dict) -> str:
         header.append(f"{{capo: {parsed['capo']}}}")
     if parsed.get("transpose"):
         header.append(f"{{comment: Transpose original LaTeX: {parsed['transpose']}}}")
-    body = parsed.get("body") or ""
+    body = _add_trailing_space_after_chord(parsed.get("body") or "")
     return "\n".join(header) + "\n\n" + body.rstrip() + "\n"
 
 
