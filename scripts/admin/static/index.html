@@ -320,11 +320,14 @@
                     </div>
                     <template x-for="(c, i) in m.doce_candidates" :key="c.id">
                       <div class="doce-cand"
+                           :class="{ 'artist-perfect': c._artist_match === 'perfect' }"
                            @click.stop="pickDoceCandidate(m, c)">
                         <div class="doce-cand-main">
                           <span class="doce-cand-num">#<span x-text="c.id"></span></span>
                           <span class="doce-cand-title" x-text="c.title"></span>
-                          <span class="doce-cand-score" x-text="Math.round(c._score) + '%'"></span>
+                          <span class="doce-cand-score"
+                                :class="{ 'score-perfect': c._artist_match === 'perfect' }"
+                                x-text="(c._artist_match === 'perfect' ? '🎯 ' : '') + Math.round(c._score) + '%'"></span>
                         </div>
                         <div class="doce-cand-sub">
                           <span x-text="c.artist || '(sin autor)'"></span>
@@ -671,12 +674,12 @@
           <button class="btn" @click="docePreview = null">✕ Cerrar</button>
         </div>
       </div>
-      <div class="editor-body" x-show="docePreview">
-        <div class="editor-pane" style="overflow:auto">
-          <h4 style="margin:0 0 6px">.cho adaptado (estilo MCM)</h4>
-          <pre class="latex-preview" x-text="docePreview ? docePreview.content : ''"></pre>
+      <div class="editor-body doce-preview-body" x-show="docePreview">
+        <div class="chordpro-pane">
+          <h4 style="margin:0 0 8px;font-size:12px;color:var(--fg-3);text-transform:uppercase;letter-spacing:0.04em">.cho adaptado (estilo MCM)</h4>
+          <pre x-text="docePreview ? docePreview.content : ''"></pre>
         </div>
-        <div class="editor-pane" style="overflow:auto;border-left:1px solid var(--border);padding:10px">
+        <div class="meta-pane">
           <h4 style="margin:0 0 6px">Datos básicos</h4>
           <table class="meta-table" x-show="docePreview">
             <tr><th>Título</th><td x-text="docePreview && docePreview.meta.title"></td></tr>
@@ -896,16 +899,23 @@
   <div class="editor-overlay" x-show="editor.path" @click.self="closeEditor()" x-cloak>
     <div class="editor-modal">
       <div class="editor-header">
-        <h2>
-          <span x-text="editor.meta.title || editor.filename"></span>
-          <span class="status-pill status-revisar" x-show="editor.meta.has_todo">📝 Revisar canción</span>
-          <span class="status-pill status-acordes" x-show="editor.meta.has_chord_review">🎵 Revisar acordes</span>
-        </h2>
+        <div class="editor-header-left">
+          <h2 x-text="editor.meta.title || editor.filename"></h2>
+          <div class="editor-status-bar">
+            <span class="status-bar-label">Revisión:</span>
+            <button class="status-seg-btn" :class="{active: editorStatus() === null}"
+                    @click="setEditorStatus(null)" title="Marcar como OK">✅</button>
+            <button class="status-seg-btn status-seg-revisar" :class="{active: editorStatus() === 'revisar'}"
+                    @click="setEditorStatus(editorStatus() === 'revisar' ? null : 'revisar')">📝 Revisar canción</button>
+            <button class="status-seg-btn status-seg-acordes" :class="{active: editorStatus() === 'revisar_acordes'}"
+                    @click="setEditorStatus(editorStatus() === 'revisar_acordes' ? null : 'revisar_acordes')">🎵 Revisar acordes</button>
+          </div>
+        </div>
         <div class="editor-actions">
           <span class="queue-progress" x-show="editorQueue.length > 0" x-cloak>
-            📥 Revisando importadas: <strong x-text="editorQueueProgress()"></strong>
-            <button class="link-mini" @click="skipEditorQueue()" title="Siguiente sin guardar">⏭ saltar</button>
-            <button class="link-mini" @click="cancelEditorQueue()" title="Salir de la cola">✕ cola</button>
+            📥 <strong x-text="editorQueueProgress()"></strong>
+            <button class="link-mini" @click="skipEditorQueue()" title="Siguiente sin guardar">⏭</button>
+            <button class="link-mini" @click="cancelEditorQueue()" title="Salir de la cola">✕</button>
           </span>
           <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
           <button class="btn" @click="closeEditor()">
@@ -919,12 +929,16 @@
         <button :class="{active: editor.tab === 'raw'}" @click="setEditorTab('raw')">📝 Raw</button>
         <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
         <button :class="{active: editor.tab === 'media'}" @click="setEditorTab('media')">
-          🎬 Multimedia
+          🎬 Audio / Vídeo
           <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) > 0"
                 x-text="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0)"></span>
         </button>
+        <button :class="{active: editor.tab === 'extra'}" @click="setEditorTab('extra')">
+          📋 Datos extra
+          <span class="tab-badge" x-show="(editor.meta.rhythm || editor.meta.album || editor.meta.liturgicalTime || editor.meta.source || editor.meta.comment)" >●</span>
+        </button>
         <span class="dirty" x-show="editor.dirty">● sin guardar</span>
-        <span class="dirty" x-show="mediaDirty" style="color:#0ea5e9">● multimedia sin guardar</span>
+        <span class="dirty" x-show="mediaDirty" style="color:#0ea5e9">● meta sin guardar</span>
       </div>
 
       <div class="editor-body">
@@ -957,17 +971,6 @@
           </div>
           <label>Capo</label>
           <input type="number" min="0" x-model="editor.meta.capo" @input="updateMetaInRaw('capo', $event.target.value)" />
-          <div class="editor-status-selector">
-            <div class="chuleta-title" style="margin-bottom:6px">Estado de revisión</div>
-            <div class="status-seg">
-              <button class="status-seg-btn" :class="{active: editorStatus() === null}"
-                      @click="setEditorStatus(null)">✅ OK</button>
-              <button class="status-seg-btn status-seg-revisar" :class="{active: editorStatus() === 'revisar'}"
-                      @click="setEditorStatus(editorStatus() === 'revisar' ? null : 'revisar')">📝 Revisar</button>
-              <button class="status-seg-btn status-seg-acordes" :class="{active: editorStatus() === 'revisar_acordes'}"
-                      @click="setEditorStatus(editorStatus() === 'revisar_acordes' ? null : 'revisar_acordes')">🎵 Acordes</button>
-            </div>
-          </div>
           <div class="path-info">
             <small x-text="editor.path"></small>
           </div>
@@ -1091,15 +1094,15 @@
           <div class="preview-render" x-html="renderPreviewHtml(editor.content)"></div>
         </div>
 
-        <!-- MULTIMEDIA & META -->
+        <!-- AUDIO / VÍDEO -->
         <div class="editor-pane media-pane" x-show="editor.tab === 'media'" x-cloak>
           <div class="media-toolbar">
             <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
                     @click="saveMediaMeta()"
-                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar metadatos'"></button>
-            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar cambios</button>
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar</button>
             <span class="muted" style="margin-left:auto;font-size:11px">
-              Estos datos NO aparecen en el chordpro que ve el cantor — solo en la ficha de la canción.
+              No aparecen en el chordpro del cantor — solo en la ficha.
             </span>
           </div>
 
@@ -1166,9 +1169,21 @@
                      style="font-size:12px;padding:6px">— Sin audios internos —</div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <div class="media-section">
-              <h4>📝 Datos extra</h4>
+        <!-- DATOS EXTRA -->
+        <div class="editor-pane media-pane" x-show="editor.tab === 'extra'" x-cloak>
+          <div class="media-toolbar">
+            <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
+                    @click="saveMediaMeta()"
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar</button>
+          </div>
+
+          <div class="extra-grid">
+            <div class="extra-section">
+              <h4>📝 Información de la canción</h4>
               <label>Ritmo</label>
               <input type="text" x-model="mediaForm.rhythm" @input="mediaDirty = true"
                      placeholder="parones+rasgueo, balada 6/8…" />
@@ -1182,7 +1197,7 @@
               <input type="text" x-model="mediaForm.source" @input="mediaDirty = true"
                      placeholder="doceacordes.es - Parroquia San Bruno" />
               <label>Comentario</label>
-              <textarea rows="2" x-model="mediaForm.comment" @input="mediaDirty = true"
+              <textarea rows="4" x-model="mediaForm.comment" @input="mediaDirty = true"
                         placeholder="María Magdalena, Versión Hakuna…"></textarea>
             </div>
           </div>
@@ -1193,7 +1208,7 @@
 
   <!-- QUICK ADD LINK MODAL -->
   <div class="editor-overlay" x-show="quickLink.open" @click.self="quickLink.open = false" x-cloak>
-    <div class="editor-modal small">
+    <div class="editor-modal compact">
       <div class="editor-header">
         <h2>
           <span x-text="quickLink.type === 'youtube' ? '📺 Añadir YouTube' : '🎧 Añadir Audio'"></span>
@@ -1285,7 +1300,7 @@
 
   <!-- NEW SONG MODAL -->
   <div class="editor-overlay" x-show="newSong.open" @click.self="newSong.open = false" x-cloak>
-    <div class="editor-modal small">
+    <div class="editor-modal compact">
       <div class="editor-header">
         <h2>➕ Nueva canción</h2>
         <button class="btn" @click="newSong.open = false">✕ Cerrar</button>

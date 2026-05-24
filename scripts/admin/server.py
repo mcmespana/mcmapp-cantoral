@@ -372,6 +372,39 @@ def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
     return out
 
 
+# Notas españolas que el cantoral DOCX a veces dejó en MAYÚSCULAS porque
+# se confundieron con acordes. Si aparecen como palabra suelta dentro de la
+# letra (NO dentro de [acordes]), las pasamos a minúsculas.
+_NOTE_WORDS_RE = re.compile(r"\b(DO|RE|MI|FA|SOL|LA|SI)\b")
+
+
+def _downcase_note_words_in_lyrics(body: str) -> str:
+    """Para cada línea, baja a minúsculas las palabras DO/RE/MI/FA/SOL/LA/SI
+    SOLO en el texto fuera de los corchetes [acorde]. Si la línea entera
+    está en MAYÚSCULAS (estilo estribillo), no la toca."""
+    out = []
+    for ln in body.split("\n"):
+        # Extraer solo la parte de letra (fuera de corchetes) para decidir
+        lyric_only = re.sub(r"\[[^\]]*\]", "", ln)
+        # Letras (sin números/símbolos)
+        letters = [ch for ch in lyric_only if ch.isalpha()]
+        if not letters:
+            out.append(ln)
+            continue
+        # Si TODO el texto de letra es mayúsculas → no tocar (es estilo intencional)
+        if all(ch == ch.upper() for ch in letters):
+            out.append(ln)
+            continue
+        # Reemplazar palabras-nota solo en el texto fuera de [...]
+        parts = re.split(r"(\[[^\]]*\])", ln)
+        for i, p in enumerate(parts):
+            if p.startswith("["):
+                continue
+            parts[i] = _NOTE_WORDS_RE.sub(lambda m: m.group(1).lower(), p)
+        out.append("".join(parts))
+    return "\n".join(out)
+
+
 def render_cho_with_todo(conv: dict) -> str:
     """Render del .cho con la línea TO DO al principio."""
     header_lines = [TODO_COMMENT_LINE, f"{{title: {conv['title']}}}"]
@@ -379,7 +412,8 @@ def render_cho_with_todo(conv: dict) -> str:
         header_lines.append(f"{{key: {conv['key']}}}")
     if conv.get("capo"):
         header_lines.append(f"{{capo: {conv['capo']}}}")
-    return "\n".join(header_lines) + "\n\n" + conv["body"] + "\n"
+    body = _downcase_note_words_in_lyrics(conv["body"])
+    return "\n".join(header_lines) + "\n\n" + body + "\n"
 
 
 # ─────────── Ignorados (nunca importar) ─────────── #
