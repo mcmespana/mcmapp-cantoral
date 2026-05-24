@@ -63,6 +63,7 @@ function app() {
     doceCategorySel: {},      // { doce_id: 'A' }
     doceNumberSel: {},        // { doce_id: 12 }
     doceSuggestedNumber: {},  // { doce_id: 7 }
+    docePositionHint: {},     // { doce_id: 22 } proveniente de cantoral DOCX
     doceResults: [],
     doceImporting: false,
     doceIncludeMeta: true,
@@ -73,8 +74,8 @@ function app() {
 
     // Reorder
     reorderCategory: '',
-    reorderSongs: [],
-    reorderModified: false,
+    reorderSlots: [],              // [{number, filename, title, gap: bool}]
+    reorderOriginal: '',
     reorderDragIdx: null,
 
     // Editor
@@ -95,6 +96,9 @@ function app() {
     visualChordClipboard: null,   // [{lyric, chords}]  patrón copiado
     clipboardInfo: '',            // texto persistente cuando hay acordes copiados
     showHelp: false,
+    // Cola de revisión: tras importar varias, abre el editor en secuencia
+    editorQueue: [],            // [{path, source, label}]
+    editorQueueIdx: 0,
     newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
                mode: 'blank', content: '', creating: false },
     saveIndicator: { text: 'Sin cambios', cls: 'saved' },
@@ -209,6 +213,9 @@ function app() {
         this.importResults = json.results || [];
         this.selectedImports = new Set();
         await this.loadCatalog();
+        // Abrir editor de las importadas con éxito, en cola
+        const paths = this.importResults.filter(r => r.ok && r.path).map(r => r.path);
+        this.enqueueAndOpen(paths, 'del cantoral');
       } catch (e) {
         alert('Error importando: ' + e.message);
       } finally {
@@ -370,9 +377,12 @@ function app() {
           body: JSON.stringify({ items, move_to_processed: true }),
         });
         const json = await r.json();
-        this.latexResults = [...this.latexResults, ...(json.results || [])];
+        const newResults = json.results || [];
+        this.latexResults = [...this.latexResults, ...newResults];
         this.selectedLatex = new Set();
         await Promise.all([this.loadCatalog(), this.loadLatex(true)]);
+        const paths = newResults.filter(r => r.ok && r.path).map(r => r.path);
+        this.enqueueAndOpen(paths, 'de LaTeX');
       } catch (e) {
         alert('Error importando LaTeX: ' + e.message);
       } finally {
@@ -417,11 +427,15 @@ function app() {
       const cat = this.doceCategorySel[doceId];
       if (!cat) return;
       try {
-        const r = await fetch('/api/doce/suggest-number?category=' + cat);
+        const hint = this.docePositionHint[doceId];
+        const url = '/api/doce/suggest-number?category=' + cat +
+                    (hint ? '&position_hint=' + hint : '');
+        const r = await fetch(url);
         if (r.ok) {
           const j = await r.json();
           this.doceSuggestedNumber = { ...this.doceSuggestedNumber, [doceId]: j.next_number };
-          if (!this.doceNumberSel[doceId]) {
+          // Si el usuario NO había puesto número, o si tenemos un hint específico, usarlo
+          if (!this.doceNumberSel[doceId] || hint) {
             this.doceNumberSel = { ...this.doceNumberSel, [doceId]: j.next_number };
           }
         }
@@ -430,10 +444,12 @@ function app() {
     async previewDoce(doceId, force = false) {
       try {
         const cat = this.doceCategorySel[doceId] || '';
+        const hint = this.docePositionHint[doceId];
         const url = '/api/doce/preview?id=' + encodeURIComponent(doceId) +
                     (cat ? '&category=' + cat : '') +
                     (this.doceIncludeMeta ? '' : '&meta=0') +
-                    (force ? '&force=1' : '');
+                    (force ? '&force=1' : '') +
+                    (hint ? '&position_hint=' + hint : '');
         const r = await fetch(url);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
@@ -478,6 +494,7 @@ function app() {
           doce_id: doceId,
           category_letter: cat,
           number: this.doceNumberSel[doceId] || undefined,
+          position_hint: this.docePositionHint[doceId] || undefined,
           include_meta: this.doceIncludeMeta,
         };
         const r = await fetch('/api/doce/import', {
@@ -486,10 +503,12 @@ function app() {
           body: JSON.stringify({ items: [item] }),
         });
         const json = await r.json();
-        this.doceResults = [...(json.results || []), ...this.doceResults].slice(0, 30);
-        // refrescar marcas in_repo
+        const newResults = json.results || [];
+        this.doceResults = [...newResults, ...this.doceResults].slice(0, 30);
         await this.loadDoce(true);
         await this.loadCatalog();
+        const paths = newResults.filter(r => r.ok && r.path).map(r => r.path);
+        this.enqueueAndOpen(paths, 'de doceacordes');
       } catch (e) {
         alert('Error importando: ' + e.message);
       } finally {
@@ -516,6 +535,11 @@ function app() {
       await this.loadDoce();
       this.doceSearch = candidate.title;
       this.docePage = 0;
+      // Guardar la posición que esta canción tiene en el cantoral DOCX para
+      // que el número de archivo coincida (si está libre).
+      if (missing.position_in_section) {
+        this.docePositionHint = { ...this.docePositionHint, [candidate.id]: missing.position_in_section };
+      }
       if (missing.section_letter && !this.doceCategorySel[candidate.id]) {
         this.doceCategorySel = { ...this.doceCategorySel, [candidate.id]: missing.section_letter };
         await this.onDoceCategoryChange(candidate.id);
@@ -534,11 +558,14 @@ function app() {
       // Filtrar la tabla a esos candidatos
       this.doceSearch = cands[0].title;
       this.docePage = 0;
-      // Sugerir categoría del docx
+      // Sugerir categoría del docx + posición del cantoral
       for (const c of cands) {
+        if (missing.position_in_section) {
+          this.docePositionHint = { ...this.docePositionHint, [c.id]: missing.position_in_section };
+        }
         if (missing.section_letter && !this.doceCategorySel[c.id]) {
           this.doceCategorySel = { ...this.doceCategorySel, [c.id]: missing.section_letter };
-          this.onDoceCategoryChange(c.id);
+          await this.onDoceCategoryChange(c.id);
         }
       }
       // Si sólo hay uno, abrir preview directamente
@@ -731,23 +758,57 @@ function app() {
     // ─────────── Reorder ───────────
     async loadReorder() {
       if (!this.reorderCategory) {
-        this.reorderSongs = [];
-        this.reorderModified = false;
+        this.reorderSlots = [];
+        this.reorderOriginal = '';
         return;
       }
-      this.reorderSongs = this.data.repo_songs
-        .filter(r => r.category_letter === this.reorderCategory)
-        .sort((a, b) => (a.number || 999) - (b.number || 999));
-      this.reorderModified = false;
+      try {
+        const r = await fetch('/api/category/slots?category=' + this.reorderCategory);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        // Enriquecer con título buscando en repo_songs
+        const byFn = {};
+        for (const rs of this.data.repo_songs) byFn[rs.filename] = rs;
+        this.reorderSlots = j.slots.map(s => {
+          const info = s.filename ? byFn[s.filename] : null;
+          return {
+            number: s.number,
+            filename: s.filename,
+            title: info ? info.title : null,
+            originalNumber: info ? info.number : null,
+            gap: !s.filename,
+          };
+        });
+        this.reorderOriginal = JSON.stringify(this.reorderSlots.map(s => s.filename));
+      } catch (e) {
+        alert('No pude cargar slots: ' + e.message);
+      }
+    },
+    get reorderModified() {
+      return JSON.stringify((this.reorderSlots || []).map(s => s.filename)) !== this.reorderOriginal;
     },
     onReorderDrop(targetIdx) {
       if (this.reorderDragIdx == null || this.reorderDragIdx === targetIdx) return;
-      const arr = this.reorderSongs;
+      const arr = this.reorderSlots;
       const [moved] = arr.splice(this.reorderDragIdx, 1);
       arr.splice(targetIdx, 0, moved);
-      this.reorderSongs = [...arr];
-      this.reorderModified = true;
+      this.reorderSlots = [...arr];
       this.reorderDragIdx = null;
+    },
+    insertGapAt(idx) {
+      const arr = [...this.reorderSlots];
+      arr.splice(idx, 0, { number: null, filename: null, title: null, gap: true });
+      this.reorderSlots = arr;
+    },
+    removeGapAt(idx) {
+      if (!this.reorderSlots[idx]?.gap) return;
+      const arr = [...this.reorderSlots];
+      arr.splice(idx, 1);
+      this.reorderSlots = arr;
+    },
+    compactGaps() {
+      if (!confirm('¿Compactar todos los huecos? Renumera consecutivo 01, 02, 03…')) return;
+      this.reorderSlots = this.reorderSlots.filter(s => !s.gap);
     },
     async applyReorder() {
       if (!this.reorderCategory || !this.reorderModified) return;
@@ -757,10 +818,13 @@ function app() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             category: this.reorderCategory,
-            order: this.reorderSongs.map(s => s.filename),
+            order: this.reorderSlots.map(s => s.filename),  // null = hueco
           }),
         });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error('HTTP ' + r.status + ': ' + t);
+        }
         await this.loadCatalog();
         await this.loadReorder();
         alert('Orden aplicado.');
@@ -807,6 +871,42 @@ function app() {
       this.visualSelectedLines = new Set();
       this.visualSelectedChord = null;
       this.setSaveIndicator('saved', 'Sin cambios');
+      // Si hay cola pendiente, avanzar a la siguiente
+      this.advanceEditorQueue();
+    },
+    // ─────────── Cola de revisión post-import ───────────
+    enqueueAndOpen(paths, label = 'importadas') {
+      const list = (paths || []).filter(Boolean);
+      if (!list.length) return;
+      this.editorQueue = list.map(p => ({ path: p, label }));
+      this.editorQueueIdx = 0;
+      this.openEditor(list[0]);
+    },
+    advanceEditorQueue() {
+      if (!this.editorQueue.length) return;
+      this.editorQueueIdx++;
+      if (this.editorQueueIdx >= this.editorQueue.length) {
+        this.editorQueue = [];
+        this.editorQueueIdx = 0;
+        return;
+      }
+      const next = this.editorQueue[this.editorQueueIdx];
+      // pequeño delay para que Alpine cierre el modal antes de reabrirlo
+      setTimeout(() => this.openEditor(next.path), 50);
+    },
+    skipEditorQueue() {
+      if (this.editor.dirty && !confirm('Hay cambios sin guardar. ¿Saltar igualmente?')) return;
+      // Cierra sin pasar por confirm interno de closeEditor
+      this.editor.dirty = false;
+      this.closeEditor();
+    },
+    cancelEditorQueue() {
+      this.editorQueue = [];
+      this.editorQueueIdx = 0;
+    },
+    editorQueueProgress() {
+      if (!this.editorQueue.length) return '';
+      return `${this.editorQueueIdx + 1} / ${this.editorQueue.length}`;
     },
     setEditorTab(t) {
       // Warn si dejamos el tab media con cambios sin guardar

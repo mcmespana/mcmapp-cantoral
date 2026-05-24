@@ -323,6 +323,40 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
   background: var(--bg-2); padding: 0 4px; border-radius: 3px;
 }
 .doce-cand-sub { font-size: 11px; color: var(--fg-3); margin-top: 2px; padding-left: 32px; }
+
+/* ─────── Reorder gaps ─────── */
+.reorder-row-main { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.reorder-row-main .link-mini { margin-left: auto; opacity: 0; transition: opacity 0.1s; }
+.reorder-list li:hover .reorder-row-main .link-mini { opacity: 1; }
+.reorder-gap {
+  background: repeating-linear-gradient(
+    -45deg, transparent, transparent 6px,
+    rgba(0,0,0,0.04) 6px, rgba(0,0,0,0.04) 12px
+  ) !important;
+  color: var(--fg-3);
+  border-left: 3px solid rgba(0,0,0,0.10);
+}
+.theme-dark .reorder-gap {
+  background: repeating-linear-gradient(
+    -45deg, transparent, transparent 6px,
+    rgba(255,255,255,0.04) 6px, rgba(255,255,255,0.04) 12px
+  ) !important;
+  border-left-color: rgba(255,255,255,0.10);
+}
+.reorder-gap .new-num { background: var(--fg-3) !important; }
+.reorder-gap .reorder-row-main .link-mini { opacity: 1; }
+.gap-label { font-style: italic; font-size: 12px; color: var(--fg-3); }
+
+/* ─────── Editor queue progress ─────── */
+.queue-progress {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-right: 12px; padding: 4px 10px;
+  background: rgba(14, 165, 233, 0.12); color: #0369a1;
+  border: 1px solid rgba(14, 165, 233, 0.30); border-radius: 4px;
+  font-size: 12px;
+}
+.theme-dark .queue-progress { color: #7dd3fc; }
+.queue-progress strong { font-weight: 700; }
 .badge-overwrite {
   display: inline-block; padding: 1px 6px; font-size: 11px; border-radius: 3px;
   background: rgba(202, 138, 4, 0.18); color: var(--warn); border: 1px solid rgba(202, 138, 4, 0.4);
@@ -505,7 +539,8 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 .ed-marker .link-mini { background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; opacity: 0.6; }
 .ed-marker .link-mini:hover { opacity: 1; color: var(--danger); }
 
-.ed-line-row { position: relative; margin: 18px 0 2px; min-height: 1.4em; padding-left: 28px; }
+.ed-line.ed-lyric { padding-top: 18px; padding-bottom: 2px; }
+.ed-line-row { position: relative; margin: 0; min-height: 1.4em; padding-left: 28px; }
 .ed-chords-layer { position: absolute; top: -1.05em; left: 28px; right: 0; height: 1.1em; pointer-events: none; }
 .ed-lyric-row { white-space: pre; font-size: 15px; line-height: 1.25; }
 .ed-char {
@@ -526,9 +561,9 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 .ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
-.ed-line.ed-soc + .ed-line.ed-lyric .ed-line-row,
-.ed-line.ed-lyric + .ed-line.ed-lyric .ed-line-row {
-  margin-top: 10px;
+.ed-line.ed-soc + .ed-line.ed-lyric,
+.ed-line.ed-lyric + .ed-line.ed-lyric {
+  padding-top: 10px;
 }
 .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(202, 138, 4, 0.06), transparent 30%); }
 .theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(234, 179, 8, 0.12), transparent 30%); }

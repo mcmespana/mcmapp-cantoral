@@ -306,17 +306,52 @@ def load_docx_songs(force: bool = False) -> List[dict]:
     paras = d2c.load_paragraphs(docx_path)
     raw_songs = d2c.split_into_songs(paras)
     indexed = []
+    # Contador por sección para asignar position_in_section (1-based) — usado
+    # como sugerencia de número de archivo al importar.
+    pos_by_section: Dict[str, int] = {}
     for i, s in enumerate(raw_songs):
+        letter = d2c.section_letter(s["section"])
+        pos_by_section[letter or ""] = pos_by_section.get(letter or "", 0) + 1
         indexed.append({
             "id": i,
             "title_raw": s["title_raw"],
             "section": s["section"],
-            "section_letter": d2c.section_letter(s["section"]),
+            "section_letter": letter,
+            "position_in_section": pos_by_section[letter or ""],
             "_song": s,
         })
     _docx_cache["songs"] = indexed
     _docx_cache["mtime"] = mtime
     return indexed
+
+
+def first_free_number(folder: Path, start: int = 1) -> int:
+    """Devuelve el primer número de slot libre en la carpeta (busca huecos)."""
+    used = set()
+    if folder.exists():
+        for f in folder.iterdir():
+            m = re.match(r"(\d+)\.", f.name)
+            if m:
+                try:
+                    used.add(int(m.group(1)))
+                except ValueError:
+                    pass
+    n = start
+    while n in used:
+        n += 1
+    return n
+
+
+def preferred_number(folder: Path, hint: Optional[int] = None) -> int:
+    """Si el número 'hint' está libre, lo usa. Si no, primer hueco libre desde 1."""
+    if isinstance(hint, int) and hint > 0:
+        if not folder.exists():
+            return hint
+        used = {int(m.group(1)) for f in folder.iterdir()
+                if (m := re.match(r"(\d+)\.", f.name))}
+        if hint not in used:
+            return hint
+    return first_free_number(folder)
 
 
 def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
@@ -326,6 +361,7 @@ def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
         "title": conv["title"],
         "section": s["section"],
         "section_letter": s["section_letter"],
+        "position_in_section": s.get("position_in_section"),
         "key": conv.get("key"),
         "capo": conv.get("capo"),
         "warnings": conv.get("warnings", []),
@@ -499,13 +535,14 @@ def api_catalog():
             "title": conv["title"],
             "title_raw": s["title_raw"],
             "section_letter": s["section_letter"],
+            "position_in_section": s.get("position_in_section"),
             "key": conv.get("key"),
             "capo": conv.get("capo"),
             "warnings": conv.get("warnings", []),
             "latex_available": bool(latex_alt),
             "latex_id": latex_alt["id"] if latex_alt else None,
             "doce_available": bool(doce_cands),
-            "doce_candidates": doce_cands,  # [{id,title,artist,subtitle,url,_score}, ...]
+            "doce_candidates": doce_cands,
         })
 
     # Contadores
@@ -823,7 +860,9 @@ def api_docx_import():
         if folder is None:
             results.append({"id": i, "ok": False, "error": "sin carpeta destino"})
             continue
-        num = d2c.next_song_number(folder)
+        # Sugerencia de número: posición de la canción dentro de su sección
+        # en el DOCX. Si está libre se respeta; si no, primer hueco libre.
+        num = preferred_number(folder, s.get("position_in_section"))
         fname = f"{num:02d}.{conv['slug']}.cho"
         fpath = folder / fname
         if fpath.exists():
@@ -1070,10 +1109,12 @@ def api_doce_preview():
     suggested_slug = d2c.slugify(d2c.pretty_title_case(meta.get("title") or entry.get("title", "")))
     suggested_number = None
     cat_letter = request.args.get("category", "").upper().strip()
+    hint_raw = request.args.get("position_hint", "").strip()
+    hint = int(hint_raw) if hint_raw.isdigit() else None
     if cat_letter:
         cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
         if cat:
-            suggested_number = d2c.next_song_number(SONGS_DIR / cat["folder"])
+            suggested_number = preferred_number(SONGS_DIR / cat["folder"], hint)
     extras = parse_extra_meta(content)
     return jsonify({
         "id": doce_id,
@@ -1088,13 +1129,15 @@ def api_doce_preview():
 
 @app.route("/api/doce/suggest-number")
 def api_doce_suggest_number():
-    """Devuelve el siguiente número libre en una categoría dada."""
+    """Devuelve un número sugerido (primer hueco libre, o el hint si está libre)."""
     cat_letter = request.args.get("category", "").upper().strip()
     cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
     if not cat:
         abort(404, "Categoría no encontrada")
     folder = SONGS_DIR / cat["folder"]
-    return jsonify({"category": cat_letter, "next_number": d2c.next_song_number(folder)})
+    hint_raw = request.args.get("position_hint", "").strip()
+    hint = int(hint_raw) if hint_raw.isdigit() else None
+    return jsonify({"category": cat_letter, "next_number": preferred_number(folder, hint)})
 
 
 @app.route("/api/doce/import", methods=["POST"])
@@ -1134,7 +1177,9 @@ def api_doce_import():
 
             num = it.get("number")
             if not (isinstance(num, int) and num > 0):
-                num = d2c.next_song_number(folder)
+                hint = it.get("position_hint")
+                hint_int = hint if (isinstance(hint, int) and hint > 0) else None
+                num = preferred_number(folder, hint_int)
             fname = f"{num:02d}.{slug}.cho"
             fpath = folder / fname
             if fpath.exists():
@@ -1154,8 +1199,43 @@ def api_doce_import():
 # ─────────── API: reordenar y build-json ─────────── #
 
 
+@app.route("/api/category/slots")
+def api_category_slots():
+    """Devuelve la representación 'con huecos' de una categoría: lista de
+    `{number, filename}` donde filename es null en los slots vacíos."""
+    letter = request.args.get("category", "").upper().strip()
+    cat = next((c for c in list_categories() if c["letter"] == letter), None)
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    by_num: Dict[int, str] = {}
+    unnumbered: List[str] = []
+    for p in sorted(folder.glob("*.cho")):
+        m = re.match(r"(\d+)\.", p.name)
+        if m:
+            by_num[int(m.group(1))] = p.name
+        else:
+            unnumbered.append(p.name)
+    slots: List[dict] = []
+    if by_num:
+        max_num = max(by_num)
+        for n in range(1, max_num + 1):
+            slots.append({"number": n, "filename": by_num.get(n)})
+    # Sin numerar al final
+    for fn in unnumbered:
+        slots.append({"number": None, "filename": fn})
+    return jsonify({"category": letter, "slots": slots})
+
+
 @app.route("/api/reorder", methods=["POST"])
 def api_reorder():
+    """Reordena una categoría aceptando huecos.
+
+    Body: {category: "A", order: [<filename> | null, ...]}
+      - Cada índice i (1-based) es el número que tendrá esa canción.
+      - `null` = slot vacío (no se asigna ningún archivo a ese número).
+      - Compatible con el formato antiguo `order: [filename, ...]` (sin nulls).
+    """
     body = request.get_json(silent=True) or {}
     letter = body.get("category", "").upper()
     order = body.get("order", [])
@@ -1166,38 +1246,53 @@ def api_reorder():
         abort(404, "Categoría no encontrada")
     folder = SONGS_DIR / cat["folder"]
     current = {p.name: p for p in folder.glob("*.cho")}
-    # Validar que todos los filenames existen
-    for fn in order:
-        if fn not in current:
-            abort(400, f"Archivo no existe: {fn}")
-    # Hacer backup de la categoría completa
+    # Validar: todos los filenames no-null deben existir y ser únicos
+    seen = set()
+    for item in order:
+        if item is None:
+            continue
+        if not isinstance(item, str):
+            abort(400, f"Item inválido: {item!r}")
+        if item not in current:
+            abort(400, f"Archivo no existe: {item}")
+        if item in seen:
+            abort(400, f"Archivo duplicado en order: {item}")
+        seen.add(item)
+    # Crítico: el order debe cubrir TODOS los .cho de la carpeta, si no
+    # quedarían archivos con número duplicado tras el rename.
+    missing = set(current.keys()) - seen
+    if missing:
+        abort(400, f"Faltan archivos en order: {sorted(missing)}")
+    # Quitar trailing nulls (huecos al final no tienen sentido)
+    while order and order[-1] is None:
+        order.pop()
+    if not order:
+        abort(400, "order vacío")
+    # Backup
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_folder = BACKUP_DIR / ts / cat["folder"]
     backup_folder.mkdir(parents=True, exist_ok=True)
     for p in folder.glob("*.cho"):
         shutil.copy2(p, backup_folder / p.name)
-    # Renombrar: paso intermedio con prefijo temporal para evitar colisiones
+    # Paso 1: mover todo a temporales
     tmp_prefix = f".reorder-{int(time.time())}-"
-    intermediate: List[tuple[Path, str]] = []
-    for fn in order:
+    temp_pairs: List[tuple] = []  # (slot_number, tmp_path, base_name)
+    for idx, fn in enumerate(order, start=1):
+        if fn is None:
+            continue
         p = folder / fn
-        # Quitar prefijo numérico viejo si existe
         base = re.sub(r"^\d+\.", "", fn)
-        intermediate.append((p, base))
-    # Renombrar a temporales
-    temp_paths: List[tuple[Path, str]] = []
-    for p, base in intermediate:
-        tp = folder / (tmp_prefix + base)
+        tp = folder / (tmp_prefix + str(idx) + "-" + base)
         p.rename(tp)
-        temp_paths.append((tp, base))
-    # Renombrar a finales con números
-    final_paths = []
-    for idx, (tp, base) in enumerate(temp_paths, start=1):
-        final_name = f"{idx:02d}.{base}"
-        final = folder / final_name
-        tp.rename(final)
-        final_paths.append(final.name)
-    return jsonify({"ok": True, "category": letter, "new_order": final_paths})
+        temp_pairs.append((idx, tp, base))
+    # Paso 2: renombrar al número final
+    final_names: List[Optional[str]] = [None] * len(order)
+    for slot, tp, base in temp_pairs:
+        final_name = f"{slot:02d}.{base}"
+        (folder / final_name).exists()  # no debería existir; backup ya hecho
+        tp.rename(folder / final_name)
+        final_names[slot - 1] = final_name
+    return jsonify({"ok": True, "category": letter, "new_order": final_names})
 
 
 @app.route("/api/build-json", methods=["POST"])

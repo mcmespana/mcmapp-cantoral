@@ -780,9 +780,9 @@
   <!-- REORDENAR -->
   <section x-show="view === 'reorder' && data" x-cloak>
     <h1>🔀 Reordenar canciones</h1>
-    <p class="muted">Elige una categoría, arrastra para reordenar y pulsa <em>Aplicar</em>. Los archivos
-       se renumerarán (<code>01., 02., …</code>) manteniendo el slug. Se hace backup en
-       <code>songs-backup-edits/</code>.</p>
+    <p class="muted">Elige una categoría, arrastra para reordenar y pulsa <em>Aplicar</em>.
+       Puedes <strong>dejar huecos</strong> entre canciones (líneas grises) y se respetarán
+       en el numerado. Se hace backup en <code>songs-backup-edits/</code>.</p>
     <div class="filter-bar">
       <select x-model="reorderCategory" @change="loadReorder()">
         <option value="">— Elige categoría —</option>
@@ -792,19 +792,38 @@
       </select>
       <button class="btn primary" :disabled="!reorderModified" @click="applyReorder()">Aplicar nuevo orden</button>
       <button x-show="reorderModified" @click="loadReorder()">Cancelar cambios</button>
+      <template x-if="reorderCategory && reorderSlots.length > 0">
+        <button @click="insertGapAt(reorderSlots.length)" title="Añade un slot vacío al final">➕ Insertar hueco</button>
+      </template>
+      <template x-if="reorderCategory && reorderSlots.some(s => s.gap)">
+        <button @click="compactGaps()" title="Quita todos los huecos y deja números consecutivos">📐 Compactar huecos</button>
+      </template>
     </div>
 
     <ul class="reorder-list" x-show="reorderCategory">
-      <template x-for="(s, idx) in reorderSongs" :key="s.path">
+      <template x-for="(s, idx) in reorderSlots" :key="(s.filename || 'gap-') + idx">
         <li draggable="true"
+            :class="{ 'reorder-gap': s.gap }"
             @dragstart="reorderDragIdx = idx"
             @dragover.prevent
             @drop="onReorderDrop(idx)">
           <span class="grip">⋮⋮</span>
           <span class="new-num" x-text="(idx + 1).toString().padStart(2,'0')"></span>
-          <span class="old-num" x-text="s.number != null ? `(was ${s.number.toString().padStart(2,'0')})` : ''"></span>
-          <span class="title" x-text="s.title"></span>
-          <span class="filename" x-text="s.filename"></span>
+          <template x-if="!s.gap">
+            <span class="reorder-row-main">
+              <span class="old-num" x-text="s.originalNumber != null && s.originalNumber !== (idx + 1) ? `(was ${s.originalNumber.toString().padStart(2,'0')})` : ''"></span>
+              <span class="title" x-text="s.title"></span>
+              <span class="filename" x-text="s.filename"></span>
+              <button class="link-mini" @click="insertGapAt(idx + 1)"
+                      title="Insertar hueco justo después">➕ hueco aquí</button>
+            </span>
+          </template>
+          <template x-if="s.gap">
+            <span class="reorder-row-main">
+              <span class="gap-label">— hueco vacío —</span>
+              <button class="link-mini" @click="removeGapAt(idx)" title="Quitar este hueco">✕ quitar</button>
+            </span>
+          </template>
         </li>
       </template>
     </ul>
@@ -883,8 +902,15 @@
           <span class="status-pill status-acordes" x-show="editor.meta.has_chord_review">🎵 Revisar acordes</span>
         </h2>
         <div class="editor-actions">
+          <span class="queue-progress" x-show="editorQueue.length > 0" x-cloak>
+            📥 Revisando importadas: <strong x-text="editorQueueProgress()"></strong>
+            <button class="link-mini" @click="skipEditorQueue()" title="Siguiente sin guardar">⏭ saltar</button>
+            <button class="link-mini" @click="cancelEditorQueue()" title="Salir de la cola">✕ cola</button>
+          </span>
           <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
-          <button class="btn" @click="closeEditor()">✕ Cerrar</button>
+          <button class="btn" @click="closeEditor()">
+            <span x-text="editorQueue.length > 0 && editorQueueIdx + 1 < editorQueue.length ? '✕ Cerrar y siguiente →' : '✕ Cerrar'"></span>
+          </button>
         </div>
       </div>
 
