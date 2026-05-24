@@ -25,6 +25,7 @@
     <a :class="{active: view === 'dashboard'}" @click.prevent="view = 'dashboard'" href="#">📊 Dashboard</a>
     <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
     <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
+    <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
     <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
   </nav>
@@ -89,6 +90,10 @@
       <div class="stat info">
         <div class="stat-val" x-text="data.stats.only_in_repo"></div>
         <div class="stat-lbl">solo en repo (manuales)</div>
+      </div>
+      <div class="stat" style="background: rgba(139, 92, 246, 0.10); cursor: pointer" @click="view = 'latex'; loadLatex()">
+        <div class="stat-val" x-text="(data.stats.latex_new || 0) + '/' + (data.stats.latex_total || 0)"></div>
+        <div class="stat-lbl">📐 nuevas / total en LaTeX</div>
       </div>
     </div>
     <div class="actions-row">
@@ -213,14 +218,20 @@
       </thead>
       <tbody>
         <template x-for="m in filteredMissing()" :key="m.docx_id">
-          <tr :class="{ 'has-warn': m.warnings.length > 0 }">
+          <tr :class="{ 'has-warn': m.warnings.length > 0, 'has-latex': m.latex_available }">
             <td>
               <input type="checkbox"
                      :checked="selectedImports.has(m.docx_id)"
                      @change="toggleImport(m.docx_id)" />
             </td>
             <td x-text="m.section_letter"></td>
-            <td><a href="#" @click.prevent="previewDocx(m.docx_id)" x-text="m.title"></a></td>
+            <td>
+              <a href="#" @click.prevent="previewDocx(m.docx_id)" x-text="m.title"></a>
+              <span x-show="m.latex_available"
+                    class="badge-latex"
+                    title="Esta canción también está en LaTeX — se recomienda importarla desde LaTeX (mejor calidad)"
+                    @click.stop="view = 'latex'; loadLatex().then(() => filterLatexById(m.latex_id))">📐 también en LaTeX</span>
+            </td>
             <td x-text="m.key"></td>
             <td x-text="m.capo || ''"></td>
             <td class="warn-cell" x-text="m.warnings.join('; ')"></td>
@@ -275,6 +286,165 @@
       </div>
     </div>
   </section>
+
+  <!-- IMPORTAR LATEX -->
+  <section x-show="view === 'latex' && data" x-cloak>
+    <h1>📐 Importar de LaTeX</h1>
+    <p class="muted">
+      Archivos <code>.tex</code> en <code>scripts/input/&lt;categoría&gt;/</code>.
+      Si el título <strong>coincide con una canción ya existente</strong> en el repo, se ofrece
+      <span class="badge-overwrite">↻ sobrescribir manteniendo número</span> en lugar de crear otra.
+      Tras importar, el <code>.tex</code> se mueve a <code>scripts/input/processed/</code>.
+    </p>
+    <p class="muted" style="font-size:11px">
+      <strong>LaTeX tiene prioridad sobre el cantoral DOCX</strong> — si una canción está en ambos,
+      mejor importarla desde aquí (los acordes vienen ya bien posicionados).
+    </p>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Buscar…" x-model="latexSearch" />
+      <select x-model="latexFolderFilter">
+        <option value="">Todas las carpetas</option>
+        <template x-for="f in latexFolders()" :key="f">
+          <option :value="f" x-text="f"></option>
+        </template>
+      </select>
+      <select x-model="latexMatchFilter">
+        <option value="">Todas</option>
+        <option value="new">Sólo nuevas (sin coincidencia)</option>
+        <option value="match">Sólo coincidentes con el repo</option>
+        <option value="warn">Con avisos</option>
+      </select>
+      <button @click="selectAllLatex()">Seleccionar todas</button>
+      <button @click="selectedLatex = new Set()">Limpiar selección</button>
+      <button @click="rescanLatex()" title="Volver a leer los .tex">🔄 Re-escanear</button>
+      <button class="btn primary" :disabled="selectedLatex.size === 0 || importingLatex"
+              @click="doImportLatex()"
+              x-text="importingLatex ? 'Importando…' : `Importar ${selectedLatex.size} seleccionadas`"></button>
+    </div>
+
+    <table class="songs">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Carpeta</th>
+          <th>Categoría destino</th>
+          <th>Título (LaTeX)</th>
+          <th>Tono</th>
+          <th>Coincidencia en repo</th>
+          <th>Modo</th>
+          <th>Avisos</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="l in filteredLatex()" :key="l.id">
+          <tr :class="{ 'has-warn': l.unknown_chords.length > 0, 'has-match': !!l.repo_match }">
+            <td>
+              <input type="checkbox"
+                     :checked="selectedLatex.has(l.id)"
+                     @change="toggleLatex(l.id)" />
+            </td>
+            <td x-text="l.latex_folder"></td>
+            <td>
+              <select x-model="latexCategoryOverride[l.id]" class="cat-select-mini"
+                      :disabled="(latexImportMode[l.id] || (l.repo_match ? 'overwrite' : 'new')) === 'overwrite'">
+                <option :value="''" x-text="'auto: ' + (l.target_letter || '?')"></option>
+                <template x-for="cat in data.categories" :key="cat.letter">
+                  <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '').slice(0,18)"></option>
+                </template>
+              </select>
+            </td>
+            <td>
+              <a href="#" @click.prevent="previewLatex(l.id)" x-text="l.title"></a>
+              <div class="row-meta" x-show="l.artist" x-text="'— ' + l.artist"></div>
+            </td>
+            <td x-text="l.key || ''"></td>
+            <td>
+              <template x-if="l.repo_match">
+                <div class="repo-match">
+                  <span class="match-num" x-text="'#' + (l.repo_match.number || '?')"></span>
+                  <a href="#" @click.prevent="openSongFromPath(l.repo_match.path)" x-text="l.repo_match.title"></a>
+                  <div class="row-meta" x-text="l.repo_match.category_letter + ' — ' + l.repo_match.filename"></div>
+                </div>
+              </template>
+              <template x-if="!l.repo_match">
+                <span class="muted-mini">— ninguna —</span>
+              </template>
+            </td>
+            <td>
+              <template x-if="l.repo_match">
+                <div class="mode-toggle">
+                  <label>
+                    <input type="radio" :name="'mode-' + l.id" value="overwrite"
+                           :checked="(latexImportMode[l.id] || 'overwrite') === 'overwrite'"
+                           @change="setLatexMode(l.id, 'overwrite')" />
+                    <span class="badge-overwrite">↻ sobrescribir #<span x-text="l.repo_match.number || '?'"></span></span>
+                  </label>
+                  <label>
+                    <input type="radio" :name="'mode-' + l.id" value="new"
+                           :checked="latexImportMode[l.id] === 'new'"
+                           @change="setLatexMode(l.id, 'new')" />
+                    <span>➕ crear nueva</span>
+                  </label>
+                </div>
+              </template>
+              <template x-if="!l.repo_match">
+                <span class="badge-new">➕ nueva</span>
+              </template>
+            </td>
+            <td class="warn-cell">
+              <template x-if="l.unknown_chords.length > 0">
+                <span :title="'Acordes raros: ' + l.unknown_chords.join(', ')">
+                  ⚠ <span x-text="l.unknown_chords.length"></span> acorde(s) revisar
+                </span>
+              </template>
+            </td>
+            <td style="white-space:nowrap">
+              <button class="btn-mini" @click="previewLatex(l.id)">👁 Ver</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <div x-show="latexResults.length > 0" class="import-results" x-cloak>
+      <h3>Resultado:</h3>
+      <ul>
+        <template x-for="r in latexResults" :key="r.id">
+          <li :class="{ ok: r.ok, err: !r.ok }">
+            <span x-text="r.ok ? '✓' : '✗'"></span>
+            <span x-text="r.id"></span>
+            <span x-show="r.action" class="path" x-text="'(' + r.action + ') → ' + r.path"></span>
+            <span x-show="r.error" class="error-msg" x-text="r.error"></span>
+          </li>
+        </template>
+      </ul>
+    </div>
+  </section>
+
+  <!-- LATEX PREVIEW MODAL -->
+  <div class="editor-overlay" x-show="latexPreview" @click.self="latexPreview = null" x-cloak>
+    <div class="editor-modal">
+      <div class="editor-header">
+        <h2 x-text="latexPreview ? ('📐 ' + latexPreview.parsed.title) : ''"></h2>
+        <div class="header-actions">
+          <button class="btn primary" @click="importOneLatex(latexPreview.id)">Importar esta</button>
+          <button class="btn" @click="latexPreview = null">✕ Cerrar</button>
+        </div>
+      </div>
+      <div class="editor-body" x-show="latexPreview">
+        <div class="editor-pane" style="overflow:auto">
+          <h4 style="margin:0 0 6px">.cho resultante</h4>
+          <pre class="latex-preview" x-text="latexPreview ? latexPreview.content : ''"></pre>
+        </div>
+        <div class="editor-pane" style="overflow:auto;border-left:1px solid var(--border)">
+          <h4 style="margin:0 0 6px">.tex original</h4>
+          <pre class="latex-preview" x-text="latexPreview ? latexPreview.latex_raw : ''"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- REORDENAR -->
   <section x-show="view === 'reorder' && data" x-cloak>
@@ -405,6 +575,23 @@
           <input type="text" x-model="editor.meta.artist" @input="updateMetaInRaw('artist', $event.target.value)" />
           <label>Tono (key)</label>
           <input type="text" x-model="editor.meta.key" @input="updateMetaInRaw('key', $event.target.value)" />
+          <div class="transpose-box">
+            <div class="transpose-row">
+              <button type="button" class="btn-mini transpose-btn" @click="transposeSong(-1)" title="Bajar medio tono (todos los acordes)">−½ tono</button>
+              <button type="button" class="btn-mini transpose-btn" @click="transposeSong(1)" title="Subir medio tono (todos los acordes)">+½ tono</button>
+            </div>
+            <div class="transpose-row">
+              <select class="transpose-select"
+                      @change="transposeSongToKey($event.target.value); $event.target.value=''"
+                      title="Transpone toda la canción al tono elegido y machaca el campo Tono">
+                <option value="">🎵 Llevar a tono…</option>
+                <template x-for="k in commonKeyOptions()" :key="k">
+                  <option :value="k" x-text="k"></option>
+                </template>
+              </select>
+            </div>
+            <div class="transpose-help">Mueve <strong>todos</strong> los acordes y sobrescribe el campo Tono. Pulsa 💾 para guardar el cambio definitivo.</div>
+          </div>
           <label>Capo</label>
           <input type="number" min="0" x-model="editor.meta.capo" @input="updateMetaInRaw('capo', $event.target.value)" />
           <div class="editor-status-selector">
@@ -422,13 +609,18 @@
             <small x-text="editor.path"></small>
           </div>
           <div class="meta-chuleta">
-            <div class="chuleta-title">Atajos rápidos</div>
-            <div class="chuleta-row"><span class="chuleta-key">○ margen</span> seleccionar línea</div>
-            <div class="chuleta-row"><span class="chuleta-key">Shift+click</span> rango</div>
-            <div class="chuleta-row"><span class="chuleta-key">📋 Copiar</span> guarda acordes <em>(limpia selección)</em></div>
-            <div class="chuleta-row"><span class="chuleta-key">📥 Pegar</span> aplica al destino</div>
-            <div class="chuleta-row"><span class="chuleta-key">Ctrl+S</span> guardar</div>
+            <div class="chuleta-title">Copiar acordes entre estrofas (paso a paso)</div>
+            <div class="chuleta-step"><span class="step-num">1</span> Click en el círculo <span class="chuleta-key">○</span> del margen izquierdo de cada línea con los acordes que quieres copiar (se pondrá <span class="chuleta-key chuleta-on">◉</span> azul).</div>
+            <div class="chuleta-step"><span class="step-num">2</span> Pulsa <span class="chuleta-key">📋 Copiar acordes</span> en la barra de arriba.</div>
+            <div class="chuleta-step"><span class="step-num">3</span> Marca ahora las líneas DESTINO con sus círculos.</div>
+            <div class="chuleta-step"><span class="step-num">4</span> Pulsa <span class="chuleta-key">📥 Pegar acordes</span>.</div>
+          </div>
+          <div class="meta-chuleta">
+            <div class="chuleta-title">Otros atajos</div>
+            <div class="chuleta-row"><span class="chuleta-key">Shift+click ○</span> selección de rango</div>
+            <div class="chuleta-row"><span class="chuleta-key">Ctrl+S</span> guardar canción</div>
             <div class="chuleta-row"><span class="chuleta-key">2×click acorde</span> editar texto</div>
+            <div class="chuleta-row"><span class="chuleta-key">2×click letra</span> editar letra</div>
             <div class="chuleta-row"><span class="chuleta-key">drag acorde</span> sílaba · Shift=palabra · Alt=libre</div>
           </div>
         </div>
@@ -468,6 +660,16 @@
 
           <div class="visual-add-hint" x-show="visualAddMode" x-cloak>
             🟢 Modo añadir activado — pincha sobre cualquier letra para insertar un acorde nuevo.
+          </div>
+
+          <div class="copypaste-banner"
+               x-show="visualChordClipboard || visualSelectedLines.size > 0"
+               :class="{ 'cp-ready': visualChordClipboard }"
+               x-cloak>
+            <span class="cp-text" x-text="copyPasteHint()"></span>
+            <span class="cp-info" x-show="clipboardInfo" x-text="clipboardInfo"></span>
+            <button class="link-mini" x-show="visualChordClipboard"
+                    @click="cancelChordClipboard()" title="Cancelar el patrón copiado">✕ cancelar copia</button>
           </div>
 
           <div class="visual-doc"

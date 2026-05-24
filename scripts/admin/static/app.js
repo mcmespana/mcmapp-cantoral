@@ -19,7 +19,7 @@ function app() {
     onlyInRepoFilter: false,
     selectedCatalogPaths: new Set(),
 
-    // Import view
+    // Import view (docx)
     importSearch: '',
     importSectionFilter: '',
     selectedImports: new Set(),
@@ -28,6 +28,19 @@ function app() {
     docxPreview: null,
     importIgnored: [],
     showIgnored: false,
+
+    // Import view (LaTeX)
+    latexItems: [],
+    latexLoading: false,
+    latexSearch: '',
+    latexFolderFilter: '',
+    latexMatchFilter: '',
+    selectedLatex: new Set(),
+    latexImportMode: {},        // { latex_id: 'overwrite' | 'new' }
+    latexCategoryOverride: {},  // { latex_id: 'A' | '' }
+    importingLatex: false,
+    latexResults: [],
+    latexPreview: null,
 
     // Reorder
     reorderCategory: '',
@@ -51,6 +64,7 @@ function app() {
     visualSelectedLines: new Set(),
     visualLastClickedLine: null,
     visualChordClipboard: null,   // [{lyric, chords}]  patrón copiado
+    clipboardInfo: '',            // texto persistente cuando hay acordes copiados
     showHelp: false,
     newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
                mode: 'blank', content: '', creating: false },
@@ -208,6 +222,142 @@ function app() {
         await Promise.all([this.loadCatalog(), this.loadIgnored()]);
       } catch (e) {
         alert('Error: ' + e.message);
+      }
+    },
+
+    // ─────────── Import view (LaTeX) ───────────
+    async loadLatex(force = false) {
+      this.latexLoading = true;
+      try {
+        const r = await fetch('/api/latex/list' + (force ? '?force=1' : ''));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        this.latexItems = d.items || [];
+        // Inicializar modo por defecto: si hay match, overwrite; si no, new
+        for (const it of this.latexItems) {
+          if (this.latexImportMode[it.id] == null) {
+            this.latexImportMode[it.id] = it.repo_match ? 'overwrite' : 'new';
+          }
+          if (this.latexCategoryOverride[it.id] == null) {
+            this.latexCategoryOverride[it.id] = '';
+          }
+        }
+      } catch (e) {
+        alert('No pude cargar los .tex: ' + e.message);
+      } finally {
+        this.latexLoading = false;
+      }
+    },
+    async rescanLatex() {
+      await fetch('/api/latex/rescan', { method: 'POST' });
+      await this.loadLatex(true);
+    },
+    latexFolders() {
+      const s = new Set(this.latexItems.map(l => l.latex_folder));
+      return [...s].sort();
+    },
+    filteredLatex() {
+      let list = this.latexItems;
+      if (this.latexFolderFilter) list = list.filter(l => l.latex_folder === this.latexFolderFilter);
+      if (this.latexMatchFilter === 'new') list = list.filter(l => !l.repo_match);
+      else if (this.latexMatchFilter === 'match') list = list.filter(l => !!l.repo_match);
+      else if (this.latexMatchFilter === 'warn') list = list.filter(l => l.unknown_chords.length > 0);
+      if (this.latexSearch) {
+        const q = this.normalizeSearch(this.latexSearch);
+        list = list.filter(l => this.normalizeSearch(l.title).includes(q) || this.normalizeSearch(l.filename).includes(q));
+      }
+      return list;
+    },
+    filterLatexById(id) {
+      this.latexSearch = '';
+      this.latexFolderFilter = '';
+      this.latexMatchFilter = '';
+      // Pequeño truco para destacar visualmente
+      this.$nextTick(() => {
+        const row = document.querySelector(`[data-latex-id="${id}"]`);
+        if (row) row.scrollIntoView({ block: 'center' });
+      });
+    },
+    toggleLatex(id) {
+      if (this.selectedLatex.has(id)) this.selectedLatex.delete(id);
+      else this.selectedLatex.add(id);
+      this.selectedLatex = new Set(this.selectedLatex);
+    },
+    selectAllLatex() {
+      const ids = this.filteredLatex().map(l => l.id);
+      this.selectedLatex = new Set([...this.selectedLatex, ...ids]);
+    },
+    setLatexMode(id, mode) {
+      this.latexImportMode = { ...this.latexImportMode, [id]: mode };
+    },
+    async previewLatex(id) {
+      try {
+        const r = await fetch('/api/latex/preview?id=' + encodeURIComponent(id));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.latexPreview = await r.json();
+      } catch (e) {
+        alert('Error preview: ' + e.message);
+      }
+    },
+    async importOneLatex(id) {
+      this.selectedLatex = new Set([id]);
+      await this.doImportLatex();
+      this.latexPreview = null;
+    },
+    async doImportLatex() {
+      if (this.selectedLatex.size === 0) return;
+      this.importingLatex = true;
+      this.latexResults = [];
+      const items = [];
+      for (const id of this.selectedLatex) {
+        const it = this.latexItems.find(l => l.id === id);
+        if (!it) continue;
+        const mode = this.latexImportMode[id] || (it.repo_match ? 'overwrite' : 'new');
+        if (mode === 'overwrite' && it.repo_match) {
+          items.push({ id, mode: 'overwrite', repo_path: it.repo_match.path });
+        } else {
+          const cat = this.latexCategoryOverride[id] || it.target_letter;
+          if (!cat) {
+            this.latexResults.push({ id, ok: false, error: 'No tiene categoría destino — selecciónala' });
+            continue;
+          }
+          items.push({ id, mode: 'new', category_letter: cat, slug: it.suggested_slug });
+        }
+      }
+      if (items.length === 0) { this.importingLatex = false; return; }
+      try {
+        const r = await fetch('/api/latex/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, move_to_processed: true }),
+        });
+        const json = await r.json();
+        this.latexResults = [...this.latexResults, ...(json.results || [])];
+        this.selectedLatex = new Set();
+        await Promise.all([this.loadCatalog(), this.loadLatex(true)]);
+      } catch (e) {
+        alert('Error importando LaTeX: ' + e.message);
+      } finally {
+        this.importingLatex = false;
+      }
+    },
+    async openSongFromPath(path) {
+      // Reusa la apertura del editor por path
+      try {
+        const r = await fetch('/api/song?path=' + encodeURIComponent(path));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const json = await r.json();
+        this.editor = {
+          path: json.path, filename: json.filename, content: json.content,
+          originalContent: json.content, dirty: false, tab: 'visual',
+          meta: { ...json.meta }, parsed: [],
+        };
+        this.editor.parsed = parseCho(this.editor.content);
+        this.markChorusFlags();
+        this.setSaveIndicator('saved', '✓ Cargada');
+        this.$nextTick(() => this.layoutChords());
+      } catch (e) {
+        alert('No pude abrir: ' + e.message);
       }
     },
 
@@ -674,7 +824,10 @@ function app() {
     // ─────────── Copiar / pegar patrón de acordes ───────────
     copyChordPattern() {
       const r = this.selectedLineRange();
-      if (!r) return;
+      if (!r) {
+        alert('Primero selecciona las líneas que tienen los acordes que quieres copiar.\n\n→ Haz click en el círculo ○ del margen IZQUIERDO de cada línea (se pondrá azul ◉).\n→ Luego pulsa "📋 Copiar acordes".');
+        return;
+      }
       const pattern = [];
       for (let i = r.start; i <= r.end; i++) {
         const ln = this.editor.parsed[i];
@@ -688,14 +841,24 @@ function app() {
       if (pattern.length === 0) { alert('No hay líneas de letra en la selección.'); return; }
       this.visualChordClipboard = pattern;
       const total = pattern.reduce((acc, p) => acc + p.chords.length, 0);
-      this.setSaveIndicator('saved', `📋 ${total} acordes copiados — ahora selecciona el destino y pega`);
+      this.clipboardInfo = `📋 ${total} acordes copiados de ${pattern.length} línea(s)`;
       // Limpiar selección para que el usuario seleccione el destino sin mezclar origen
       this.clearLineSelection();
-      setTimeout(() => { if (this.editor.dirty) this.setSaveIndicator('dirty', '● Sin guardar'); else this.setSaveIndicator('saved', 'Sin cambios'); }, 3000);
+    },
+    cancelChordClipboard() {
+      this.visualChordClipboard = null;
+      this.clipboardInfo = '';
     },
     pasteChordPattern() {
+      if (!this.visualChordClipboard) {
+        alert('No tienes acordes copiados todavía. Primero pulsa "📋 Copiar acordes" sobre una estrofa que tenga los acordes que quieras reutilizar.');
+        return;
+      }
       const r = this.selectedLineRange();
-      if (!r || !this.visualChordClipboard) return;
+      if (!r) {
+        alert('Selecciona las líneas DESTINO donde quieres pegar los acordes.\n\n→ Haz click en el círculo ○ del margen izquierdo de cada línea (se pondrá azul ◉).\n→ Luego pulsa "📥 Pegar acordes".');
+        return;
+      }
       // Recoger las líneas de letra de la selección
       const targets = [];
       for (let i = r.start; i <= r.end; i++) {
@@ -719,6 +882,70 @@ function app() {
         this.setSaveIndicator('saved', `✓ ${totalPasted} acordes pegados en ${targets.length} línea(s)`);
         setTimeout(() => { if (this.editor.dirty) this.setSaveIndicator('dirty', '● Sin guardar'); }, 2500);
       });
+      // Mantenemos el clipboard por si quiere pegar en otra estrofa más
+    },
+
+    // Mensaje de ayuda contextual sobre el flujo copiar/pegar
+    copyPasteHint() {
+      const hasSel = this.visualSelectedLines.size > 0;
+      const hasClip = !!this.visualChordClipboard;
+      if (hasClip && hasSel) return '③ Pulsa 📥 Pegar acordes para aplicarlos a las líneas seleccionadas.';
+      if (hasClip && !hasSel) return '② Acordes copiados ✓ — ahora marca las líneas DESTINO con el círculo ○ del margen izquierdo y pulsa 📥 Pegar.';
+      if (!hasClip && hasSel) return '② Pulsa 📋 Copiar acordes para guardar el patrón, luego marca el destino.';
+      return '① Para copiar acordes entre estrofas: marca las líneas ORIGEN haciendo click en el círculo ○ del margen izquierdo, luego pulsa 📋 Copiar.';
+    },
+
+    // ─────────── Transposición de tono ───────────
+    transposeSong(semis) {
+      if (!semis || !this.editor.parsed) return;
+      const target = computeTransposedKey(this.editor.meta.key, semis);
+      const useFlats = target ? target.useFlats : (semis < 0);
+      let count = 0;
+      for (const ln of this.editor.parsed) {
+        if (ln.type === 'lyric' && ln.chords) {
+          ln.chords = ln.chords.map(c => {
+            const nt = transposeChordText(c.text, semis, useFlats);
+            if (nt !== c.text) count++;
+            return { ...c, text: nt };
+          });
+        }
+      }
+      if (target && this.editor.meta.key) {
+        this.editor.meta.key = target.key;
+        this.updateMetaInRaw('key', target.key);
+      }
+      this.editor.parsed = [...this.editor.parsed];
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+      const dir = semis > 0 ? `+${semis}` : `${semis}`;
+      this.setSaveIndicator('dirty', `🎵 ${count} acordes transpuestos (${dir} semitono${Math.abs(semis) === 1 ? '' : 's'})${target ? ' → ' + target.key : ''} · pulsa 💾 para guardar`);
+    },
+    transposeSongToKey(targetKey) {
+      if (!targetKey) return;
+      const curKey = this.editor.meta.key || '';
+      if (!curKey) {
+        alert('Esta canción no tiene tono indicado en los metadatos. Escribe primero el tono actual (ej. "D") en el campo "Tono (key)" y luego usa "Llevar a".');
+        return;
+      }
+      const curM = curKey.match(/^([A-G])([#b]?)/);
+      const tgtM = targetKey.match(/^([A-G])([#b]?)/);
+      if (!curM || !tgtM) { alert('No reconozco el tono "' + curKey + '" → "' + targetKey + '".'); return; }
+      const curIdx = NOTE_INDEX[curM[1] + curM[2]];
+      const tgtIdx = NOTE_INDEX[tgtM[1] + tgtM[2]];
+      if (curIdx == null || tgtIdx == null) { alert('Tono no reconocido.'); return; }
+      let semis = tgtIdx - curIdx;
+      // dirección más corta
+      if (semis > 6) semis -= 12;
+      if (semis < -6) semis += 12;
+      if (semis === 0) {
+        this.setSaveIndicator('saved', 'La canción ya está en ' + targetKey);
+        return;
+      }
+      this.transposeSong(semis);
+    },
+    commonKeyOptions() {
+      return ['C','C#','Db','D','Eb','E','F','F#','Gb','G','Ab','A','Bb','B',
+              'Cm','C#m','Dm','Ebm','Em','Fm','F#m','Gm','G#m','Am','Bbm','Bm'];
     },
 
     // ─────────── Editar texto de la letra ───────────
@@ -1247,4 +1474,62 @@ function renderChordLine(line) {
     html.push(`<span class="pv-seg"><span class="pv-chords">${pendingChords.map(esc).join(' ')}</span><span class="pv-lyr">${esc(textBuf) || '&nbsp;'}</span></span>`);
   }
   return html.join('');
+}
+
+// ─────────── Transposición de acordes ───────────
+const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const NOTE_INDEX = {
+  'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'Fb':4,'E#':5,
+  'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,
+  'B':11,'Cb':11,'B#':0,
+};
+
+function transposeNoteName(note, semis, useFlats) {
+  const idx = NOTE_INDEX[note];
+  if (idx == null) return note;
+  const arr = useFlats ? NOTES_FLAT : NOTES_SHARP;
+  return arr[((idx + semis) % 12 + 12) % 12];
+}
+
+// Transpone el texto de un acorde (ej. "Dm7/F#" → "Cm7/E"). Conserva todo lo no-nota.
+function transposeChordText(text, semis, useFlats) {
+  if (!text) return text;
+  // Acordes con barras (NC, x, etc) o textos no estándar — los dejamos intactos.
+  const reChord = /^([A-G])([#b]?)([^\/\s]*)(\/([A-G])([#b]?)(.*))?$/;
+  const m = text.match(reChord);
+  if (!m) return text;
+  const newRoot = transposeNoteName(m[1] + (m[2] || ''), semis, useFlats);
+  let out = newRoot + (m[3] || '');
+  if (m[4]) {
+    const newBass = transposeNoteName(m[5] + (m[6] || ''), semis, useFlats);
+    out += '/' + newBass + (m[7] || '');
+  }
+  return out;
+}
+
+// Calcula el nuevo tono después de transponer, eligiendo bemoles o sostenidos
+// según la convención habitual del nuevo tono.
+function computeTransposedKey(key, semis) {
+  if (!key) return null;
+  const m = key.match(/^([A-G])([#b]?)(m?)(.*)$/);
+  if (!m) return null;
+  const isMinor = m[3] === 'm';
+  const suffix = m[4] || '';
+  // Probamos ambos spellings y elegimos
+  const sharpName = transposeNoteName(m[1] + (m[2] || ''), semis, false);
+  const flatName = transposeNoteName(m[1] + (m[2] || ''), semis, true);
+  const FLAT_MAJOR = new Set(['F','Bb','Eb','Ab','Db','Gb','Cb']);
+  const FLAT_MINOR = new Set(['D','G','C','F','Bb','Eb','Ab']);
+  const flatSet = isMinor ? FLAT_MINOR : FLAT_MAJOR;
+  // Si el original venía con bemol y el resultado natural empata, preferimos bemoles
+  const originalHasFlat = (m[2] === 'b');
+  let useFlats;
+  if (sharpName === flatName) {
+    useFlats = originalHasFlat;
+  } else {
+    useFlats = flatSet.has(flatName);
+  }
+  const tonic = useFlats ? flatName : sharpName;
+  return { key: tonic + (isMinor ? 'm' : '') + suffix, useFlats };
 }
