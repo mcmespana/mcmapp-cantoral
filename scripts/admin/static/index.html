@@ -1015,7 +1015,11 @@
                     @click="pasteChordPattern()">📥 Pegar acordes</button>
 
             <span class="sep"></span>
-            <button class="btn-mini" @click="insertArrLine()">✍ Añadir arreglo</button>
+            <button class="btn-mini" :class="{primary: arrMode}"
+                    @click="arrMode = !arrMode"
+                    :title="arrMode ? 'Modo arreglos activo — click para desactivar' : 'Activar modo arreglos (botones ✍ + tecla «a»)'">
+              ✍ Modo arreglos
+            </button>
             <span class="sep"></span>
             <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
                     @click="insertChorusHere()">🔁 Insertar estribillo</button>
@@ -1044,7 +1048,7 @@
                @click="onVisualClick($event)"
                @keydown.delete.prevent="deleteSelectedChord()"
                @keydown.backspace.prevent="deleteSelectedChord()"
-               @keydown="if($event.key==='a' && !$event.ctrlKey && !$event.metaKey && !$event.altKey){ $event.preventDefault(); insertArrLine(); }"
+               @keydown="if($event.key==='a' && arrMode && !$event.ctrlKey && !$event.metaKey && !$event.altKey){ $event.preventDefault(); insertArrLine(); }"
                tabindex="0">
             <template x-for="(ln, idx) in editor.parsed" :key="idx">
               <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
@@ -1052,7 +1056,7 @@
                      @click.stop.prevent="toggleLineSelection(idx, $event)"
                      @mousedown.stop
                      title="Click selecciona · Shift+click rango"></div>
-                <button class="line-add-arr" x-show="ln.type !== 'arr'"
+                <button class="line-add-arr" x-show="arrMode && ln.type !== 'arr'"
                         @click.stop="insertArrAbove(idx)"
                         title="Añadir arreglo encima de esta línea">✍ arreglo</button>
                 <template x-if="ln.type === 'arr'">
@@ -1072,7 +1076,7 @@
                         <button class="link-mini" @click.stop="moveLine(idx,-1)" title="Subir">▲</button>
                         <button class="link-mini" @click.stop="moveLine(idx,1)" title="Bajar">▼</button>
                         <button class="link-mini" @click.stop="startArrEdit(idx)" title="Editar">✎</button>
-                        <button class="link-mini" @click.stop="editor.parsed.splice(idx,1); commitParsed()" title="Borrar">✕</button>
+                        <button class="link-mini" @click.stop="deleteArrLine(idx)" title="Borrar">✕</button>
                       </div>
                     </template>
                   </div>
@@ -1314,13 +1318,13 @@
           <p>Botón <strong>"Insertar estribillo"</strong> → elige cuál de los estribillos ya marcados quieres pegar; se inserta justo después de la línea actualmente seleccionada (o al final).</p>
           <h3>Arreglos (notas sobre una línea)</h3>
           <ul>
-            <li><strong>Añadir encima de una línea:</strong> pasa el ratón por
-              cualquier línea y pulsa el botón <em>"✍ arreglo"</em> que aparece
-              a la derecha. Se crea el arreglo justo <strong>encima</strong> y se
-              abre para escribir al momento.</li>
-            <li><strong>También:</strong> tecla <kbd>a</kbd> o el botón
-              <em>"✍ Añadir arreglo"</em> de la barra (lo inserta sobre la línea
-              seleccionada, o al final).</li>
+            <li><strong>Activar modo:</strong> pulsa el botón <em>"✍ Modo arreglos"</em>
+              de la barra (se pone azul). Una vez activo aparecen los botones
+              <em>"✍ arreglo"</em> al pasar el ratón por cada línea, y la
+              tecla <kbd>a</kbd> inserta un arreglo sobre la línea seleccionada (o al final).</li>
+            <li><strong>Añadir encima de una línea:</strong> con el modo activo,
+              pasa el ratón y pulsa <em>"✍ arreglo"</em>. Se crea el arreglo justo
+              <strong>encima</strong> y se abre para escribir al momento.</li>
             <li><strong>Editar:</strong> doble-click sobre el arreglo (o el ✎).
               Escribe y pulsa <kbd>Enter</kbd> para confirmar; si lo dejas vacío
               se borra.</li>

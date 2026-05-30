@@ -90,6 +90,7 @@ function app() {
       parsed: [],
     },
     visualAddMode: false,
+    arrMode: false,
     visualSelectedChord: null,
     visualSelectedLines: new Set(),
     visualLastClickedLine: null,
@@ -1294,6 +1295,13 @@ function app() {
       const j = idx + dir;
       if (j < 0 || j >= arr.length) return;
       [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    // Borra una línea arr y refresca el layout (evita que los acordes adyacentes desaparezcan).
+    deleteArrLine(idx) {
+      this.editor.parsed.splice(idx, 1);
       this.commitParsed();
       this.markChorusFlags();
       this.$nextTick(() => this.layoutChords());
