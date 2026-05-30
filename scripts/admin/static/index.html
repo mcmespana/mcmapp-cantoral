@@ -1015,6 +1015,8 @@
                     @click="pasteChordPattern()">📥 Pegar acordes</button>
 
             <span class="sep"></span>
+            <button class="btn-mini" @click="insertArrLine()">✍ Añadir arreglo</button>
+            <span class="sep"></span>
             <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
                     @click="insertChorusHere()">🔁 Insertar estribillo</button>
 
@@ -1042,6 +1044,7 @@
                @click="onVisualClick($event)"
                @keydown.delete.prevent="deleteSelectedChord()"
                @keydown.backspace.prevent="deleteSelectedChord()"
+               @keydown="if($event.key==='a' && !$event.ctrlKey && !$event.metaKey && !$event.altKey){ $event.preventDefault(); insertArrLine(); }"
                tabindex="0">
             <template x-for="(ln, idx) in editor.parsed" :key="idx">
               <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
@@ -1049,6 +1052,13 @@
                      @click.stop.prevent="toggleLineSelection(idx, $event)"
                      @mousedown.stop
                      title="Click selecciona · Shift+click rango"></div>
+                <template x-if="ln.type === 'arr'">
+                  <div class="ed-arr-line" @dblclick.stop="editArrLine(idx)">
+                    <span x-text="ln.text"></span>
+                    <button class="link-mini" @click.stop="editArrLine(idx)" title="Editar">✎</button>
+                    <button class="link-mini" @click.stop="editor.parsed.splice(idx,1); commitParsed()" title="Borrar">✕</button>
+                  </div>
+                </template>
                 <template x-if="ln.type === 'directive' || ln.type === 'comment'">
                   <div class="ed-meta-line" x-text="ln.raw"></div>
                 </template>

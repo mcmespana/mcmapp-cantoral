@@ -1251,6 +1251,33 @@ function app() {
       this.markChorusFlags();
       this.$nextTick(() => this.layoutChords());
     },
+    insertArrLine() {
+      const text = prompt('Texto del arreglo:', '');
+      if (text == null) return;
+      const t = text.trim();
+      if (!t) return;
+      const raw = '{arr: ' + t + '}';
+      const line = { type: 'arr', raw, text: t };
+      const r = this.selectedLineRange();
+      const at = r ? r.start : this.editor.parsed.length;
+      this.editor.parsed.splice(at, 0, line);
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
+    editArrLine(idx) {
+      const ln = this.editor.parsed[idx];
+      const text = prompt('Texto del arreglo:', ln.text);
+      if (text == null) return;
+      const t = text.trim();
+      if (!t) {
+        this.editor.parsed.splice(idx, 1);
+      } else {
+        ln.text = t;
+        ln.raw = '{arr: ' + t + '}';
+      }
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
     markChorusFlags() {
       // Anota _inChorus en líneas que estén entre {soc}/{eoc}
       let inside = false;
@@ -1733,6 +1760,10 @@ function parseCho(content) {
     if (t === '') return { type: 'blank', raw };
     if (/^\{soc\}$/i.test(t) || /^\{start_of_chorus\}$/i.test(t)) return { type: 'soc', raw };
     if (/^\{eoc\}$/i.test(t) || /^\{end_of_chorus\}$/i.test(t)) return { type: 'eoc', raw };
+    if (/^\{arr\s*:/i.test(t)) {
+      const text = t.replace(/^\{arr\s*:\s*/i, '').replace(/\}\s*$/, '');
+      return { type: 'arr', raw, text };
+    }
     if (/^\{[a-z_]+\s*:/i.test(t) || /^\{[a-z_]+\}$/i.test(t)) {
       const isComment = /^\{comment/i.test(t);
       return { type: isComment ? 'comment' : 'directive', raw };
