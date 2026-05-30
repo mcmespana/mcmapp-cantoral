@@ -63,14 +63,14 @@ y su clave en `songs/ediciones`.
 | Cejilla | `{capo: ...}` | `capo` | `capoNew` / `capoOld` | int | Entero (0 si no hay). |
 | Info | — | `info` | `infoNew` / `infoOld` | string | Campo libre; hoy se emite vacío en el JSON. |
 | Contenido | (cuerpo del `.cho`) | `content` | `contentNew` / `contentOld` | string | ChordPro completo. Ver §4. |
-| Ritmo | `{ritmo: ...}` | `rhythm` | *(no soportado aún)* | string | Ej. `4x4`, `parón + 4x4`. |
-| Álbum | `{album: ...}` | `album` | *(no soportado aún)* | string | Ej. `¡Alégrate!, 2004`. |
-| Tiempo litúrgico | `{tiempo: ...}` | `liturgicalTime` | *(no soportado aún)* | string | Ej. `Adviento`, `Entrada`. |
-| Fuente | `{fuente: ...}` | `source` | *(no soportado aún)* | string | Atribución de origen. |
-| Vídeo embebido | `{video: ...}` | `videoEmbed` | *(no soportado aún)* | string (url) | URL de embed (p.ej. `youtube.com/embed/...`). |
-| Enlaces YouTube | `{youtube: label \| url}` | `youtubeLinks` | *(no soportado aún)* | array de `{label,url}` | Repetible. Ver §3. |
-| Enlaces de audio | `{audio: label \| url}` | `audioLinks` | *(no soportado aún)* | array de `{label,url}` | Repetible. Ver §3. |
-| Comentario (meta) | `{comentario: ...}` | `comment` | *(no soportado aún)* | string | OJO: solo `{comentario:}` (español) se extrae a metadato. |
+| Ritmo | `{ritmo: ...}` | `rhythm` | `rhythmNew` / `rhythmOld` | string | Ej. `4x4`, `parón + 4x4`. |
+| Álbum | `{album: ...}` | `album` | `albumNew` / `albumOld` | string | Ej. `¡Alégrate!, 2004`. |
+| Tiempo litúrgico | `{tiempo: ...}` | `liturgicalTime` | `liturgicalTimeNew` / `liturgicalTimeOld` | string | Ej. `Adviento`, `Entrada`. |
+| Fuente | `{fuente: ...}` | `source` | `sourceNew` / `sourceOld` | string | Atribución de origen. |
+| Vídeo embebido | `{video: ...}` | `videoEmbed` | `videoEmbedNew` / `videoEmbedOld` | string (url) | URL de embed (p.ej. `youtube.com/embed/...`). |
+| Enlaces YouTube | `{youtube: label \| url}` | `youtubeLinks` | `youtubeLinksNew` / `youtubeLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
+| Enlaces de audio | `{audio: label \| url}` | `audioLinks` | `audioLinksNew` / `audioLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
+| Comentario (meta) | `{comentario: ...}` | `comment` | `commentNew` / `commentOld` | string | OJO: solo `{comentario:}` (español) se extrae a metadato. |
 
 ### Identificación / estructura
 
@@ -79,14 +79,19 @@ y su clave en `songs/ediciones`.
 | Fichero | `filename` | `filename` | Nombre del `.cho`, p.ej. `01.ven_a_celebrar.cho`. |
 | Categoría | (clave del objeto padre) | `category` | Ver §5. |
 
-> **Importante (hueco actual):** el script de sincronización
-> `scripts/sincronizaCambiosDeFirebase.py` **solo** aplica al `.cho` los campos
-> `title`, `author`, `key`, `capo`, `info` y `content`. Los multimedia
-> (`rhythm`, `album`, `liturgicalTime`, `source`, `videoEmbed`, `youtubeLinks`,
-> `audioLinks`, `comment`) **todavía no se sincronizan desde `ediciones`**.
-> Si la app empieza a editarlos, hay que ampliar tanto la app (qué claves
-> escribe) como ese script (cómo las aplica). Mientras tanto, esos campos se
-> editan desde el admin local y se reflejan dentro de `content`.
+> **Multimedia sí se sincroniza.** Desde la ampliación del
+> `scripts/sincronizaCambiosDeFirebase.py`, el repo aplica también los campos
+> multimedia (`rhythm`, `album`, `liturgicalTime`, `source`, `videoEmbed`,
+> `youtubeLinks`, `audioLinks`, `comment`) que la app escriba en `ediciones`.
+> Reglas de aplicación (importante para la app):
+>
+> - El **cuerpo** (`contentNew`) viaja **sin** las directivas multimedia (igual
+>   que en `songs/data`). El script las reinyecta en la cabecera del `.cho`.
+> - Para cada campo multimedia: si la edición trae `<campo>New`, ese valor manda
+>   (un string vacío o un array vacío **borra** la directiva); si **no** lo trae,
+>   se **conserva** lo que ya hubiera en el `.cho`. Así, editar solo la letra no
+>   pierde los enlaces, y editar solo un enlace no toca la letra.
+> - `youtubeLinksNew` / `audioLinksNew` son arrays de `{label, url}` (ver §3).
 
 ---
 
@@ -275,14 +280,29 @@ y el `filename`; el sincronizador resuelve la carpeta a partir de la letra.
   "infoOld": "",
   "infoNew": "",
   "contentOld": "{title: Ven a Celebrar}\n...",
-  "contentNew": "{title: Ven a Celebrar}\n...(con acordes corregidos)..."
+  "contentNew": "{title: Ven a Celebrar}\n...(con acordes corregidos, SIN multimedia)...",
+
+  "rhythmOld": "4x4",
+  "rhythmNew": "parón + 4x4",
+  "youtubeLinksOld": [{ "label": "Oficial", "url": "https://youtu.be/abc" }],
+  "youtubeLinksNew": [
+    { "label": "Oficial", "url": "https://youtu.be/abc" },
+    { "label": "Acústico", "url": "https://youtu.be/def" }
+  ]
 }
 ```
 
+> Solo hace falta enviar los pares `*Old`/`*New` de los campos que cambian.
+> Los que no se incluyen se conservan tal cual en el `.cho`.
+
 Reglas del sincronizador:
 
-- Si `contentNew` ≠ `contentOld` → reescribe **todo** el `.cho` con `contentNew`.
-- Después revisa los tags `title/artist/key/capo/info`: si `*New` ≠ `*Old`,
+- Si `contentNew` ≠ `contentOld` → reescribe el cuerpo del `.cho` con
+  `contentNew` (que **no** incluye multimedia).
+- Reinyecta las directivas multimedia en la cabecera: para cada campo usa
+  `*New` si la edición lo trae (vacío = borrar), o lo que ya había en el `.cho`
+  si no lo trae.
+- Revisa los tags `title/artist/key/capo/info`: si `*New` ≠ `*Old`,
   actualiza/inserta la directiva correspondiente.
 - Tras aplicar (y solo si el push al repo tiene éxito), borra el nodo
   `songs/ediciones/<pushId>`.
@@ -301,8 +321,11 @@ Reglas del sincronizador:
   `{soc}`/`{eoc}`; líneas `{arr: ...}` como anotación de arreglo; `{comment:}` y
   `{c:}` como notas.
 - **Proponer cambios** escribiendo en `songs/ediciones/<pushId>` con pares
-  `*Old`/`*New` + `filename` + `category`. Hoy el repo solo aplica
-  `title/author/key/capo/info/content`; para sincronizar multimedia hace falta
-  ampliar el script `sincronizaCambiosDeFirebase.py` y acordar las claves
-  (`youtubeLinksNew`, `audioLinksNew`, etc.).
+  `*Old`/`*New` + `filename` + `category`. El repo aplica
+  `title/author/key/capo/info/content` **y** los multimedia (`rhythmNew`,
+  `albumNew`, `liturgicalTimeNew`, `sourceNew`, `videoEmbedNew`,
+  `youtubeLinksNew`, `audioLinksNew`, `commentNew`).
+- El `contentNew` debe ir **sin** directivas multimedia (el repo las reinyecta);
+  los multimedia se envían como sus campos estructurados. Solo hace falta incluir
+  los campos que cambian; los demás se conservan.
 ```

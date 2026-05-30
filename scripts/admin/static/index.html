@@ -1052,11 +1052,29 @@
                      @click.stop.prevent="toggleLineSelection(idx, $event)"
                      @mousedown.stop
                      title="Click selecciona · Shift+click rango"></div>
+                <button class="line-add-arr" x-show="ln.type !== 'arr'"
+                        @click.stop="insertArrAbove(idx)"
+                        title="Añadir arreglo encima de esta línea">✍ arreglo</button>
                 <template x-if="ln.type === 'arr'">
-                  <div class="ed-arr-line" @dblclick.stop="editArrLine(idx)">
-                    <span x-text="ln.text"></span>
-                    <button class="link-mini" @click.stop="editArrLine(idx)" title="Editar">✎</button>
-                    <button class="link-mini" @click.stop="editor.parsed.splice(idx,1); commitParsed()" title="Borrar">✕</button>
+                  <div class="ed-arr-line">
+                    <template x-if="ln._editing">
+                      <input class="ed-arr-input" type="text" x-model="ln.text"
+                             x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                             @keydown.enter.prevent="commitArrEdit(idx)"
+                             @keydown.escape.prevent="commitArrEdit(idx)"
+                             @blur="commitArrEdit(idx)"
+                             @mousedown.stop @click.stop
+                             placeholder="texto del arreglo…">
+                    </template>
+                    <template x-if="!ln._editing">
+                      <div class="ed-arr-view" @dblclick.stop="startArrEdit(idx)">
+                        <span x-text="ln.text"></span>
+                        <button class="link-mini" @click.stop="moveLine(idx,-1)" title="Subir">▲</button>
+                        <button class="link-mini" @click.stop="moveLine(idx,1)" title="Bajar">▼</button>
+                        <button class="link-mini" @click.stop="startArrEdit(idx)" title="Editar">✎</button>
+                        <button class="link-mini" @click.stop="editor.parsed.splice(idx,1); commitParsed()" title="Borrar">✕</button>
+                      </div>
+                    </template>
                   </div>
                 </template>
                 <template x-if="ln.type === 'directive' || ln.type === 'comment'">
@@ -1294,6 +1312,21 @@
           </ol>
           <h3>Copiar / pegar estribillo</h3>
           <p>Botón <strong>"Insertar estribillo"</strong> → elige cuál de los estribillos ya marcados quieres pegar; se inserta justo después de la línea actualmente seleccionada (o al final).</p>
+          <h3>Arreglos (notas sobre una línea)</h3>
+          <ul>
+            <li><strong>Añadir encima de una línea:</strong> pasa el ratón por
+              cualquier línea y pulsa el botón <em>"✍ arreglo"</em> que aparece
+              a la derecha. Se crea el arreglo justo <strong>encima</strong> y se
+              abre para escribir al momento.</li>
+            <li><strong>También:</strong> tecla <kbd>a</kbd> o el botón
+              <em>"✍ Añadir arreglo"</em> de la barra (lo inserta sobre la línea
+              seleccionada, o al final).</li>
+            <li><strong>Editar:</strong> doble-click sobre el arreglo (o el ✎).
+              Escribe y pulsa <kbd>Enter</kbd> para confirmar; si lo dejas vacío
+              se borra.</li>
+            <li><strong>Mover:</strong> con los botones <kbd>▲</kbd>/<kbd>▼</kbd>
+              del propio arreglo lo subes o bajas línea a línea.</li>
+          </ul>
           <h3>Copiar patrón de acordes entre estrofas</h3>
           <ol>
             <li>Selecciona las líneas de la estrofa con los acordes que quieres copiar.</li>
