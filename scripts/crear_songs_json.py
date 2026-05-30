@@ -6,6 +6,8 @@ import re
 import json
 import sys
 
+import chordpro as cp  # módulo común: mapeo campos ↔ directivas + parseo
+
 # Encuentra la última versión existente de songs-v<major>[.<minor>].json
 def find_latest_version(songs_dir):
     version_pattern = re.compile(r'^songs-v(\d+)(?:\.(\d+))?\.json$')
@@ -30,85 +32,9 @@ def bump_version(major, minor):
 def format_version(major, minor):
     return f"{major}" if minor == 0 else f"{major}.{minor}"
 
-# Extrae metadatos clave del contenido de un archivo .cho
-def parse_metadata(text):
-    # Lambda para buscar {clave: valor} en el texto (ignora mayúsculas/minúsculas)
-    get = lambda key: re.search(r'\{' + key + r':\s*(.*?)\}', text, re.IGNORECASE)
-    meta = {}
-    # Título: {title: }
-    meta['title'] = get('title').group(1).strip() if get('title') else ''
-    # Autor: puede estar en {artist: } o {author: }
-    artist = get('artist')
-    author = get('author')
-    meta['author'] = (
-        artist.group(1).strip() if artist
-        else author.group(1).strip() if author
-        else ''
-    )
-    # Tonalidad: {key: }
-    meta['key'] = get('key').group(1).strip() if get('key') else ''
-    # Cejuela: {capo: }
-    capo = get('capo')
-    meta['capo'] = int(capo.group(1)) if capo and capo.group(1).isdigit() else 0
-    return meta
-
-
-# Custom directives MCM que NO son parte del cuerpo ChordPro. Se extraen a
-# campos JSON y se eliminan del `content` para que el renderer móvil no
-# las imprima como comentarios visibles.
-CUSTOM_META_KEYS = ('ritmo', 'album', 'tiempo', 'fuente', 'video',
-                    'youtube', 'audio', 'comentario')
-
-
-def _parse_label_url(value):
-    """Convierte 'Label | https://url' en {label, url}. Si no hay '|', label='' y url=value."""
-    if '|' in value:
-        label, _, url = value.partition('|')
-        return {'label': label.strip(), 'url': url.strip()}
-    return {'label': '', 'url': value.strip()}
-
-
-def parse_custom_meta(text):
-    """Extrae las custom directives MCM. Devuelve dict con campos JSON-friendly."""
-    extra = {
-        'rhythm': '',
-        'album': '',
-        'liturgicalTime': '',
-        'source': '',
-        'videoEmbed': '',
-        'youtubeLinks': [],
-        'audioLinks': [],
-        'comment': '',
-    }
-    for m in re.finditer(r'\{\s*(ritmo|album|tiempo|fuente|video|youtube|audio|comentario)\s*:\s*(.*?)\s*\}',
-                         text, re.IGNORECASE):
-        key = m.group(1).lower()
-        val = m.group(2).strip()
-        if not val:
-            continue
-        if key == 'ritmo':
-            extra['rhythm'] = val
-        elif key == 'album':
-            extra['album'] = val
-        elif key == 'tiempo':
-            extra['liturgicalTime'] = val
-        elif key == 'fuente':
-            extra['source'] = val
-        elif key == 'video':
-            extra['videoEmbed'] = val
-        elif key == 'comentario':
-            extra['comment'] = val
-        elif key == 'youtube':
-            extra['youtubeLinks'].append(_parse_label_url(val))
-        elif key == 'audio':
-            extra['audioLinks'].append(_parse_label_url(val))
-    return extra
-
-
-def strip_custom_meta_from_content(text):
-    """Elimina las líneas de custom directives MCM del contenido."""
-    pattern = r'^[ \t]*\{\s*(?:' + '|'.join(CUSTOM_META_KEYS) + r')\s*:[^}]*\}[ \t]*\r?\n?'
-    return re.sub(pattern, '', text, flags=re.IGNORECASE | re.MULTILINE)
+# Metadatos básicos (title/author/key/capo) y directivas multimedia se parsean
+# desde el módulo común `chordpro` (cp.parse_basic_meta / cp.parse_media /
+# cp.strip_media), única fuente del mapeo campos ↔ directivas.
 
 # Función principal
 def main():
@@ -161,9 +87,9 @@ def main():
         for fname in cho_files:
             path = os.path.join(cat_path, fname)
             text = open(path, encoding='utf-8').read()
-            meta = parse_metadata(text)  # Extrae metadatos
-            extra = parse_custom_meta(text)  # Multimedia + meta extra
-            clean_content = strip_custom_meta_from_content(text)
+            meta = cp.parse_basic_meta(text)  # title/author/key/capo
+            extra = cp.parse_media(text)      # multimedia + meta extra
+            clean_content = cp.strip_media(text)
 
             # Extrae código numérico inicial, ej. "01" → "01. "
             code = ''

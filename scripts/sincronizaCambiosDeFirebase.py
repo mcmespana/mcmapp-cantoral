@@ -17,6 +17,8 @@ import os, re, json, argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
+import chordpro as cp  # módulo común: mapeo campos ↔ directivas + parseo
+
 # ── Opcional: .env ─────────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv  # pip install python-dotenv
@@ -50,8 +52,7 @@ TAG_MAP = {
 }
 
 def _nl(s: str) -> str:
-    s = str(s).replace("\r\n","\n").replace("\r","\n")
-    return s if s.endswith("\n") else s + "\n"
+    return cp.nl(s)
 
 def replace_or_insert_tag(text: str, tag: str, value: str) -> str:
     """
@@ -96,79 +97,8 @@ def apply_tag_updates(text: str, edition: dict) -> str:
     return new_text
 
 # ── Multimedia / meta extra ────────────────────────────────────────────────────
-# Estas directivas se guardan en el .cho pero en el JSON viajan como campos
-# propios (ver docs/CAMPOS_CANCIONES.md). Mapeo: campo de edición → directiva.
-MEDIA_SCALAR_MAP = {
-    "rhythm":         "ritmo",
-    "album":          "album",
-    "liturgicalTime": "tiempo",
-    "source":         "fuente",
-    "videoEmbed":     "video",
-    "comment":        "comentario",
-}
-MEDIA_LIST_MAP = {
-    "youtubeLinks": "youtube",
-    "audioLinks":   "audio",
-}
-# Todas las directivas de cabecera multimedia (para localizarlas/quitarlas).
-_MEDIA_DIRECTIVES = list(MEDIA_SCALAR_MAP.values()) + list(MEDIA_LIST_MAP.values())
-
-def _parse_label_url(value: str) -> dict:
-    """'Etiqueta | https://url' -> {label, url}. Sin '|' -> label='' y url=value."""
-    value = str(value)
-    if "|" in value:
-        label, _, url = value.partition("|")
-        return {"label": label.strip(), "url": url.strip()}
-    return {"label": "", "url": value.strip()}
-
-def _format_label_url(item) -> str | None:
-    """{label,url} (o string) -> 'Etiqueta | url' / 'url'. None si no hay url."""
-    if isinstance(item, dict):
-        label = (item.get("label") or "").strip()
-        url = (item.get("url") or "").strip()
-        if not url:
-            return None
-        return f"{label} | {url}" if label else url
-    s = str(item).strip()
-    return s or None
-
-def _normalize_links(value) -> list:
-    """Normaliza una lista de enlaces (dicts o strings) a [{label,url}]."""
-    out = []
-    if isinstance(value, list):
-        for it in value:
-            if isinstance(it, dict):
-                url = (it.get("url") or "").strip()
-                if url:
-                    out.append({"label": (it.get("label") or "").strip(), "url": url})
-            elif isinstance(it, str) and it.strip():
-                out.append(_parse_label_url(it.strip()))
-    return out
-
-def strip_media_directives(text: str) -> str:
-    """Quita del cuerpo las directivas multimedia (se reinsertan en la cabecera)."""
-    pattern = (r"^[ \t]*\{\s*(?:" + "|".join(_MEDIA_DIRECTIVES) +
-               r")\s*:[^}]*\}[ \t]*\r?\n?")
-    return re.sub(pattern, "", text, flags=re.I | re.M)
-
-def parse_media_from_text(text: str) -> dict:
-    """Lee las directivas multimedia existentes en un .cho -> dict campos JSON."""
-    media = {"rhythm": "", "album": "", "liturgicalTime": "", "source": "",
-             "videoEmbed": "", "comment": "", "youtubeLinks": [], "audioLinks": []}
-    scalar_by_directive = {v: k for k, v in MEDIA_SCALAR_MAP.items()}
-    rx = re.compile(r"\{\s*(" + "|".join(_MEDIA_DIRECTIVES) + r")\s*:\s*(.*?)\s*\}", re.I)
-    for m in rx.finditer(text):
-        directive = m.group(1).lower()
-        val = m.group(2).strip()
-        if not val:
-            continue
-        if directive == "youtube":
-            media["youtubeLinks"].append(_parse_label_url(val))
-        elif directive == "audio":
-            media["audioLinks"].append(_parse_label_url(val))
-        else:
-            media[scalar_by_directive[directive]] = val
-    return media
+# El mapeo «campo de edición ↔ directiva» y el parseo viven en `chordpro` (cp).
+# Aquí solo está la lógica específica del sync: resolver/inyectar/comparar.
 
 def resolve_media(edition: dict, original_text: str) -> dict:
     """
@@ -176,21 +106,21 @@ def resolve_media(edition: dict, original_text: str) -> dict:
     - si la edición trae '<campo>New' -> ese valor (aunque sea vacío, para borrar).
     - si no -> se conserva lo que ya había en el .cho original.
     """
-    media = parse_media_from_text(original_text)
-    for field in MEDIA_SCALAR_MAP:
+    media = cp.parse_media(original_text)
+    for field in cp.SCALAR_FIELDS:
         nk = f"{field}New"
         if nk in edition:
             media[field] = (edition[nk] or "")
-    for field in MEDIA_LIST_MAP:
+    for field in cp.LIST_FIELDS:
         nk = f"{field}New"
         if nk in edition:
-            media[field] = _normalize_links(edition[nk])
+            media[field] = cp.normalize_links(edition[nk])
     return media
 
 def build_media_lines(media: dict) -> list:
     """Construye las líneas de directiva multimedia en orden estable."""
     lines = []
-    for field, directive in MEDIA_SCALAR_MAP.items():
+    for field, directive in cp.SCALAR_FIELDS.items():
         if field == "comment":
             continue  # comentario al final
         val = media.get(field)
@@ -198,11 +128,11 @@ def build_media_lines(media: dict) -> list:
         if val:
             lines.append(f"{{{directive}: {val}}}")
     for it in (media.get("youtubeLinks") or []):
-        v = _format_label_url(it)
+        v = cp.format_label_url(it)
         if v:
             lines.append(f"{{youtube: {v}}}")
     for it in (media.get("audioLinks") or []):
-        v = _format_label_url(it)
+        v = cp.format_label_url(it)
         if v:
             lines.append(f"{{audio: {v}}}")
     comment = media.get("comment")
@@ -228,11 +158,32 @@ def inject_media(body: str, media: dict) -> str:
 
 def media_changed(edition: dict) -> bool:
     """¿La edición trae algún cambio multimedia?"""
-    for field in list(MEDIA_SCALAR_MAP) + list(MEDIA_LIST_MAP):
+    for field in list(cp.SCALAR_FIELDS) + list(cp.LIST_FIELDS):
         nk = f"{field}New"
         if nk in edition and edition.get(nk) != edition.get(f"{field}Old"):
             return True
     return False
+
+def _norm_body(text: str) -> str:
+    """Normaliza para comparar cuerpos: sin multimedia, sin espacios al final
+    de línea y sin líneas en blanco sobrantes al final."""
+    t = cp.strip_media(cp.nl(text))
+    lines = [ln.rstrip() for ln in t.split("\n")]
+    while lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines)
+
+def content_conflict(edition: dict, original_text: str) -> bool:
+    """
+    Detecta si el .cho del repo cambió desde que la app leyó la canción.
+    Compara el cuerpo que la app vio (contentOld) con el cuerpo actual del .cho.
+    Si difieren, aplicar contentNew machacaría un cambio ajeno -> conflicto.
+    Solo aplica cuando la edición trae cambio de contenido y un contentOld fiable.
+    """
+    old = edition.get("contentOld")
+    if old is None:
+        return False  # sin referencia: no podemos detectar, no bloqueamos
+    return _norm_body(old) != _norm_body(original_text)
 
 # ── Tiempo ISO ────────────────────────────────────────────────────────────────
 def now_iso() -> str:
@@ -454,12 +405,22 @@ def main():
                                and ed.get("contentNew") != ed.get("contentOld"))
             media_edit = media_changed(ed)
 
+            # 0) Conflicto: si el cuerpo del .cho cambió en el repo desde que la
+            #    app leyó la canción, NO machacamos. Dejamos el nodo intacto para
+            #    revisarlo a mano (el plan B de "tirar de git" necesita que te
+            #    enteres; esto es el chivato).
+            if content_changed and content_conflict(ed, original):
+                results.append((ed_id,"⚠️",
+                    f"CONFLICTO: {filename} cambió en el repo desde la edición. "
+                    f"No aplicado; nodo conservado para revisión manual."))
+                if progress: progress.advance(task); continue
+
             # 1) Cuerpo: contentNew manda si difiere. El cuerpo viaja SIN multimedia,
             #    así que partimos de un cuerpo sin esas directivas y las reinyectamos
             #    luego (conservando las del .cho original si la edición no las toca).
             if content_changed or media_edit:
                 base = _nl(ed["contentNew"]) if content_changed else original
-                base_body = strip_media_directives(base)
+                base_body = cp.strip_media(base)
                 media = resolve_media(ed, original)
                 new_text = inject_media(base_body, media)
 
@@ -467,7 +428,16 @@ def main():
             new_text = apply_tag_updates(new_text, ed)
 
             if new_text == original:
-                results.append((ed_id,"😴",f"Sin cambios → {filename}"))
+                # No produce cambios (ya estaba aplicado o es redundante): consumimos
+                # el nodo igualmente para no reprocesarlo en cada ejecución.
+                if args.dry_run:
+                    results.append((ed_id,"😴",f"Sin cambios → {filename} (se borraría el nodo)"))
+                elif args.defer_deletes:
+                    deferred_deletes.append(ed_id)
+                    results.append((ed_id,"😴",f"Sin cambios → {filename} (nodo a borrar)"))
+                else:
+                    fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                    results.append((ed_id,"😴",f"Sin cambios → {filename} (nodo eliminado)"))
                 if progress: progress.advance(task); continue
 
             if args.dry_run:

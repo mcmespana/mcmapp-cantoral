@@ -297,15 +297,21 @@ y el `filename`; el sincronizador resuelve la carpeta a partir de la letra.
 
 Reglas del sincronizador:
 
-- Si `contentNew` ≠ `contentOld` → reescribe el cuerpo del `.cho` con
-  `contentNew` (que **no** incluye multimedia).
+- **Detección de conflicto:** antes de tocar nada, compara el cuerpo que la app
+  vio (`contentOld`) con el cuerpo actual del `.cho` en el repo. Si difieren
+  (alguien cambió esa canción mientras tanto), **no aplica** la edición y
+  **conserva el nodo** marcándolo como conflicto, para revisarlo a mano. Por eso
+  conviene mandar siempre un `contentOld` fiel a lo que la app leyó.
+- Si `contentNew` ≠ `contentOld` (y no hay conflicto) → reescribe el cuerpo del
+  `.cho` con `contentNew` (que **no** incluye multimedia).
 - Reinyecta las directivas multimedia en la cabecera: para cada campo usa
   `*New` si la edición lo trae (vacío = borrar), o lo que ya había en el `.cho`
   si no lo trae.
 - Revisa los tags `title/artist/key/capo/info`: si `*New` ≠ `*Old`,
   actualiza/inserta la directiva correspondiente.
 - Tras aplicar (y solo si el push al repo tiene éxito), borra el nodo
-  `songs/ediciones/<pushId>`.
+  `songs/ediciones/<pushId>`. Las ediciones que no producen ningún cambio (ya
+  aplicadas o redundantes) también se borran, para no reprocesarlas.
 
 ---
 
