@@ -587,12 +587,32 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
   padding: 2px 6px; margin: 3px 0; text-align: right;
 }
 .theme-dark .ed-arr-line { color: #FF8A80; }
+.ed-arr-view { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .ed-arr-line .link-mini {
   background: none; border: none; color: inherit; cursor: pointer;
-  font-size: 11px; opacity: 0; transition: opacity 0.15s;
+  font-size: 11px; opacity: 0; transition: opacity 0.15s; padding: 0 2px;
 }
 .ed-line.ed-arr:hover .ed-arr-line .link-mini { opacity: 0.6; }
 .ed-line.ed-arr:hover .ed-arr-line .link-mini:hover { opacity: 1; }
+.ed-arr-input {
+  font-style: italic; font-size: 12px; color: inherit; text-align: right;
+  background: rgba(225, 92, 98, 0.08); border: 1px solid currentColor;
+  border-radius: 3px; padding: 2px 8px; min-width: 220px; outline: none;
+}
+.theme-dark .ed-arr-input { background: rgba(255, 138, 128, 0.12); }
+
+/* Botón "✍ arreglo" que aparece al pasar el ratón sobre cualquier línea,
+   para insertar un arreglo justo encima de ella. */
+.ed-line .line-add-arr {
+  position: absolute; right: 4px; top: 0; z-index: 5;
+  background: rgba(225, 92, 98, 0.12); color: #E15C62;
+  border: 1px solid rgba(225, 92, 98, 0.4); border-radius: 3px;
+  font-size: 10px; font-style: italic; padding: 1px 6px; cursor: pointer;
+  opacity: 0; transition: opacity 0.12s; pointer-events: none;
+}
+.ed-line:hover .line-add-arr { opacity: 0.85; pointer-events: auto; }
+.ed-line .line-add-arr:hover { opacity: 1; background: rgba(225, 92, 98, 0.22); }
+.theme-dark .ed-line .line-add-arr { color: #FF8A80; border-color: rgba(255, 138, 128, 0.4); }
 .ed-marker {
   font-size: 11px; color: var(--warn); padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.05em;
   background: rgba(202, 138, 4, 0.1); display: inline-flex; align-items: center; gap: 6px;

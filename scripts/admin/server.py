@@ -47,6 +47,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import docx2chordpro as d2c  # noqa: E402
 import latex_import as lx  # noqa: E402
 import doceacordes_import as da  # noqa: E402
+import chordpro as cp  # noqa: E402  (módulo común: parseo campos ↔ directivas)
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -71,36 +72,10 @@ def safe_relpath(path_str: str) -> Path:
     return p
 
 
-def _parse_label_url(value: str) -> Dict[str, str]:
-    if "|" in value:
-        label, _, url = value.partition("|")
-        return {"label": label.strip(), "url": url.strip()}
-    return {"label": "", "url": value.strip()}
-
-
-def parse_extra_meta(content: str) -> Dict[str, object]:
-    """Extrae las custom directives multimedia/meta MCM."""
-    extra: Dict[str, object] = {
-        "rhythm": "", "album": "", "liturgicalTime": "", "source": "",
-        "videoEmbed": "", "youtubeLinks": [], "audioLinks": [], "comment": "",
-    }
-    for m in re.finditer(
-        r"\{\s*(ritmo|album|tiempo|fuente|video|youtube|audio|comentario)\s*:\s*(.*?)\s*\}",
-        content, re.IGNORECASE,
-    ):
-        k = m.group(1).lower()
-        v = m.group(2).strip()
-        if not v:
-            continue
-        if k == "ritmo":         extra["rhythm"] = v
-        elif k == "album":       extra["album"] = v
-        elif k == "tiempo":      extra["liturgicalTime"] = v
-        elif k == "fuente":      extra["source"] = v
-        elif k == "video":       extra["videoEmbed"] = v
-        elif k == "comentario":  extra["comment"] = v
-        elif k == "youtube":     extra["youtubeLinks"].append(_parse_label_url(v))
-        elif k == "audio":       extra["audioLinks"].append(_parse_label_url(v))
-    return extra
+# Parseo delegado al módulo común `chordpro` (única fuente del mapeo
+# campos ↔ directivas). El render/sanitización sí es propio del admin (más abajo).
+_parse_label_url = cp.parse_label_url
+parse_extra_meta = cp.parse_media
 
 
 def parse_cho_metadata(content: str) -> Dict[str, object]:
@@ -693,16 +668,10 @@ def _render_meta_directive_lines(meta: Dict[str, object]) -> List[str]:
     return lines
 
 
-_META_DIRECTIVE_RE = re.compile(
-    r"^[ \t]*\{\s*(ritmo|album|tiempo|fuente|video|youtube|audio|comentario)\s*:[^}]*\}[ \t]*\r?\n?",
-    re.IGNORECASE | re.MULTILINE,
-)
-
-
 def _replace_meta_block(content: str, new_lines: List[str]) -> str:
     """Borra todas las custom-meta directives existentes e inserta las nuevas
     justo después del último directive de cabecera (title/artist/key/capo/comment)."""
-    stripped = _META_DIRECTIVE_RE.sub("", content)
+    stripped = cp.strip_media(content)  # mismo set de directivas que el módulo común
     if not new_lines:
         return stripped
     lines = stripped.split("\n")

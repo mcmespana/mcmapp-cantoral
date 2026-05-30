@@ -1251,31 +1251,51 @@ function app() {
       this.markChorusFlags();
       this.$nextTick(() => this.layoutChords());
     },
-    insertArrLine() {
-      const text = prompt('Texto del arreglo:', '');
-      if (text == null) return;
-      const t = text.trim();
-      if (!t) return;
-      const raw = '{arr: ' + t + '}';
-      const line = { type: 'arr', raw, text: t };
-      const r = this.selectedLineRange();
-      const at = r ? r.start : this.editor.parsed.length;
-      this.editor.parsed.splice(at, 0, line);
+    // Crea una línea de arreglo vacía en `at` y la deja en edición inline.
+    _spawnArrLine(at) {
+      const line = { type: 'arr', raw: '{arr: }', text: '', _editing: true };
+      const pos = Math.max(0, Math.min(at, this.editor.parsed.length));
+      this.editor.parsed.splice(pos, 0, line);
       this.commitParsed();
       this.$nextTick(() => this.layoutChords());
     },
-    editArrLine(idx) {
+    // Toolbar / atajo "a": inserta al inicio de la selección (o al final).
+    insertArrLine() {
+      const r = this.selectedLineRange();
+      this._spawnArrLine(r ? r.start : this.editor.parsed.length);
+    },
+    // Botón al vuelo: inserta un arreglo JUSTO ENCIMA de la línea `idx`.
+    insertArrAbove(idx) {
+      this._spawnArrLine(idx);
+    },
+    startArrEdit(idx) {
       const ln = this.editor.parsed[idx];
-      const text = prompt('Texto del arreglo:', ln.text);
-      if (text == null) return;
-      const t = text.trim();
+      if (!ln || ln.type !== 'arr') return;
+      ln._editing = true;
+    },
+    // Confirma la edición inline; si queda vacío, elimina la línea.
+    commitArrEdit(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'arr') return;
+      const t = (ln.text || '').trim();
       if (!t) {
         this.editor.parsed.splice(idx, 1);
       } else {
         ln.text = t;
         ln.raw = '{arr: ' + t + '}';
+        ln._editing = false;
       }
       this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
+    // Mueve cualquier línea arriba (-1) o abajo (+1). Usado por los arreglos.
+    moveLine(idx, dir) {
+      const arr = this.editor.parsed;
+      const j = idx + dir;
+      if (j < 0 || j >= arr.length) return;
+      [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      this.commitParsed();
+      this.markChorusFlags();
       this.$nextTick(() => this.layoutChords());
     },
     markChorusFlags() {

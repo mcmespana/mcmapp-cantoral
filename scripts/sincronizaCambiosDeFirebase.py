@@ -17,6 +17,8 @@ import os, re, json, argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
+import chordpro as cp  # módulo común: mapeo campos ↔ directivas + parseo
+
 # ── Opcional: .env ─────────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv  # pip install python-dotenv
@@ -50,8 +52,7 @@ TAG_MAP = {
 }
 
 def _nl(s: str) -> str:
-    s = str(s).replace("\r\n","\n").replace("\r","\n")
-    return s if s.endswith("\n") else s + "\n"
+    return cp.nl(s)
 
 def replace_or_insert_tag(text: str, tag: str, value: str) -> str:
     """
@@ -94,6 +95,95 @@ def apply_tag_updates(text: str, edition: dict) -> str:
         if newv is not None and newv != oldv:
             new_text = replace_or_insert_tag(new_text, cho_tag, str(newv))
     return new_text
+
+# ── Multimedia / meta extra ────────────────────────────────────────────────────
+# El mapeo «campo de edición ↔ directiva» y el parseo viven en `chordpro` (cp).
+# Aquí solo está la lógica específica del sync: resolver/inyectar/comparar.
+
+def resolve_media(edition: dict, original_text: str) -> dict:
+    """
+    Valor final de cada campo multimedia:
+    - si la edición trae '<campo>New' -> ese valor (aunque sea vacío, para borrar).
+    - si no -> se conserva lo que ya había en el .cho original.
+    """
+    media = cp.parse_media(original_text)
+    for field in cp.SCALAR_FIELDS:
+        nk = f"{field}New"
+        if nk in edition:
+            media[field] = (edition[nk] or "")
+    for field in cp.LIST_FIELDS:
+        nk = f"{field}New"
+        if nk in edition:
+            media[field] = cp.normalize_links(edition[nk])
+    return media
+
+def build_media_lines(media: dict) -> list:
+    """Construye las líneas de directiva multimedia en orden estable."""
+    lines = []
+    for field, directive in cp.SCALAR_FIELDS.items():
+        if field == "comment":
+            continue  # comentario al final
+        val = media.get(field)
+        val = val.strip() if isinstance(val, str) else val
+        if val:
+            lines.append(f"{{{directive}: {val}}}")
+    for it in (media.get("youtubeLinks") or []):
+        v = cp.format_label_url(it)
+        if v:
+            lines.append(f"{{youtube: {v}}}")
+    for it in (media.get("audioLinks") or []):
+        v = cp.format_label_url(it)
+        if v:
+            lines.append(f"{{audio: {v}}}")
+    comment = media.get("comment")
+    if isinstance(comment, str) and comment.strip():
+        lines.append(f"{{comentario: {comment.strip()}}}")
+    return lines
+
+def inject_media(body: str, media: dict) -> str:
+    """Inserta las directivas multimedia en la cabecera (tras title/artist/key/capo)."""
+    body = _nl(body)
+    media_lines = build_media_lines(media)
+    if not media_lines:
+        return body
+    lines = body.split("\n")
+    anchor = re.compile(r"^\{\s*(?:title|artist|author|key|capo)\s*:\s*.*?\}\s*$", re.I)
+    insert_after = -1
+    for i, ln in enumerate(lines):
+        if anchor.match(ln.strip()):
+            insert_after = i
+    for k, ml in enumerate(media_lines):
+        lines.insert(insert_after + 1 + k, ml)
+    return "\n".join(lines)
+
+def media_changed(edition: dict) -> bool:
+    """¿La edición trae algún cambio multimedia?"""
+    for field in list(cp.SCALAR_FIELDS) + list(cp.LIST_FIELDS):
+        nk = f"{field}New"
+        if nk in edition and edition.get(nk) != edition.get(f"{field}Old"):
+            return True
+    return False
+
+def _norm_body(text: str) -> str:
+    """Normaliza para comparar cuerpos: sin multimedia, sin espacios al final
+    de línea y sin líneas en blanco sobrantes al final."""
+    t = cp.strip_media(cp.nl(text))
+    lines = [ln.rstrip() for ln in t.split("\n")]
+    while lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines)
+
+def content_conflict(edition: dict, original_text: str) -> bool:
+    """
+    Detecta si el .cho del repo cambió desde que la app leyó la canción.
+    Compara el cuerpo que la app vio (contentOld) con el cuerpo actual del .cho.
+    Si difieren, aplicar contentNew machacaría un cambio ajeno -> conflicto.
+    Solo aplica cuando la edición trae cambio de contenido y un contentOld fiable.
+    """
+    old = edition.get("contentOld")
+    if old is None:
+        return False  # sin referencia: no podemos detectar, no bloqueamos
+    return _norm_body(old) != _norm_body(original_text)
 
 # ── Tiempo ISO ────────────────────────────────────────────────────────────────
 def now_iso() -> str:
@@ -186,6 +276,12 @@ def find_category_folder(songs_dir: Path, letter: str) -> Path | None:
 def main():
     parser = argparse.ArgumentParser(description="Sync Firebase ediciones -> .cho (con backups y borrado de nodo)")
     parser.add_argument("--dry-run", action="store_true", help="No escribe ni borra en Firebase")
+    parser.add_argument("--defer-deletes", metavar="PATH",
+                        help="No borra en Firebase durante el apply; escribe los IDs procesados en PATH "
+                             "para borrarlos después (p.ej. tras un push correcto en CI).")
+    parser.add_argument("--delete-only", metavar="PATH",
+                        help="Lee PATH (lista JSON de IDs de edición) y borra esos nodos en Firebase. "
+                             "No procesa ficheros. Pensado para ejecutarse tras un push correcto.")
     args = parser.parse_args()
 
     if load_dotenv: load_dotenv()
@@ -193,6 +289,30 @@ def main():
     base_url = (os.environ.get("FIREBASE_URL") or "").strip()
     if not base_url:
         console.print("❌ Falta FIREBASE_URL en .env")
+        return
+
+    # ── Modo borrado diferido: solo borra los nodos ya sincronizados y confirmados ──
+    if args.delete_only:
+        del_path = Path(args.delete_only)
+        if not del_path.exists():
+            console.print(f"ℹ️ No hay fichero de borrados ({del_path}). Nada que borrar.")
+            return
+        try:
+            ids = json.loads(del_path.read_text(encoding="utf-8")) or []
+        except Exception as e:
+            console.print(f"🚨 No pude leer la lista de borrados: {e}")
+            return
+        if not ids:
+            console.print("ℹ️ Lista de borrados vacía. Nada que borrar.")
+            return
+        console.print(f"🗑️  Borrando {len(ids)} nodo(s) ya sincronizado(s) en Firebase…")
+        for ed_id in ids:
+            try:
+                fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                console.print(f"   ✅ Borrado nodo {ed_id}")
+            except Exception as e:
+                console.print(f"   💥 No pude borrar {ed_id}: {e}")
+        console.print("🏁 Borrado de nodos confirmados completado.")
         return
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -226,6 +346,8 @@ def main():
             changed = False
             if ed.get("contentNew") is not None and ed.get("contentNew") != ed.get("contentOld"):
                 changed = True
+            elif media_changed(ed):
+                changed = True
             else:
                 for f in ("title","author","key","capo","info"):
                     if ed.get(f"{f}New") is not None and ed.get(f"{f}New") != ed.get(f"{f}Old"):
@@ -252,6 +374,7 @@ def main():
         progress = None
 
     results = []
+    deferred_deletes = []  # IDs aplicados a ficheros; se borran en Firebase tras confirmar el push
     if not args.dry_run:
         backup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -278,15 +401,43 @@ def main():
             original = cho_path.read_text(encoding="utf-8")
             new_text = original
 
-            # 1) contentNew manda si difiere
-            if ed.get("contentNew") is not None and ed.get("contentNew") != ed.get("contentOld"):
-                new_text = _nl(ed["contentNew"])
+            content_changed = (ed.get("contentNew") is not None
+                               and ed.get("contentNew") != ed.get("contentOld"))
+            media_edit = media_changed(ed)
 
-            # 2) SIEMPRE revisar tags después
+            # 0) Conflicto: si el cuerpo del .cho cambió en el repo desde que la
+            #    app leyó la canción, NO machacamos. Dejamos el nodo intacto para
+            #    revisarlo a mano (el plan B de "tirar de git" necesita que te
+            #    enteres; esto es el chivato).
+            if content_changed and content_conflict(ed, original):
+                results.append((ed_id,"⚠️",
+                    f"CONFLICTO: {filename} cambió en el repo desde la edición. "
+                    f"No aplicado; nodo conservado para revisión manual."))
+                if progress: progress.advance(task); continue
+
+            # 1) Cuerpo: contentNew manda si difiere. El cuerpo viaja SIN multimedia,
+            #    así que partimos de un cuerpo sin esas directivas y las reinyectamos
+            #    luego (conservando las del .cho original si la edición no las toca).
+            if content_changed or media_edit:
+                base = _nl(ed["contentNew"]) if content_changed else original
+                base_body = cp.strip_media(base)
+                media = resolve_media(ed, original)
+                new_text = inject_media(base_body, media)
+
+            # 2) SIEMPRE revisar tags de cabecera después
             new_text = apply_tag_updates(new_text, ed)
 
             if new_text == original:
-                results.append((ed_id,"😴",f"Sin cambios → {filename}"))
+                # No produce cambios (ya estaba aplicado o es redundante): consumimos
+                # el nodo igualmente para no reprocesarlo en cada ejecución.
+                if args.dry_run:
+                    results.append((ed_id,"😴",f"Sin cambios → {filename} (se borraría el nodo)"))
+                elif args.defer_deletes:
+                    deferred_deletes.append(ed_id)
+                    results.append((ed_id,"😴",f"Sin cambios → {filename} (nodo a borrar)"))
+                else:
+                    fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                    results.append((ed_id,"😴",f"Sin cambios → {filename} (nodo eliminado)"))
                 if progress: progress.advance(task); continue
 
             if args.dry_run:
@@ -299,10 +450,14 @@ def main():
 
                 cho_path.write_text(new_text, encoding="utf-8")
 
-                # Borrar nodo procesado
-                fb_delete(base_url, f"songs/ediciones/{ed_id}")
-
-                results.append((ed_id,"✨",f"Actualizado {filename} + nodo Firebase eliminado"))
+                if args.defer_deletes:
+                    # No borramos aún: el nodo se borra después, solo si el push tiene éxito.
+                    deferred_deletes.append(ed_id)
+                    results.append((ed_id,"✨",f"Actualizado {filename} (borrado de nodo diferido)"))
+                else:
+                    # Borrar nodo procesado
+                    fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                    results.append((ed_id,"✨",f"Actualizado {filename} + nodo Firebase eliminado"))
 
         except Exception as e:
             results.append((ed_id,"💥",f"Error: {e}"))
@@ -310,6 +465,13 @@ def main():
             if progress: progress.advance(task)
 
     if progress: progress.stop()
+
+    # Persistir IDs a borrar (modo diferido): se borrarán tras un push correcto.
+    if args.defer_deletes:
+        out = Path(args.defer_deletes)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(deferred_deletes, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"📝 {len(deferred_deletes)} nodo(s) pendientes de borrar escritos en [bold]{out}[/]")
 
     # Resumen
     if RICH:
