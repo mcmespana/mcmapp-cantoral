@@ -186,6 +186,12 @@ def find_category_folder(songs_dir: Path, letter: str) -> Path | None:
 def main():
     parser = argparse.ArgumentParser(description="Sync Firebase ediciones -> .cho (con backups y borrado de nodo)")
     parser.add_argument("--dry-run", action="store_true", help="No escribe ni borra en Firebase")
+    parser.add_argument("--defer-deletes", metavar="PATH",
+                        help="No borra en Firebase durante el apply; escribe los IDs procesados en PATH "
+                             "para borrarlos después (p.ej. tras un push correcto en CI).")
+    parser.add_argument("--delete-only", metavar="PATH",
+                        help="Lee PATH (lista JSON de IDs de edición) y borra esos nodos en Firebase. "
+                             "No procesa ficheros. Pensado para ejecutarse tras un push correcto.")
     args = parser.parse_args()
 
     if load_dotenv: load_dotenv()
@@ -193,6 +199,30 @@ def main():
     base_url = (os.environ.get("FIREBASE_URL") or "").strip()
     if not base_url:
         console.print("❌ Falta FIREBASE_URL en .env")
+        return
+
+    # ── Modo borrado diferido: solo borra los nodos ya sincronizados y confirmados ──
+    if args.delete_only:
+        del_path = Path(args.delete_only)
+        if not del_path.exists():
+            console.print(f"ℹ️ No hay fichero de borrados ({del_path}). Nada que borrar.")
+            return
+        try:
+            ids = json.loads(del_path.read_text(encoding="utf-8")) or []
+        except Exception as e:
+            console.print(f"🚨 No pude leer la lista de borrados: {e}")
+            return
+        if not ids:
+            console.print("ℹ️ Lista de borrados vacía. Nada que borrar.")
+            return
+        console.print(f"🗑️  Borrando {len(ids)} nodo(s) ya sincronizado(s) en Firebase…")
+        for ed_id in ids:
+            try:
+                fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                console.print(f"   ✅ Borrado nodo {ed_id}")
+            except Exception as e:
+                console.print(f"   💥 No pude borrar {ed_id}: {e}")
+        console.print("🏁 Borrado de nodos confirmados completado.")
         return
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -252,6 +282,7 @@ def main():
         progress = None
 
     results = []
+    deferred_deletes = []  # IDs aplicados a ficheros; se borran en Firebase tras confirmar el push
     if not args.dry_run:
         backup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -299,10 +330,14 @@ def main():
 
                 cho_path.write_text(new_text, encoding="utf-8")
 
-                # Borrar nodo procesado
-                fb_delete(base_url, f"songs/ediciones/{ed_id}")
-
-                results.append((ed_id,"✨",f"Actualizado {filename} + nodo Firebase eliminado"))
+                if args.defer_deletes:
+                    # No borramos aún: el nodo se borra después, solo si el push tiene éxito.
+                    deferred_deletes.append(ed_id)
+                    results.append((ed_id,"✨",f"Actualizado {filename} (borrado de nodo diferido)"))
+                else:
+                    # Borrar nodo procesado
+                    fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                    results.append((ed_id,"✨",f"Actualizado {filename} + nodo Firebase eliminado"))
 
         except Exception as e:
             results.append((ed_id,"💥",f"Error: {e}"))
@@ -310,6 +345,13 @@ def main():
             if progress: progress.advance(task)
 
     if progress: progress.stop()
+
+    # Persistir IDs a borrar (modo diferido): se borrarán tras un push correcto.
+    if args.defer_deletes:
+        out = Path(args.defer_deletes)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(deferred_deletes, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"📝 {len(deferred_deletes)} nodo(s) pendientes de borrar escritos en [bold]{out}[/]")
 
     # Resumen
     if RICH:

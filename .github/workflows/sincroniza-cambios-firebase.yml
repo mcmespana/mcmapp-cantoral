@@ -15,7 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     concurrency:
       group: songs-sync
-      cancel-in-progress: true
+      # No cancelar a mitad: el job escribe ficheros y borra nodos en Firebase.
+      # Cancelarlo entre medias podría dejar el estado inconsistente.
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -43,24 +45,51 @@ jobs:
           FIREBASE_USE_AUTH_HEADER: "false"   # decorativo; el script decide por TOKEN
         run: python scripts/sincronizaCambiosDeFirebase.py --dry-run
 
-      - name: Apply (escribe y borra nodos)
+      # Aplica los cambios a los .cho PERO NO borra todavía los nodos de Firebase.
+      # Los IDs procesados se guardan en /tmp (fuera del repo) y se borran solo
+      # después de un push correcto, para no perder ediciones si el push falla.
+      - name: Apply (escribe ficheros; borrado diferido)
         env:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_USE_AUTH_HEADER: "false"
-        run: python scripts/sincronizaCambiosDeFirebase.py
+        run: python scripts/sincronizaCambiosDeFirebase.py --defer-deletes /tmp/pending-deletes.json
 
       - name: Commit & push only if changed
+        id: push
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add -A
-            git commit -m "chore: sync songs from Firebase"
-            git push
-          else
+          if [ -z "$(git status --porcelain)" ]; then
             echo "No hay cambios que commitear."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -A
+          git commit -m "chore: sync songs from Firebase"
+          # Push con rebase + reintentos (backoff 2s,4s,8s,16s) por si la rama se movió.
+          n=0
+          until [ $n -ge 4 ]; do
+            if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            n=$((n+1))
+            echo "Push falló, reintento $n…"
+            sleep $((2 ** n))
+          done
+          echo "pushed=false" >> "$GITHUB_OUTPUT"
+          echo "::error::No se pudo hacer push. NO se borrarán los nodos de Firebase (se reintentará en la próxima ejecución)."
+          exit 1
+
+      # Solo ahora, con los cambios ya seguros en el repo, borramos los nodos en Firebase.
+      - name: Borrar nodos sincronizados en Firebase (solo tras push correcto)
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_USE_AUTH_HEADER: "false"
+        run: python scripts/sincronizaCambiosDeFirebase.py --delete-only /tmp/pending-deletes.json
 
       # ───────────────────────── OPCIONAL: Service Account ─────────────────────────
       # Para preferir SA en lugar de TOKEN:
