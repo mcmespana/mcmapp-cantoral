@@ -630,15 +630,26 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
   display: inline-block; margin: 4px 0;
 }
 .ed-line.ed-comment .ed-meta-line { color: var(--todo); }
-.ed-comment-line { display: inline-block; margin: 4px 0; }
+.ed-comment-line { display: block; margin: 6px 0; }
 .ed-comment-view {
-  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
-  font-family: monospace; font-size: 12px; color: var(--todo);
-  padding: 2px 6px; background: var(--bg-3); border-radius: 3px;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-family: Georgia, serif; font-style: italic; font-size: 13px;
+  color: var(--info); padding: 4px 10px 4px 8px;
+  background: rgba(8, 145, 178, 0.08); border-left: 3px solid var(--info);
+  border-radius: 0 6px 6px 0; max-width: 100%;
 }
+.theme-dark .ed-comment-view { background: rgba(56, 189, 248, 0.12); color: #7dd3fc; }
+.ed-comment-icon { font-style: normal; font-size: 12px; opacity: 0.85; }
+.ed-comment-text { white-space: pre-wrap; word-break: break-word; }
+.ed-comment-input {
+  font-family: Georgia, serif; font-style: italic; font-size: 13px; color: inherit;
+  background: rgba(8, 145, 178, 0.08); border: 1px solid var(--info);
+  border-radius: 4px; padding: 4px 10px; min-width: 280px; outline: none;
+}
+.theme-dark .ed-comment-input { background: rgba(56, 189, 248, 0.12); color: #7dd3fc; }
 .ed-comment-view .link-mini {
   background: none; border: none; color: inherit; cursor: pointer;
-  font-size: 11px; opacity: 0; transition: opacity 0.15s; padding: 0 2px;
+  font-style: normal; font-size: 11px; opacity: 0; transition: opacity 0.15s; padding: 0 2px;
 }
 .ed-line.ed-comment:hover .ed-comment-view .link-mini { opacity: 0.6; }
 .ed-line.ed-comment:hover .ed-comment-view .link-mini:hover { opacity: 1; }

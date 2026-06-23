@@ -668,10 +668,10 @@
       <div class="editor-body single">
         <div class="editor-pane" style="overflow:auto">
           <p class="muted small" style="margin:0 0 10px">
-            Rama <strong x-text="git.branch"></strong>.
+            Tus cambios se guardarán en la nube (copia <strong x-text="git.branch"></strong>).
             <span x-show="git.behind > 0" style="color:var(--warn)">
-              ⚠ Está desfasada respecto al remoto (faltan <span x-text="git.behind"></span>);
-              quizá quieras hacer <code>git pull</code> antes.
+              ⚠ Ojo: hay novedades en la nube que aún no tienes; avisa a alguien del
+              equipo o descárgalas antes para no pisar el trabajo de otra persona.
             </span>
           </p>
 
@@ -688,8 +688,8 @@
             </ul>
           </div>
           <p x-show="git.changedCount === 0 && git.ahead > 0" class="muted small">
-            No hay cambios nuevos, pero tienes <strong x-text="git.ahead"></strong>
-            commit(s) sin subir. Se hará push.
+            No hay archivos nuevos modificados, pero te quedaron
+            <strong x-text="git.ahead"></strong> cambio(s) por subir a la nube. Se subirán ahora.
           </p>
 
           <label class="form-label" style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">
@@ -700,7 +700,7 @@
                     @keydown.meta.enter="doGitCommit()" @keydown.ctrl.enter="doGitCommit()"></textarea>
 
           <div class="git-confirm-banner" x-show="gitModal && gitModal.message.trim()">
-            Vas a hacer <strong>commit + push</strong> a <strong x-text="git.branch"></strong>. ¿Ok?
+            Vas a <strong>guardar y subir tus cambios a la nube</strong>. ¿Todo correcto?
           </div>
 
           <div class="actions-row">
@@ -708,7 +708,7 @@
             <button class="btn primary"
                     :disabled="!gitModal || !gitModal.message.trim() || gitModal.saving"
                     @click="doGitCommit()"
-                    x-text="gitModal && gitModal.saving ? 'Subiendo…' : (gitModal && gitModal.result === 'ok' ? '✓ Subido' : '📤 Commit y push')"></button>
+                    x-text="gitModal && gitModal.saving ? 'Guardando…' : (gitModal && gitModal.result === 'ok' ? '✓ Guardado' : '📤 Guardar en la nube')"></button>
           </div>
         </div>
       </div>
@@ -1241,7 +1241,7 @@
                 <template x-if="ln.type === 'comment'">
                   <div class="ed-comment-line">
                     <template x-if="ln._editing">
-                      <input class="ed-arr-input" type="text" x-model="ln.text"
+                      <input class="ed-comment-input" type="text" x-model="ln.text"
                              x-init="$nextTick(() => { $el.focus(); $el.select(); })"
                              @keydown.enter.prevent="commitCommentEdit(idx)"
                              @keydown.escape.prevent="commitCommentEdit(idx)"
@@ -1252,7 +1252,8 @@
                     <template x-if="!ln._editing">
                       <div class="ed-comment-view" @dblclick.stop="startCommentEdit(idx)"
                            title="Doble click para editar">
-                        <span x-text="ln.raw"></span>
+                        <span class="ed-comment-icon">💬</span>
+                        <span class="ed-comment-text" x-text="ln.text || ln.raw"></span>
                         <button class="link-mini" @click.stop="startCommentEdit(idx)" title="Editar">✎</button>
                         <button class="link-mini" @click.stop="deleteCommentLine(idx)" title="Borrar">✕</button>
                       </div>

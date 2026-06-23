@@ -164,17 +164,15 @@ function app() {
     },
     gitStatusLabel() {
       const g = this.git;
-      if (g.error) return '⚠ Git no disponible';
+      if (g.error) return '⚠ Guardado en la nube no disponible';
       if (g.behind > 0 && (g.dirty || g.ahead > 0))
-        return `⚠ Rama desfasada (${g.behind}) y tienes cambios sin subir`;
-      if (g.behind > 0) return `⚠ Rama desfasada — faltan ${g.behind} del remoto`;
+        return '⚠ Hay novedades en la nube y tú tienes cambios sin guardar';
+      if (g.behind > 0) return '🔄 Hay novedades en la nube sin descargar';
       if (g.dirty || g.ahead > 0) {
-        const parts = [];
-        if (g.dirty) parts.push(`${g.changedCount} sin guardar`);
-        if (g.ahead > 0) parts.push(`${g.ahead} sin subir`);
-        return `📤 ${parts.join(' · ')} — haz push`;
+        const n = g.dirty ? g.changedCount : g.ahead;
+        return `📤 Tienes ${n} cambio${n === 1 ? '' : 's'} sin guardar en la nube`;
       }
-      return '✓ Todo subido';
+      return '✓ Todo guardado en la nube';
     },
     openGitCommit() {
       this.gitModal = { message: '', saving: false, result: null };
