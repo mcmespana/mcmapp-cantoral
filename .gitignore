@@ -142,6 +142,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# Entornos virtuales del admin local (cualquier carpeta que acabe en -venv)
+*-venv/
+.cantoral-venv/
+.mcmcantoral-venv/
 
 # Spyder project settings
 .spyderproject
