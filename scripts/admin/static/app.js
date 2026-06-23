@@ -74,6 +74,7 @@ function app() {
     doceKeyConflict: null,    // { cantoralKey, doceKey } cuando los tonos difieren
     doceKeyResolved: false,   // true cuando el usuario eligió un tono
     doceCandidatesPopover: null,  // {missingId, anchor, candidates, sectionLetter}
+    moveModal: null,              // {path, title, fromLetter, targetLetter, number, suggested, saving}
 
     // Reorder
     reorderCategory: '',
@@ -111,6 +112,11 @@ function app() {
     // Backups
     backups: { sessions: [], total_size_bytes: 0, loading: false, keepLast: 5 },
 
+    // Estado de git (indicador en la barra lateral)
+    git: { branch: '', ahead: 0, behind: 0, dirty: false, changedCount: 0,
+           changedFiles: [], hasUpstream: true, loading: false, error: null },
+    gitModal: null,  // { message, saving, result }
+
     // ─────────── Lifecycle ───────────
     async boot() {
       this.$watch('editor.dirty', (v) => {
@@ -124,6 +130,78 @@ function app() {
         }
       });
       await this.loadCatalog();
+      // Estado de git: al arrancar (con fetch) y luego cada 90s.
+      this.loadGitStatus(true);
+      setInterval(() => this.loadGitStatus(true), 90000);
+    },
+
+    // ─────────── Git: estado + commit/push rápido ───────────
+    async loadGitStatus(fetch_ = false) {
+      this.git.loading = true;
+      try {
+        const r = await fetch('/api/git/status' + (fetch_ ? '?fetch=1' : ''));
+        const j = await r.json();
+        if (j.ok) {
+          this.git = {
+            ...this.git,
+            branch: j.branch, ahead: j.ahead, behind: j.behind,
+            dirty: j.dirty, changedCount: j.changed_count,
+            changedFiles: j.changed_files || [], hasUpstream: j.has_upstream,
+            error: null,
+          };
+        } else {
+          this.git.error = j.error || 'error';
+        }
+      } catch (e) {
+        this.git.error = e.message;
+      } finally {
+        this.git.loading = false;
+      }
+    },
+    // ¿Hay algo que avisar? (cambios sin guardar, commits sin subir, o rama desfasada)
+    gitNeedsAttention() {
+      return this.git.dirty || this.git.ahead > 0 || this.git.behind > 0;
+    },
+    gitStatusLabel() {
+      const g = this.git;
+      if (g.error) return '⚠ Git no disponible';
+      if (g.behind > 0 && (g.dirty || g.ahead > 0))
+        return `⚠ Rama desfasada (${g.behind}) y tienes cambios sin subir`;
+      if (g.behind > 0) return `⚠ Rama desfasada — faltan ${g.behind} del remoto`;
+      if (g.dirty || g.ahead > 0) {
+        const parts = [];
+        if (g.dirty) parts.push(`${g.changedCount} sin guardar`);
+        if (g.ahead > 0) parts.push(`${g.ahead} sin subir`);
+        return `📤 ${parts.join(' · ')} — haz push`;
+      }
+      return '✓ Todo subido';
+    },
+    openGitCommit() {
+      this.gitModal = { message: '', saving: false, result: null };
+    },
+    async doGitCommit() {
+      const m = this.gitModal;
+      if (!m || !m.message.trim()) { alert('Escribe qué cambios has hecho'); return; }
+      m.saving = true;
+      m.result = null;
+      try {
+        const r = await fetch('/api/git/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: m.message.trim() }),
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'Error en commit/push');
+        m.result = 'ok';
+        await this.loadGitStatus(true);
+        // Cerrar tras un momento para que se vea el ✓
+        setTimeout(() => { if (this.gitModal && this.gitModal.result === 'ok') this.gitModal = null; }, 1200);
+      } catch (e) {
+        m.result = 'error';
+        alert('No se pudo: ' + e.message);
+      } finally {
+        m.saving = false;
+      }
     },
 
     async loadCatalog() {
@@ -1335,6 +1413,43 @@ function app() {
       this.commitParsed();
       this.$nextTick(() => this.layoutChords());
     },
+    // ─────────── Comentarios ({comment:} / {c:}) ───────────
+    startCommentEdit(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'comment') return;
+      ln._editing = true;
+    },
+    // Confirma la edición inline del comentario; si queda vacío, elimina la línea.
+    commitCommentEdit(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'comment') return;
+      const t = (ln.text || '').trim();
+      if (!t) {
+        this.editor.parsed.splice(idx, 1);
+      } else {
+        const tag = ln.tag === 'c' ? 'c' : 'comment';
+        ln.text = t;
+        ln.raw = '{' + tag + ': ' + t + '}';
+        ln._editing = false;
+      }
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
+    deleteCommentLine(idx) {
+      this.editor.parsed.splice(idx, 1);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    // Inserta un comentario nuevo al inicio de la selección (o al final) y lo abre para editar.
+    addComment() {
+      const r = this.selectedLineRange();
+      const pos = r ? r.start : this.editor.parsed.length;
+      const line = { type: 'comment', tag: 'comment', text: '', raw: '{comment: }', _editing: true };
+      this.editor.parsed.splice(pos, 0, line);
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
     // Mueve cualquier línea arriba (-1) o abajo (+1). Usado por los arreglos.
     moveLine(idx, dir) {
       const arr = this.editor.parsed;
@@ -1628,6 +1743,50 @@ function app() {
         alert('Error: ' + e.message);
       }
     },
+    // ─────────── Mover canción de categoría ───────────
+    openMoveModal(r) {
+      this.moveModal = {
+        path: r.path, title: r.title, fromLetter: r.category_letter,
+        targetLetter: '', number: '', suggested: null, saving: false,
+      };
+    },
+    async onMoveCategoryChange() {
+      const m = this.moveModal;
+      if (!m || !m.targetLetter) { if (m) { m.suggested = null; m.number = ''; } return; }
+      try {
+        const r = await fetch('/api/doce/suggest-number?category=' + encodeURIComponent(m.targetLetter));
+        if (r.ok) {
+          const j = await r.json();
+          m.suggested = j.next_number;
+          m.number = j.next_number;  // prefill con el hueco libre; el usuario puede cambiarlo
+        }
+      } catch (_) { /* silencio: el backend elegirá hueco si se deja vacío */ }
+    },
+    async doMoveSong() {
+      const m = this.moveModal;
+      if (!m || !m.targetLetter) { alert('Elige la categoría destino'); return; }
+      m.saving = true;
+      try {
+        const r = await fetch('/api/song/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: m.path,
+            category_letter: m.targetLetter,
+            number: m.number !== '' ? m.number : undefined,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        this.moveModal = null;
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error moviendo: ' + e.message);
+        m.saving = false;
+      }
+    },
     // ─────────── Estado de revisión (editor individual) ───────────
     editorStatus() {
       if (this.editor.meta.has_todo) return 'revisar';
@@ -1845,9 +2004,11 @@ function parseCho(content) {
       const text = t.replace(/^\{arr\s*:\s*/i, '').replace(/\}\s*$/, '');
       return { type: 'arr', raw, text };
     }
+    // Comentarios editables: {comment: ...} y su forma corta {c: ...}
+    const cm = t.match(/^\{(comment|c)\s*:\s*(.*?)\s*\}$/i);
+    if (cm) return { type: 'comment', raw, tag: cm[1].toLowerCase(), text: cm[2] };
     if (/^\{[a-z_]+\s*:/i.test(t) || /^\{[a-z_]+\}$/i.test(t)) {
-      const isComment = /^\{comment/i.test(t);
-      return { type: isComment ? 'comment' : 'directive', raw };
+      return { type: 'directive', raw };
     }
     // Parse as lyric line with optional [chord] tags
     const { lyric, chords } = parseChordLineToModel(raw);

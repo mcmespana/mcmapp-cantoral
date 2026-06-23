@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from flask import Flask, jsonify, request, send_from_directory, abort
+from werkzeug.exceptions import HTTPException
 
 # Importar el conversor docx como módulo (mismo paquete scripts/)
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -58,6 +59,15 @@ CHORD_REVIEW_COMMENT_LINE = "{comment: ♩ REVISAR ACORDES}"
 CHORD_REVIEW_REGEX = re.compile(r"♩\s*REVISAR\s*ACORDES", re.IGNORECASE)
 
 app = Flask(__name__, static_folder=str(SCRIPT_DIR / "static"), static_url_path="")
+
+
+@app.errorhandler(HTTPException)
+def _json_errors(e):
+    """Devuelve los errores de la API como JSON {error: ...} para que el frontend
+    pueda mostrar el mensaje (p. ej. número ya ocupado al mover de categoría)."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": e.description}), e.code
+    return e
 
 
 # ─────────── Utilidades ─────────── #
@@ -807,6 +817,54 @@ def api_song_delete():
     return jsonify({"ok": True})
 
 
+@app.route("/api/song/move", methods=["POST"])
+def api_song_move():
+    """Mueve un .cho a otra categoría.
+
+    Body: {path, category_letter, number?}
+      - Si number no se indica (o no es válido), se usa el primer hueco libre.
+      - Conserva el slug (la parte del nombre tras el prefijo numérico).
+    """
+    body = request.get_json(silent=True) or {}
+    path_str = (body.get("path") or "").strip()
+    cat_letter = (body.get("category_letter") or "").upper().strip()
+    if not path_str:
+        abort(400, "Falta 'path'")
+    if not cat_letter:
+        abort(400, "Falta 'category_letter'")
+    src = safe_relpath(path_str)
+    if not src.exists():
+        abort(404, "No existe el archivo origen")
+    cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+    if not cat:
+        abort(404, f"Categoría {cat_letter} no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    folder.mkdir(exist_ok=True)
+    # Slug = nombre sin el prefijo numérico "NN."
+    slug_part = re.sub(r"^\d+\.", "", src.name)
+    # Número destino
+    num = body.get("number")
+    if isinstance(num, str) and num.strip().isdigit():
+        num = int(num)
+    if not (isinstance(num, int) and num > 0):
+        num = preferred_number(folder, None)
+    fname = f"{num:02d}.{slug_part}"
+    dest = folder / fname
+    if dest.exists():
+        abort(409, f"Ya existe {fname} en la categoría destino. Elige otro número.")
+    if dest.resolve() == src.resolve():
+        return jsonify({"ok": True, "path": str(src.relative_to(REPO_DIR)), "unchanged": True})
+    backup_file(src)
+    src.rename(dest)
+    return jsonify({
+        "ok": True,
+        "path": str(dest.relative_to(REPO_DIR)),
+        "filename": fname,
+        "number": num,
+        "category_letter": cat_letter,
+    })
+
+
 # ─────────── API: docx ─────────── #
 
 
@@ -1319,6 +1377,94 @@ def api_build_json():
         "stderr": proc.stderr,
         "returncode": proc.returncode,
     })
+
+
+# ─────────── API: git (estado / commit&push rápido) ─────────── #
+
+def _run_git(args: List[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        capture_output=True, text=True, cwd=str(REPO_DIR), timeout=timeout,
+    )
+
+
+@app.route("/api/git/status")
+def api_git_status():
+    """Estado de git para el indicador de la barra lateral.
+
+    ?fetch=1 → hace `git fetch` antes (para saber si la rama está desfasada).
+    Devuelve rama, upstream, ahead/behind y archivos sin commitear.
+    """
+    try:
+        fetched = False
+        if request.args.get("fetch") == "1":
+            f = _run_git(["fetch", "--quiet"], timeout=25)
+            fetched = f.returncode == 0
+        branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        # Archivos modificados / nuevos (incluye sin trackear)
+        st = _run_git(["status", "--porcelain"]).stdout.rstrip("\n")
+        changed = [ln[3:] for ln in st.split("\n") if ln] if st else []
+        # ahead / behind respecto al upstream (si lo hay)
+        upstream = _run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        ahead = behind = 0
+        has_upstream = upstream.returncode == 0
+        up_name = upstream.stdout.strip() if has_upstream else None
+        if has_upstream:
+            counts = _run_git(["rev-list", "--left-right", "--count", "@{u}...HEAD"]).stdout.split()
+            if len(counts) == 2:
+                behind, ahead = int(counts[0]), int(counts[1])
+        return jsonify({
+            "ok": True,
+            "branch": branch,
+            "upstream": up_name,
+            "has_upstream": has_upstream,
+            "ahead": ahead,
+            "behind": behind,
+            "dirty": len(changed) > 0,
+            "changed_files": changed,
+            "changed_count": len(changed),
+            "fetched": fetched,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/git/commit", methods=["POST"])
+def api_git_commit():
+    """Commit + push rápido de los cambios actuales.
+
+    Body: {message}. Hace `git add -A`, commit y push al upstream (o a la rama
+    actual en origin si no hay upstream configurado).
+    """
+    body = request.get_json(silent=True) or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        abort(400, "Falta el mensaje del commit")
+    steps = []
+
+    def step(name, proc):
+        steps.append({
+            "step": name, "returncode": proc.returncode,
+            "stdout": proc.stdout, "stderr": proc.stderr,
+        })
+        return proc.returncode == 0
+
+    try:
+        if not step("add", _run_git(["add", "-A"])):
+            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git add"}), 500
+        commit = _run_git(["commit", "-m", message])
+        # "nothing to commit" no es un error fatal que debamos esconder
+        step("commit", commit)
+        if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr):
+            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git commit"}), 500
+        branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        has_upstream = _run_git(["rev-parse", "--abbrev-ref", "@{u}"]).returncode == 0
+        push_args = ["push"] if has_upstream else ["push", "-u", "origin", branch]
+        if not step("push", _run_git(push_args, timeout=60)):
+            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git push (¿conexión?)"}), 500
+        return jsonify({"ok": True, "steps": steps, "branch": branch})
+    except Exception as e:
+        return jsonify({"ok": False, "steps": steps, "error": str(e)}), 500
 
 
 # ─────────── Static + fallback ─────────── #
