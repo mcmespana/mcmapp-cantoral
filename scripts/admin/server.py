@@ -1174,6 +1174,12 @@ def api_doce_import():
                 doce_id, use_cache=not force, include_meta=include_meta,
             )
 
+            # Si el cliente resolvió un conflicto de tono (transponiendo el
+            # contenido), respetamos el .cho que nos envía en lugar del original.
+            override = it.get("content")
+            if isinstance(override, str) and override.strip():
+                content = override
+
             title = meta.get("title") or (da.get_entry(doce_id) or {}).get("title") or f"cancion-{doce_id}"
             slug = it.get("slug") or d2c.slugify(d2c.pretty_title_case(title))
             slug = re.sub(r"[^a-z0-9_]+", "_", slug.lower()).strip("_") or "cancion"

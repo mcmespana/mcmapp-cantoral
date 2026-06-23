@@ -371,6 +371,26 @@ table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
   padding: 14px 18px; overflow: auto; background: var(--bg-2);
   border-left: 1px solid var(--border);
 }
+.doce-preview-body .chordpro-pane .preview-render { font-size: 15px; }
+
+/* ─────── Conflicto de tono ─────── */
+.key-conflict {
+  background: #fef3c7; border: 1px solid var(--warn);
+  border-radius: 6px; padding: 12px 14px; margin: 0 0 16px;
+}
+.theme-dark .key-conflict { background: #422006; }
+.key-conflict.resolved { background: #dcfce7; border-color: #16a34a; }
+.theme-dark .key-conflict.resolved { background: #052e16; }
+.key-conflict-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.key-conflict-text { font-size: 13px; margin: 0 0 10px; line-height: 1.5; }
+.key-conflict-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.key-conflict-done { font-size: 13px; }
+.key-conflict-done a { margin-left: 6px; }
+.key-conflict-badge {
+  display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 600;
+  color: #92400e; background: #fde68a; padding: 1px 6px; border-radius: 4px;
+}
+.theme-dark .key-conflict-badge { color: #fde68a; background: #78350f; }
 
 /* ─────── Datos extra (tab solo de meta) ─────── */
 .extra-grid { padding: 18px; max-width: 720px; margin: 0 auto; width: 100%; }

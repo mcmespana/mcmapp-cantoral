@@ -665,7 +665,9 @@
                       x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
             </template>
           </select>
-          <button class="btn primary" :disabled="!docePreviewCategory || doceImporting"
+          <button class="btn primary"
+                  :disabled="!docePreviewCategory || doceImporting || (doceKeyConflict && !doceKeyResolved)"
+                  :title="(doceKeyConflict && !doceKeyResolved) ? 'Resuelve el conflicto de tono antes de importar' : ''"
                   @click="importFromPreview()">📥 Importar</button>
           <button class="btn" @click="reloadDocePreview()" :disabled="docePreviewReloading"
                   title="Saltarse la caché local y volver a descargar"
@@ -677,14 +679,53 @@
       <div class="editor-body doce-preview-body" x-show="docePreview">
         <div class="chordpro-pane">
           <h4 style="margin:0 0 8px;font-size:12px;color:var(--fg-3);text-transform:uppercase;letter-spacing:0.04em">.cho adaptado (estilo MCM)</h4>
-          <pre x-text="docePreview ? docePreview.content : ''"></pre>
+          <div class="preview-render" x-html="docePreview ? renderPreviewHtml(docePreview.content) : ''"></div>
         </div>
         <div class="meta-pane">
+          <!-- CONFLICTO DE TONO ── el cantoral y doceacordes traen tonos distintos -->
+          <template x-if="doceKeyConflict">
+            <div class="key-conflict" :class="{ resolved: doceKeyResolved }">
+              <template x-if="!doceKeyResolved">
+                <div>
+                  <div class="key-conflict-title">⚠️ Conflicto de tono</div>
+                  <p class="key-conflict-text">
+                    En el <strong>cantoral</strong> esta canción estaba en
+                    <strong x-text="doceKeyConflict.cantoralKey"></strong>, pero en
+                    <strong>doceacordes</strong> viene en
+                    <strong x-text="doceKeyConflict.doceKey"></strong>.
+                    ¿Con cuál prefieres importarla?
+                  </p>
+                  <div class="key-conflict-actions">
+                    <button class="btn" @click="resolveKeyConflict(doceKeyConflict.cantoralKey)">
+                      🎼 Usar tono del cantoral (<span x-text="doceKeyConflict.cantoralKey"></span>)
+                    </button>
+                    <button class="btn" @click="resolveKeyConflict(doceKeyConflict.doceKey)">
+                      🎸 Usar tono de doceacordes (<span x-text="doceKeyConflict.doceKey"></span>)
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <template x-if="doceKeyResolved">
+                <div class="key-conflict-done">
+                  ✅ Tono resuelto: se importará en
+                  <strong x-text="docePreview && docePreview.meta.key"></strong>.
+                  <a href="#" @click.prevent="previewDoce(docePreview.id)">cambiar</a>
+                </div>
+              </template>
+            </div>
+          </template>
+
           <h4 style="margin:0 0 6px">Datos básicos</h4>
           <table class="meta-table" x-show="docePreview">
             <tr><th>Título</th><td x-text="docePreview && docePreview.meta.title"></td></tr>
             <tr><th>Artista</th><td x-text="docePreview && docePreview.meta.artist"></td></tr>
-            <tr><th>Tono</th><td x-text="docePreview && docePreview.meta.key"></td></tr>
+            <tr><th>Tono</th>
+              <td>
+                <span x-text="docePreview && docePreview.meta.key"></span>
+                <span x-show="doceKeyConflict && !doceKeyResolved" class="key-conflict-badge"
+                      :title="'En el cantoral: ' + (doceKeyConflict ? doceKeyConflict.cantoralKey : '')">⚠️ conflicto</span>
+              </td>
+            </tr>
             <tr><th>Capo</th><td x-text="docePreview && (docePreview.meta.capo || '0')"></td></tr>
             <tr x-show="docePreview && docePreview.entry.subtitle">
               <th>Subtítulo</th><td x-text="docePreview && docePreview.entry.subtitle"></td>
