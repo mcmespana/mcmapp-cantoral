@@ -64,13 +64,17 @@ function app() {
     doceNumberSel: {},        // { doce_id: 12 }
     doceSuggestedNumber: {},  // { doce_id: 7 }
     docePositionHint: {},     // { doce_id: 22 } proveniente de cantoral DOCX
+    doceCantoralKey: {},      // { doce_id: 'D' } tono que tenía en el cantoral DOCX
     doceResults: [],
     doceImporting: false,
     doceIncludeMeta: true,
     docePreview: null,
     docePreviewCategory: '',
     docePreviewReloading: false,
+    doceKeyConflict: null,    // { cantoralKey, doceKey } cuando los tonos difieren
+    doceKeyResolved: false,   // true cuando el usuario eligió un tono
     doceCandidatesPopover: null,  // {missingId, anchor, candidates, sectionLetter}
+    moveModal: null,              // {path, title, fromLetter, targetLetter, number, suggested, saving}
 
     // Reorder
     reorderCategory: '',
@@ -108,6 +112,11 @@ function app() {
     // Backups
     backups: { sessions: [], total_size_bytes: 0, loading: false, keepLast: 5 },
 
+    // Estado de git (indicador en la barra lateral)
+    git: { branch: '', ahead: 0, behind: 0, dirty: false, changedCount: 0,
+           changedFiles: [], hasUpstream: true, loading: false, error: null },
+    gitModal: null,  // { message, saving, result }
+
     // ─────────── Lifecycle ───────────
     async boot() {
       this.$watch('editor.dirty', (v) => {
@@ -121,6 +130,76 @@ function app() {
         }
       });
       await this.loadCatalog();
+      // Estado de git: al arrancar (con fetch) y luego cada 90s.
+      this.loadGitStatus(true);
+      setInterval(() => this.loadGitStatus(true), 90000);
+    },
+
+    // ─────────── Git: estado + commit/push rápido ───────────
+    async loadGitStatus(fetch_ = false) {
+      this.git.loading = true;
+      try {
+        const r = await fetch('/api/git/status' + (fetch_ ? '?fetch=1' : ''));
+        const j = await r.json();
+        if (j.ok) {
+          this.git = {
+            ...this.git,
+            branch: j.branch, ahead: j.ahead, behind: j.behind,
+            dirty: j.dirty, changedCount: j.changed_count,
+            changedFiles: j.changed_files || [], hasUpstream: j.has_upstream,
+            error: null,
+          };
+        } else {
+          this.git.error = j.error || 'error';
+        }
+      } catch (e) {
+        this.git.error = e.message;
+      } finally {
+        this.git.loading = false;
+      }
+    },
+    // ¿Hay algo que avisar? (cambios sin guardar, commits sin subir, o rama desfasada)
+    gitNeedsAttention() {
+      return this.git.dirty || this.git.ahead > 0 || this.git.behind > 0;
+    },
+    gitStatusLabel() {
+      const g = this.git;
+      if (g.error) return '⚠ Guardado en la nube no disponible';
+      if (g.behind > 0 && (g.dirty || g.ahead > 0))
+        return '⚠ Hay novedades en la nube y tú tienes cambios sin guardar';
+      if (g.behind > 0) return '🔄 Hay novedades en la nube sin descargar';
+      if (g.dirty || g.ahead > 0) {
+        const n = g.dirty ? g.changedCount : g.ahead;
+        return `📤 Tienes ${n} cambio${n === 1 ? '' : 's'} sin guardar en la nube`;
+      }
+      return '✓ Todo guardado en la nube';
+    },
+    openGitCommit() {
+      this.gitModal = { message: '', saving: false, result: null };
+    },
+    async doGitCommit() {
+      const m = this.gitModal;
+      if (!m || !m.message.trim()) { alert('Escribe qué cambios has hecho'); return; }
+      m.saving = true;
+      m.result = null;
+      try {
+        const r = await fetch('/api/git/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: m.message.trim() }),
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'Error en commit/push');
+        m.result = 'ok';
+        await this.loadGitStatus(true);
+        // Cerrar tras un momento para que se vea el ✓
+        setTimeout(() => { if (this.gitModal && this.gitModal.result === 'ok') this.gitModal = null; }, 1200);
+      } catch (e) {
+        m.result = 'error';
+        alert('No se pudo: ' + e.message);
+      } finally {
+        m.saving = false;
+      }
     },
 
     async loadCatalog() {
@@ -459,9 +538,37 @@ function app() {
         if (j.suggested_number && !this.doceNumberSel[doceId]) {
           this.doceNumberSel = { ...this.doceNumberSel, [doceId]: j.suggested_number };
         }
+        this.detectKeyConflict(doceId);
       } catch (e) {
         alert('Error preview: ' + e.message);
       }
+    },
+    // Compara el tono que la canción tenía en el cantoral DOCX con el tono que
+    // trae la versión de doceacordes. Si difieren, exige resolución antes de importar.
+    detectKeyConflict(doceId) {
+      this.doceKeyConflict = null;
+      this.doceKeyResolved = false;
+      const cantoralKey = (this.doceCantoralKey[doceId] || '').trim();
+      const doceKey = (this.docePreview && this.docePreview.meta && this.docePreview.meta.key || '').trim();
+      if (!cantoralKey || !doceKey) return;
+      if (normalizeKey(cantoralKey) === normalizeKey(doceKey)) return;
+      this.doceKeyConflict = { cantoralKey, doceKey };
+    },
+    // El usuario elige con qué tono se queda. Si elige el del cantoral, transponemos
+    // el contenido de doceacordes a ese tono; si elige el de doce, no tocamos nada.
+    resolveKeyConflict(chosenKey) {
+      if (!this.docePreview || !this.doceKeyConflict) return;
+      const doceKey = this.doceKeyConflict.doceKey;
+      if (normalizeKey(chosenKey) !== normalizeKey(doceKey)) {
+        const transposed = transposeChoToKey(this.docePreview.content, doceKey, chosenKey);
+        if (transposed == null) {
+          alert('No pude transponer de "' + doceKey + '" a "' + chosenKey + '".');
+          return;
+        }
+        this.docePreview.content = transposed;
+        this.docePreview.meta = { ...this.docePreview.meta, key: chosenKey };
+      }
+      this.doceKeyResolved = true;
     },
     async reloadDocePreview() {
       if (!this.docePreview) return;
@@ -481,12 +588,20 @@ function app() {
     },
     async importFromPreview() {
       if (!this.docePreview) return;
+      if (this.doceKeyConflict && !this.doceKeyResolved) {
+        alert('Resuelve primero el conflicto de tono: elige con qué tono quieres importar.');
+        return;
+      }
       const id = this.docePreview.id;
       this.doceCategorySel = { ...this.doceCategorySel, [id]: this.docePreviewCategory };
-      await this.importOneDoce(id);
+      // Si se resolvió el conflicto transponiendo, mandamos el contenido editado.
+      const overrideContent = this.doceKeyResolved ? this.docePreview.content : undefined;
+      await this.importOneDoce(id, overrideContent);
       this.docePreview = null;
+      this.doceKeyConflict = null;
+      this.doceKeyResolved = false;
     },
-    async importOneDoce(doceId) {
+    async importOneDoce(doceId, overrideContent) {
       const cat = this.doceCategorySel[doceId];
       if (!cat) { alert('Elige categoría'); return; }
       this.doceImporting = true;
@@ -497,6 +612,7 @@ function app() {
           number: this.doceNumberSel[doceId] || undefined,
           position_hint: this.docePositionHint[doceId] || undefined,
           include_meta: this.doceIncludeMeta,
+          content: overrideContent || undefined,
         };
         const r = await fetch('/api/doce/import', {
           method: 'POST',
@@ -541,6 +657,9 @@ function app() {
       if (missing.position_in_section) {
         this.docePositionHint = { ...this.docePositionHint, [candidate.id]: missing.position_in_section };
       }
+      if (missing.key) {
+        this.doceCantoralKey = { ...this.doceCantoralKey, [candidate.id]: missing.key };
+      }
       if (missing.section_letter && !this.doceCategorySel[candidate.id]) {
         this.doceCategorySel = { ...this.doceCategorySel, [candidate.id]: missing.section_letter };
         await this.onDoceCategoryChange(candidate.id);
@@ -563,6 +682,9 @@ function app() {
       for (const c of cands) {
         if (missing.position_in_section) {
           this.docePositionHint = { ...this.docePositionHint, [c.id]: missing.position_in_section };
+        }
+        if (missing.key) {
+          this.doceCantoralKey = { ...this.doceCantoralKey, [c.id]: missing.key };
         }
         if (missing.section_letter && !this.doceCategorySel[c.id]) {
           this.doceCategorySel = { ...this.doceCategorySel, [c.id]: missing.section_letter };
@@ -1289,6 +1411,43 @@ function app() {
       this.commitParsed();
       this.$nextTick(() => this.layoutChords());
     },
+    // ─────────── Comentarios ({comment:} / {c:}) ───────────
+    startCommentEdit(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'comment') return;
+      ln._editing = true;
+    },
+    // Confirma la edición inline del comentario; si queda vacío, elimina la línea.
+    commitCommentEdit(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'comment') return;
+      const t = (ln.text || '').trim();
+      if (!t) {
+        this.editor.parsed.splice(idx, 1);
+      } else {
+        const tag = ln.tag === 'c' ? 'c' : 'comment';
+        ln.text = t;
+        ln.raw = '{' + tag + ': ' + t + '}';
+        ln._editing = false;
+      }
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
+    deleteCommentLine(idx) {
+      this.editor.parsed.splice(idx, 1);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    // Inserta un comentario nuevo al inicio de la selección (o al final) y lo abre para editar.
+    addComment() {
+      const r = this.selectedLineRange();
+      const pos = r ? r.start : this.editor.parsed.length;
+      const line = { type: 'comment', tag: 'comment', text: '', raw: '{comment: }', _editing: true };
+      this.editor.parsed.splice(pos, 0, line);
+      this.commitParsed();
+      this.$nextTick(() => this.layoutChords());
+    },
     // Mueve cualquier línea arriba (-1) o abajo (+1). Usado por los arreglos.
     moveLine(idx, dir) {
       const arr = this.editor.parsed;
@@ -1582,6 +1741,50 @@ function app() {
         alert('Error: ' + e.message);
       }
     },
+    // ─────────── Mover canción de categoría ───────────
+    openMoveModal(r) {
+      this.moveModal = {
+        path: r.path, title: r.title, fromLetter: r.category_letter,
+        targetLetter: '', number: '', suggested: null, saving: false,
+      };
+    },
+    async onMoveCategoryChange() {
+      const m = this.moveModal;
+      if (!m || !m.targetLetter) { if (m) { m.suggested = null; m.number = ''; } return; }
+      try {
+        const r = await fetch('/api/doce/suggest-number?category=' + encodeURIComponent(m.targetLetter));
+        if (r.ok) {
+          const j = await r.json();
+          m.suggested = j.next_number;
+          m.number = j.next_number;  // prefill con el hueco libre; el usuario puede cambiarlo
+        }
+      } catch (_) { /* silencio: el backend elegirá hueco si se deja vacío */ }
+    },
+    async doMoveSong() {
+      const m = this.moveModal;
+      if (!m || !m.targetLetter) { alert('Elige la categoría destino'); return; }
+      m.saving = true;
+      try {
+        const r = await fetch('/api/song/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: m.path,
+            category_letter: m.targetLetter,
+            number: m.number !== '' ? m.number : undefined,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        this.moveModal = null;
+        await this.loadCatalog();
+      } catch (e) {
+        alert('Error moviendo: ' + e.message);
+        m.saving = false;
+      }
+    },
     // ─────────── Estado de revisión (editor individual) ───────────
     editorStatus() {
       if (this.editor.meta.has_todo) return 'revisar';
@@ -1768,6 +1971,13 @@ function app() {
         }
         if (/^\{soc\}/.test(trimmed)) { inChorus = true; out.push('<div class="pv-chorus">'); continue; }
         if (/^\{eoc\}/.test(trimmed)) { inChorus = false; out.push('</div>'); continue; }
+        // Cualquier otro directive ({ritmo}, {tiempo}, {video}, {youtube}, …):
+        // se muestra como metadato discreto, no como letra con corchetes a la vista.
+        if (/^\{[a-z_]+\s*[:}]/i.test(trimmed)) {
+          const m = trimmed.match(/^\{(\w+)\s*:\s*(.*?)\s*\}/i);
+          out.push(`<div class="pv-meta">${m ? esc(m[1] + ': ' + m[2]) : esc(trimmed)}</div>`);
+          continue;
+        }
         if (trimmed === '') { out.push('<div class="pv-blank"></div>'); continue; }
         out.push(`<div class="pv-line">${renderChordLine(ln)}</div>`);
       }
@@ -1792,9 +2002,11 @@ function parseCho(content) {
       const text = t.replace(/^\{arr\s*:\s*/i, '').replace(/\}\s*$/, '');
       return { type: 'arr', raw, text };
     }
+    // Comentarios editables: {comment: ...} y su forma corta {c: ...}
+    const cm = t.match(/^\{(comment|c)\s*:\s*(.*?)\s*\}$/i);
+    if (cm) return { type: 'comment', raw, tag: cm[1].toLowerCase(), text: cm[2] };
     if (/^\{[a-z_]+\s*:/i.test(t) || /^\{[a-z_]+\}$/i.test(t)) {
-      const isComment = /^\{comment/i.test(t);
-      return { type: isComment ? 'comment' : 'directive', raw };
+      return { type: 'directive', raw };
     }
     // Parse as lyric line with optional [chord] tags
     const { lyric, chords } = parseChordLineToModel(raw);
@@ -2052,6 +2264,49 @@ function transposeChordText(text, semis, useFlats) {
     out += '/' + newBass + (m[7] || '');
   }
   return out;
+}
+
+// Normaliza un tono a su índice cromático + modo, para comparar "Db" == "C#" y
+// detectar igualdad real (ignorando mayúsculas/espacios). Devuelve "" si no se reconoce.
+function normalizeKey(key) {
+  if (!key) return '';
+  const m = String(key).trim().match(/^([A-G])([#b]?)(m?)/i);
+  if (!m) return '';
+  const note = m[1].toUpperCase() + (m[2] || '');
+  const idx = NOTE_INDEX[note];
+  if (idx == null) return '';
+  return idx + (m[3].toLowerCase() === 'm' ? 'm' : '');
+}
+
+// Transpone un .cho completo (texto) desde fromKey hasta toKey, reescribiendo
+// los acordes [..] y el directive {key:}. Devuelve null si no puede.
+function transposeChoToKey(cho, fromKey, toKey) {
+  const fm = String(fromKey || '').match(/^([A-G])([#b]?)/i);
+  const tm = String(toKey || '').match(/^([A-G])([#b]?)/i);
+  if (!fm || !tm) return null;
+  const fIdx = NOTE_INDEX[fm[1].toUpperCase() + (fm[2] || '')];
+  const tIdx = NOTE_INDEX[tm[1].toUpperCase() + (tm[2] || '')];
+  if (fIdx == null || tIdx == null) return null;
+  let semis = tIdx - fIdx;
+  if (semis > 6) semis -= 12;
+  if (semis < -6) semis += 12;
+  const target = computeTransposedKey(fromKey, semis);
+  const useFlats = target ? target.useFlats : (semis < 0);
+  const lines = cho.split('\n');
+  const out = lines.map((raw) => {
+    const t = raw.trim();
+    // Reescribir el directive {key: ...}
+    const km = t.match(/^\{\s*key\s*:\s*(.*?)\s*\}$/i);
+    if (km) return `{key: ${toKey}}`;
+    // No tocar otros directives ({title}, {comment}, etc.)
+    if (/^\{[a-z_]+\s*[:}]/i.test(t)) return raw;
+    // Línea de letra: transponer cada [acorde]
+    const model = parseChordLineToModel(raw);
+    if (!model.chords.length) return raw;
+    model.chords = model.chords.map(c => ({ ...c, text: transposeChordText(c.text, semis, useFlats) }));
+    return serializeChordLine(model);
+  });
+  return out.join('\n');
 }
 
 // Calcula el nuevo tono después de transponer, eligiendo bemoles o sostenidos

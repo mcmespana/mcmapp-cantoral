@@ -44,11 +44,20 @@
     </template>
   </div>
 
+  <!-- Estado de git: parpadea cuando hay cambios sin subir o la rama está desfasada -->
+  <button class="git-status" x-show="git.branch || git.error"
+          :class="{ 'git-alert': gitNeedsAttention(), 'git-clean': !gitNeedsAttention() && !git.error, 'git-error': git.error }"
+          @click="openGitCommit()"
+          :title="'Rama: ' + git.branch + (git.error ? ' — ' + git.error : '')">
+    <span class="git-status-label" x-text="gitStatusLabel()"></span>
+    <span class="git-branch" x-show="git.branch">⎇ <span x-text="git.branch"></span></span>
+  </button>
+
   <div class="sidebar-foot">
     <button @click="theme = theme === 'dark' ? 'light' : 'dark'; localStorage.theme = theme">
       <span x-text="theme === 'dark' ? '☀️ Claro' : '🌙 Oscuro'"></span>
     </button>
-    <button @click="loadCatalog()" :disabled="loading">🔄 Recargar</button>
+    <button @click="loadCatalog(); loadGitStatus(true)" :disabled="loading">🔄 Recargar</button>
   </div>
 </aside>
 
@@ -252,6 +261,7 @@
             </td>
             <td>
               <button class="btn-mini" @click="openEditor(r.path)">Editar</button>
+              <button class="btn-mini" @click="openMoveModal(r)" title="Mover a otra categoría">↔ Mover</button>
               <button class="btn-mini danger" @click="deleteSong(r)">Borrar</button>
             </td>
           </tr>
@@ -648,6 +658,107 @@
     </div>
   </section>
 
+  <!-- GIT COMMIT & PUSH RÁPIDO MODAL -->
+  <div class="editor-overlay" x-show="gitModal" @click.self="gitModal = null" x-cloak>
+    <div class="editor-modal compact">
+      <div class="editor-header">
+        <h2>📤 Guardar y subir cambios</h2>
+        <button class="btn" @click="gitModal = null">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <p class="muted small" style="margin:0 0 10px">
+            Tus cambios se guardarán en la nube (copia <strong x-text="git.branch"></strong>).
+            <span x-show="git.behind > 0" style="color:var(--warn)">
+              ⚠ Ojo: hay novedades en la nube que aún no tienes; avisa a alguien del
+              equipo o descárgalas antes para no pisar el trabajo de otra persona.
+            </span>
+          </p>
+
+          <div x-show="git.changedCount > 0" style="margin-bottom:12px">
+            <div class="muted small" style="margin-bottom:4px">
+              <span x-text="git.changedCount"></span> archivo(s) con cambios:
+            </div>
+            <ul class="git-file-list">
+              <template x-for="f in git.changedFiles.slice(0, 12)" :key="f">
+                <li x-text="f"></li>
+              </template>
+              <li x-show="git.changedFiles.length > 12" class="muted"
+                  x-text="'… y ' + (git.changedFiles.length - 12) + ' más'"></li>
+            </ul>
+          </div>
+          <p x-show="git.changedCount === 0 && git.ahead > 0" class="muted small">
+            No hay archivos nuevos modificados, pero te quedaron
+            <strong x-text="git.ahead"></strong> cambio(s) por subir a la nube. Se subirán ahora.
+          </p>
+
+          <label class="form-label" style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">
+            ¿Qué cambios has hecho?
+          </label>
+          <textarea x-model="gitModal.message" rows="3" style="width:100%"
+                    placeholder="Ej: Corregidos acordes de varias canciones de Entrada"
+                    @keydown.meta.enter="doGitCommit()" @keydown.ctrl.enter="doGitCommit()"></textarea>
+
+          <div class="git-confirm-banner" x-show="gitModal && gitModal.message.trim()">
+            Vas a <strong>guardar y subir tus cambios a la nube</strong>. ¿Todo correcto?
+          </div>
+
+          <div class="actions-row">
+            <button class="btn" @click="gitModal = null" :disabled="gitModal && gitModal.saving">Cancelar</button>
+            <button class="btn primary"
+                    :disabled="!gitModal || !gitModal.message.trim() || gitModal.saving"
+                    @click="doGitCommit()"
+                    x-text="gitModal && gitModal.saving ? 'Guardando…' : (gitModal && gitModal.result === 'ok' ? '✓ Guardado' : '📤 Guardar en la nube')"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOVER DE CATEGORÍA MODAL -->
+  <div class="editor-overlay" x-show="moveModal" @click.self="moveModal = null" x-cloak>
+    <div class="editor-modal compact">
+      <div class="editor-header">
+        <h2>↔ Mover de categoría</h2>
+        <button class="btn" @click="moveModal = null">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <p class="muted small" style="margin:0 0 12px">
+            <strong x-text="moveModal && moveModal.title"></strong>
+            — actualmente en categoría <strong x-text="moveModal && moveModal.fromLetter"></strong>
+          </p>
+          <div class="form-grid">
+            <label>Categoría destino</label>
+            <select x-model="moveModal.targetLetter" @change="onMoveCategoryChange()">
+              <option value="">— Elige —</option>
+              <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+                <option :value="cat.letter"
+                        x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+              </template>
+            </select>
+            <label>Número</label>
+            <input type="number" min="1" x-model="moveModal.number"
+                   :placeholder="moveModal && moveModal.suggested ? ('Hueco libre: ' + moveModal.suggested) : 'Auto'">
+          </div>
+          <p class="muted small">
+            Déjalo vacío para usar el primer hueco libre de la categoría destino.
+            <span x-show="moveModal && moveModal.suggested">
+              Sugerido: <strong x-text="moveModal && moveModal.suggested"></strong>.
+            </span>
+            Se hace backup en <code>songs-backup-edits</code> antes de mover.
+          </p>
+          <div class="actions-row">
+            <button class="btn primary"
+                    :disabled="!moveModal || !moveModal.targetLetter || moveModal.saving"
+                    @click="doMoveSong()"
+                    x-text="moveModal && moveModal.saving ? 'Moviendo…' : '↔ Mover canción'"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- DOCE PREVIEW MODAL -->
   <div class="editor-overlay" x-show="docePreview" @click.self="docePreview = null" x-cloak>
     <div class="editor-modal">
@@ -665,7 +776,9 @@
                       x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
             </template>
           </select>
-          <button class="btn primary" :disabled="!docePreviewCategory || doceImporting"
+          <button class="btn primary"
+                  :disabled="!docePreviewCategory || doceImporting || (doceKeyConflict && !doceKeyResolved)"
+                  :title="(doceKeyConflict && !doceKeyResolved) ? 'Resuelve el conflicto de tono antes de importar' : ''"
                   @click="importFromPreview()">📥 Importar</button>
           <button class="btn" @click="reloadDocePreview()" :disabled="docePreviewReloading"
                   title="Saltarse la caché local y volver a descargar"
@@ -677,14 +790,53 @@
       <div class="editor-body doce-preview-body" x-show="docePreview">
         <div class="chordpro-pane">
           <h4 style="margin:0 0 8px;font-size:12px;color:var(--fg-3);text-transform:uppercase;letter-spacing:0.04em">.cho adaptado (estilo MCM)</h4>
-          <pre x-text="docePreview ? docePreview.content : ''"></pre>
+          <div class="preview-render" x-html="docePreview ? renderPreviewHtml(docePreview.content) : ''"></div>
         </div>
         <div class="meta-pane">
+          <!-- CONFLICTO DE TONO ── el cantoral y doceacordes traen tonos distintos -->
+          <template x-if="doceKeyConflict">
+            <div class="key-conflict" :class="{ resolved: doceKeyResolved }">
+              <template x-if="!doceKeyResolved">
+                <div>
+                  <div class="key-conflict-title">⚠️ Conflicto de tono</div>
+                  <p class="key-conflict-text">
+                    En el <strong>cantoral</strong> esta canción estaba en
+                    <strong x-text="doceKeyConflict.cantoralKey"></strong>, pero en
+                    <strong>doceacordes</strong> viene en
+                    <strong x-text="doceKeyConflict.doceKey"></strong>.
+                    ¿Con cuál prefieres importarla?
+                  </p>
+                  <div class="key-conflict-actions">
+                    <button class="btn" @click="resolveKeyConflict(doceKeyConflict.cantoralKey)">
+                      🎼 Usar tono del cantoral (<span x-text="doceKeyConflict.cantoralKey"></span>)
+                    </button>
+                    <button class="btn" @click="resolveKeyConflict(doceKeyConflict.doceKey)">
+                      🎸 Usar tono de doceacordes (<span x-text="doceKeyConflict.doceKey"></span>)
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <template x-if="doceKeyResolved">
+                <div class="key-conflict-done">
+                  ✅ Tono resuelto: se importará en
+                  <strong x-text="docePreview && docePreview.meta.key"></strong>.
+                  <a href="#" @click.prevent="previewDoce(docePreview.id)">cambiar</a>
+                </div>
+              </template>
+            </div>
+          </template>
+
           <h4 style="margin:0 0 6px">Datos básicos</h4>
           <table class="meta-table" x-show="docePreview">
             <tr><th>Título</th><td x-text="docePreview && docePreview.meta.title"></td></tr>
             <tr><th>Artista</th><td x-text="docePreview && docePreview.meta.artist"></td></tr>
-            <tr><th>Tono</th><td x-text="docePreview && docePreview.meta.key"></td></tr>
+            <tr><th>Tono</th>
+              <td>
+                <span x-text="docePreview && docePreview.meta.key"></span>
+                <span x-show="doceKeyConflict && !doceKeyResolved" class="key-conflict-badge"
+                      :title="'En el cantoral: ' + (doceKeyConflict ? doceKeyConflict.cantoralKey : '')">⚠️ conflicto</span>
+              </td>
+            </tr>
             <tr><th>Capo</th><td x-text="docePreview && (docePreview.meta.capo || '0')"></td></tr>
             <tr x-show="docePreview && docePreview.entry.subtitle">
               <th>Subtítulo</th><td x-text="docePreview && docePreview.entry.subtitle"></td>
@@ -1023,6 +1175,8 @@
             <span class="sep"></span>
             <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
                     @click="insertChorusHere()">🔁 Insertar estribillo</button>
+            <button class="btn-mini" @click="addComment()"
+                    title="Añadir un comentario (se inserta donde tengas la selección)">💬 Comentario</button>
 
             <span class="sel-clear" x-show="visualSelectedLines.size > 0"
                   @click="clearLineSelection()">Limpiar selección</span>
@@ -1081,8 +1235,30 @@
                     </template>
                   </div>
                 </template>
-                <template x-if="ln.type === 'directive' || ln.type === 'comment'">
+                <template x-if="ln.type === 'directive'">
                   <div class="ed-meta-line" x-text="ln.raw"></div>
+                </template>
+                <template x-if="ln.type === 'comment'">
+                  <div class="ed-comment-line">
+                    <template x-if="ln._editing">
+                      <input class="ed-comment-input" type="text" x-model="ln.text"
+                             x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                             @keydown.enter.prevent="commitCommentEdit(idx)"
+                             @keydown.escape.prevent="commitCommentEdit(idx)"
+                             @blur="commitCommentEdit(idx)"
+                             @mousedown.stop @click.stop
+                             placeholder="texto del comentario…">
+                    </template>
+                    <template x-if="!ln._editing">
+                      <div class="ed-comment-view" @dblclick.stop="startCommentEdit(idx)"
+                           title="Doble click para editar">
+                        <span class="ed-comment-icon">💬</span>
+                        <span class="ed-comment-text" x-text="ln.text || ln.raw"></span>
+                        <button class="link-mini" @click.stop="startCommentEdit(idx)" title="Editar">✎</button>
+                        <button class="link-mini" @click.stop="deleteCommentLine(idx)" title="Borrar">✕</button>
+                      </div>
+                    </template>
+                  </div>
                 </template>
                 <template x-if="ln.type === 'soc'">
                   <div class="ed-marker chorus-start">▶ Inicio estribillo
