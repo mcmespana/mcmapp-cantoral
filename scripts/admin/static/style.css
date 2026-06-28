@@ -784,3 +784,20 @@ body.adding .ed-char:hover { background: rgba(37, 99, 235, 0.15); cursor: pointe
 .preview-render .pv-seg { display: inline-block; vertical-align: top; position: relative; }
 .preview-render .pv-chords { display: block; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace; font-size: 0.85em; height: 1.2em; }
 .preview-render .pv-lyr { display: block; white-space: pre; font-size: 1em; }
+
+/* ─────────── Peticiones de la gente ─────────── */
+.peticiones-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap; margin: 0 0 22px; padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(37,99,235,0.10), rgba(37,99,235,0.03));
+  border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px;
+}
+.peticiones-banner-text h3 { margin: 0 0 4px; font-size: 16px; }
+.peticiones-banner-text p { margin: 0; max-width: 560px; font-size: 13px; }
+.btn.big { font-size: 15px; padding: 12px 20px; font-weight: 600; white-space: nowrap; }
+.peticiones-msg { margin: 12px 0; padding: 10px 14px; border-radius: 6px; font-size: 13px; }
+.peticiones-msg.ok { background: rgba(22,163,74,0.12); color: var(--ok); border: 1px solid rgba(22,163,74,0.25); }
+.peticiones-msg.err { background: rgba(220,38,38,0.12); color: var(--danger); border: 1px solid rgba(220,38,38,0.25); }
+.badge-count { font-size: 11px; font-weight: 600; color: var(--fg-3); margin-left: 8px; }
+.status-pill { background: var(--bg-3); color: var(--fg-2); border: 1px solid var(--border); }
+table.songs tr.row-archived td { opacity: 0.55; }

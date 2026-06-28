@@ -22,6 +22,20 @@ Contadores en vivo: cuántas canciones tienes en `/songs`, cuántas hay en el
 cantoral .docx, cuántas faltan, cuántas tienen `📝 TO DO` pendiente, cuántas
 son tuyas que no están en el cantoral.
 
+### Peticiones de la gente (🙋)
+Botón destacado en el Dashboard (**🙋 Consultar peticiones de la gente**) y
+pestaña propia en el menú. Consulta lo que la gente envía desde la app y que el
+**MCM Panel** también muestra: **solicitudes de canciones** (`songs/solicitudes`)
+y **reportes de fallitos** (`songs/fallitos`) de la Realtime Database.
+
+Al pulsar **Consultar y guardar** descarga de Firebase, lo funde con el histórico
+y lo guarda en `peticiones/peticiones.json` (en la raíz del repo). Las peticiones
+que desaparecen de Firebase (ya resueltas) se conservan marcadas como archivadas.
+Haz `git commit` de ese archivo para guardar el histórico.
+
+Necesita `FIREBASE_URL` y `FIREBASE_TOKEN` en el `.env` de la raíz del repo
+(los mismos que usan los scripts de sincronización). Ver `peticiones/README.md`.
+
 ### Catálogo (📋)
 Tabla con todas las canciones del repo. Cada fila lleva badges:
 - ✅ existe en repo + en cantoral

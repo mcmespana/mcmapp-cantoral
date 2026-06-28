@@ -28,6 +28,9 @@ import subprocess
 import sys
 import time
 import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -43,6 +46,12 @@ SONGS_DIR = REPO_DIR / "songs"
 BACKUP_DIR = REPO_DIR / "songs-backup-edits"
 INDICE_JSON = SONGS_DIR / "indice.json"
 IGNORED_FILE = SCRIPT_DIR / "import-ignored.json"
+
+# Peticiones de la gente (solicitudes de canciones + reportes de fallitos) que la
+# app móvil guarda en Firebase. Se consultan bajo demanda y se persisten en el
+# repo para tener histórico y poder hacer commit.
+PETICIONES_DIR = REPO_DIR / "peticiones"
+PETICIONES_FILE = PETICIONES_DIR / "peticiones.json"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import docx2chordpro as d2c  # noqa: E402
@@ -1537,6 +1546,230 @@ def api_backups_cleanup():
             shutil.rmtree(target)
             deleted.append(s["id"])
     return jsonify({"ok": True, "deleted": deleted, "kept": min(keep, len(sessions))})
+
+
+# ─────────── Peticiones de la gente (Firebase) ─────────── #
+
+_ENV_LOADED = False
+
+
+def _load_env_once() -> None:
+    """Carga el .env de la raíz del repo (FIREBASE_URL / FIREBASE_TOKEN) sin
+    depender de python-dotenv. No pisa variables ya presentes en el entorno."""
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+    _ENV_LOADED = True
+    env_path = REPO_DIR / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+def _fb_get_json(path: str):
+    """GET a Firebase RTDB vía REST usando solo la stdlib (urllib).
+
+    Autenticación, igual que los scripts de sync:
+      - FIREBASE_TOKEN que empieza por 'Bearer ' → cabecera Authorization
+      - token normal → query param ?auth=TOKEN
+      - una API key 'AIza…' NO sirve como token de DB → se ignora
+    """
+    _load_env_once()
+    base = (os.environ.get("FIREBASE_URL") or "").strip().rstrip("/")
+    token = (os.environ.get("FIREBASE_TOKEN") or "").strip()
+    if not base:
+        raise RuntimeError(
+            "Falta FIREBASE_URL en el archivo .env de la raíz del repo. "
+            "Añade FIREBASE_URL y FIREBASE_TOKEN para consultar las peticiones."
+        )
+    if token.startswith("AIza"):
+        token = ""  # una API key no es un token válido para la Realtime Database
+
+    url = f"{base}/{path}.json"
+    headers = {}
+    if token.startswith("Bearer "):
+        headers["Authorization"] = token
+    elif token:
+        url += "?auth=" + urllib.parse.quote(token, safe="")
+
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _flatten_fallitos(raw) -> Dict[str, dict]:
+    """Aplana la estructura (flexible) de fallitos a un dict id-compuesto → item.
+
+    La app móvil guarda los fallitos con formas distintas; replicamos la lógica
+    del MCM Panel (SongsSection.flattenFallitos):
+      A) categoría → array de items
+      B) categoría → id → item (mapa directo)
+      C) categoría → nombreCanción → id → item (estructura del ejemplo)
+
+    La clave compuesta (categoría[/canción]/id) es estable entre consultas para
+    poder fundir con el histórico sin duplicar.
+    """
+    out: Dict[str, dict] = {}
+    if not isinstance(raw, dict):
+        return out
+
+    def cat_name(cat_key: str) -> str:
+        return cat_key[3:] if cat_key.startswith("cat") else cat_key
+
+    def add(cat_key, song_key, item_id, item):
+        if not isinstance(item, dict):
+            return
+        parts = [cat_key] + ([song_key] if song_key else []) + [str(item_id)]
+        key = "/".join(parts)
+        entry = {**item, "categoryKey": cat_key, "categoryName": cat_name(cat_key)}
+        if song_key and not entry.get("songTitle") and not entry.get("title"):
+            entry["songTitle"] = song_key
+        out[key] = entry
+
+    for cat_key, level1 in raw.items():
+        if not level1:
+            continue
+        # A) categoría → array
+        if isinstance(level1, list):
+            for idx, it in enumerate(level1):
+                add(cat_key, None, idx, it)
+            continue
+        if not isinstance(level1, dict):
+            continue
+        # B) categoría → id → item (todos los hijos parecen items)
+        if all(isinstance(v, dict) and ("status" in v or "songTitle" in v or "description" in v)
+               for v in level1.values()):
+            for item_id, it in level1.items():
+                add(cat_key, None, item_id, it)
+            continue
+        # C) categoría → nombreCanción → id → item
+        for song_key, id_map in level1.items():
+            if isinstance(id_map, list):
+                for idx, it in enumerate(id_map):
+                    add(cat_key, song_key, idx, it)
+            elif isinstance(id_map, dict):
+                for item_id, it in id_map.items():
+                    add(cat_key, song_key, item_id, it)
+    return out
+
+
+def _load_peticiones_file() -> dict:
+    if PETICIONES_FILE.exists():
+        try:
+            data = json.loads(PETICIONES_FILE.read_text(encoding="utf-8"))
+            data.setdefault("solicitudes", {})
+            data.setdefault("fallitos", {})
+            return data
+        except Exception:
+            pass
+    return {"updatedAt": None, "solicitudes": {}, "fallitos": {}}
+
+
+def _save_peticiones_file(data: dict) -> None:
+    PETICIONES_DIR.mkdir(parents=True, exist_ok=True)
+    PETICIONES_FILE.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _merge_peticiones(store: Dict[str, dict], fetched: Dict[str, dict], now: str) -> int:
+    """Funde lo descargado de Firebase con el histórico guardado en el repo.
+
+    Acumula: las entradas que desaparecen de Firebase (porque ya se resolvieron
+    o borraron) se conservan marcadas con _inFirebase=False. Devuelve cuántas
+    entradas son nuevas en esta consulta.
+    """
+    for existing in store.values():
+        existing["_inFirebase"] = False
+    new_count = 0
+    for fid, item in fetched.items():
+        if fid in store:
+            merged = {**store[fid], **item}
+            merged["_firstSeen"] = store[fid].get("_firstSeen") or now
+        else:
+            merged = {**item, "_firstSeen": now}
+            new_count += 1
+        merged["_id"] = fid
+        merged["_lastFetched"] = now
+        merged["_inFirebase"] = True
+        store[fid] = merged
+    return new_count
+
+
+def _peticiones_summary(data: dict) -> dict:
+    sol = list((data.get("solicitudes") or {}).values())
+    fal = list((data.get("fallitos") or {}).values())
+    sol.sort(key=lambda x: x.get("timestamp") or 0, reverse=True)
+    fal.sort(key=lambda x: x.get("timestamp") or 0, reverse=True)
+    done_sol = {"hecho", "done", "resuelto", "rechazada", "rechazado"}
+    done_fal = {"hecho", "done", "resuelto"}
+    return {
+        "updatedAt": data.get("updatedAt"),
+        "solicitudes": sol,
+        "fallitos": fal,
+        "counts": {
+            "solicitudes_total": len(sol),
+            "solicitudes_pendientes": sum(
+                1 for x in sol if (x.get("status") or "pendiente").lower() not in done_sol
+            ),
+            "fallitos_total": len(fal),
+            "fallitos_pendientes": sum(
+                1 for x in fal if (x.get("status") or "pending").lower() not in done_fal
+            ),
+        },
+    }
+
+
+@app.route("/api/peticiones")
+def api_peticiones_get():
+    """Devuelve las peticiones ya guardadas en el repo (sin tocar Firebase)."""
+    return jsonify({"ok": True, **_peticiones_summary(_load_peticiones_file())})
+
+
+@app.route("/api/peticiones/refresh", methods=["POST"])
+def api_peticiones_refresh():
+    """Consulta Firebase (songs/solicitudes y songs/fallitos), funde con el
+    histórico local y lo persiste en peticiones/peticiones.json."""
+    data = _load_peticiones_file()
+    try:
+        sol_raw = _fb_get_json("songs/solicitudes")
+        fal_raw = _fb_get_json("songs/fallitos")
+    except urllib.error.HTTPError as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Firebase respondió {e.code}. Revisa FIREBASE_TOKEN y los permisos de lectura.",
+        }), 502
+    except urllib.error.URLError as e:
+        return jsonify({"ok": False, "error": f"No pude conectar con Firebase: {e.reason}"}), 502
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    sol_fetched = sol_raw if isinstance(sol_raw, dict) else {}
+    fal_fetched = _flatten_fallitos(fal_raw)
+    new_sol = _merge_peticiones(data["solicitudes"], sol_fetched, now)
+    new_fal = _merge_peticiones(data["fallitos"], fal_fetched, now)
+    data["updatedAt"] = now
+    _save_peticiones_file(data)
+
+    summary = _peticiones_summary(data)
+    summary["new_solicitudes"] = new_sol
+    summary["new_fallitos"] = new_fal
+    summary["fetched_solicitudes"] = len(sol_fetched)
+    summary["fetched_fallitos"] = len(fal_fetched)
+    summary["saved_to"] = str(PETICIONES_FILE.relative_to(REPO_DIR))
+    return jsonify({"ok": True, **summary})
 
 
 @app.route("/api/health")

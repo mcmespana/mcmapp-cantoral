@@ -112,6 +112,16 @@ function app() {
     // Backups
     backups: { sessions: [], total_size_bytes: 0, loading: false, keepLast: 5 },
 
+    // Peticiones de la gente (solicitudes de canciones + fallitos desde Firebase)
+    peticiones: {
+      loading: false, refreshing: false, loaded: false,
+      updatedAt: null,
+      solicitudes: [], fallitos: [],
+      counts: { solicitudes_total: 0, solicitudes_pendientes: 0,
+                fallitos_total: 0, fallitos_pendientes: 0 },
+      message: '', error: null,
+    },
+
     // Estado de git (indicador en la barra lateral)
     git: { branch: '', ahead: 0, behind: 0, dirty: false, changedCount: 0,
            changedFiles: [], hasUpstream: true, loading: false, error: null },
@@ -1905,6 +1915,60 @@ function app() {
         alert('Error: ' + e.message);
       }
     },
+    // ─────────── Peticiones de la gente ───────────
+    goPeticiones() {
+      this.view = 'peticiones';
+      if (!this.peticiones.loaded) this.loadPeticiones();
+    },
+    _applyPeticiones(d) {
+      this.peticiones.updatedAt = d.updatedAt;
+      this.peticiones.solicitudes = d.solicitudes || [];
+      this.peticiones.fallitos = d.fallitos || [];
+      if (d.counts) this.peticiones.counts = d.counts;
+    },
+    async loadPeticiones() {
+      this.peticiones.loading = true; this.peticiones.error = null;
+      try {
+        const r = await fetch('/api/peticiones');
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        this._applyPeticiones(d);
+        this.peticiones.loaded = true;
+      } catch (e) {
+        this.peticiones.error = 'No pude cargar las peticiones guardadas: ' + e.message;
+      } finally {
+        this.peticiones.loading = false;
+      }
+    },
+    async refreshPeticiones() {
+      this.peticiones.refreshing = true;
+      this.peticiones.error = null;
+      this.peticiones.message = '';
+      try {
+        const r = await fetch('/api/peticiones/refresh', { method: 'POST' });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        this._applyPeticiones(d);
+        this.peticiones.loaded = true;
+        const ns = d.new_solicitudes || 0, nf = d.new_fallitos || 0;
+        let novedad = (ns || nf)
+          ? `${ns} solicitud(es) y ${nf} fallito(s) nuevos`
+          : 'sin novedades';
+        this.peticiones.message =
+          `✓ Hecho · ${d.counts.solicitudes_total} solicitudes y ${d.counts.fallitos_total} fallitos guardados (${novedad}). ` +
+          `Guardado en ${d.saved_to || 'peticiones/peticiones.json'} — haz git commit para conservarlo.`;
+      } catch (e) {
+        this.peticiones.error = 'No pude consultar Firebase: ' + e.message;
+      } finally {
+        this.peticiones.refreshing = false;
+      }
+    },
+    fmtFecha(x) {
+      const v = x && (x.requestedAt || x.reportedAt || x._lastFetched);
+      if (!v) return '—';
+      try { return new Date(v).toLocaleString('es-ES'); } catch (e) { return v; }
+    },
+
     formatBytes(bytes) {
       if (bytes < 1024) return bytes + ' B';
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
