@@ -28,6 +28,7 @@
     <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
     <a :class="{active: view === 'doce'}" @click.prevent="view = 'doce'; loadDoce()" href="#">🎸 Importar de doceacordes</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
+    <a :class="{active: view === 'peticiones'}" @click.prevent="goPeticiones()" href="#">🙋 Peticiones</a>
     <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
   </nav>
 
@@ -76,6 +77,19 @@
   <!-- DASHBOARD -->
   <section x-show="view === 'dashboard' && data" x-cloak>
     <h1>📊 Dashboard</h1>
+
+    <div class="peticiones-banner">
+      <div class="peticiones-banner-text">
+        <h3>🙋 Peticiones de la gente</h3>
+        <p class="muted">Consulta las solicitudes de canciones y los reportes de fallitos que la
+           gente envía desde la app. Se descargan de Firebase y se guardan en el repo.</p>
+      </div>
+      <button class="btn primary big" @click="view = 'peticiones'; refreshPeticiones()"
+              :disabled="peticiones.refreshing">
+        <span x-show="!peticiones.refreshing">🙋 Consultar peticiones de la gente</span>
+        <span x-show="peticiones.refreshing">⏳ Consultando…</span>
+      </button>
+    </div>
 
     <div class="stats-group">
       <h3 class="stats-group-title">📚 Catálogo</h3>
@@ -985,6 +999,115 @@
   </section>
 
   <!-- BACKUPS -->
+  <!-- PETICIONES DE LA GENTE -->
+  <section x-show="view === 'peticiones'" x-cloak>
+    <h1>🙋 Peticiones de la gente</h1>
+    <p class="muted">Solicitudes de canciones y reportes de fallitos que la gente manda desde la app
+       (lo que el MCM Panel muestra). Al consultar, se descargan de Firebase
+       (<code>songs/solicitudes</code> y <code>songs/fallitos</code>) y se guardan en
+       <code>peticiones/peticiones.json</code>. Haz <code>git commit</code> para conservar el histórico.</p>
+
+    <div class="filter-bar" style="justify-content: flex-start;">
+      <button class="btn primary" @click="refreshPeticiones()" :disabled="peticiones.refreshing || peticiones.committing">
+        <span x-show="!peticiones.refreshing">🔄 Consultar y guardar</span>
+        <span x-show="peticiones.refreshing">⏳ Consultando Firebase…</span>
+      </button>
+      <button class="btn" @click="commitPeticiones()"
+              :disabled="peticiones.committing || peticiones.refreshing"
+              title="Hace git add/commit/push solo de la carpeta peticiones/">
+        <span x-show="!peticiones.committing">📦 Guardar en el repo (commit)</span>
+        <span x-show="peticiones.committing">⏳ Guardando en git…</span>
+      </button>
+      <span class="muted" style="font-size:12px" x-show="peticiones.updatedAt">
+        Última consulta: <span x-text="fmtFecha({ _lastFetched: peticiones.updatedAt })"></span>
+      </span>
+      <span class="muted" style="font-size:12px" x-show="!peticiones.updatedAt && !peticiones.loading">
+        Aún no se ha consultado nunca.
+      </span>
+    </div>
+
+    <div class="peticiones-msg ok" x-show="peticiones.message" x-cloak x-text="peticiones.message"></div>
+    <div class="peticiones-msg err" x-show="peticiones.error" x-cloak
+         x-text="'⚠️ ' + peticiones.error"></div>
+
+    <div x-show="peticiones.loading" class="muted" style="padding:20px">Cargando…</div>
+
+    <!-- Solicitudes de canciones -->
+    <div class="stats-group">
+      <h3 class="stats-group-title">
+        🎵 Solicitudes de canciones
+        <span class="badge-count" x-text="peticiones.counts.solicitudes_pendientes + ' pendientes · ' + peticiones.counts.solicitudes_total + ' total'"></span>
+      </h3>
+      <p class="muted" x-show="peticiones.solicitudes.length === 0 && !peticiones.loading">
+        No hay solicitudes guardadas todavía.</p>
+      <table class="songs" x-show="peticiones.solicitudes.length > 0">
+        <thead>
+          <tr><th>Título</th><th>Autor</th><th>Categoría</th><th>Quién</th><th>Fecha</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="s in peticiones.solicitudes" :key="s._id">
+            <tr :class="{ 'row-archived': s._inFirebase === false }">
+              <td>
+                <strong x-text="s.title || '(sin título)'"></strong>
+                <div class="muted" style="font-size:11px;white-space:pre-wrap;max-width:420px"
+                     x-show="s.content" x-text="s.content"></div>
+              </td>
+              <td x-text="s.author || '—'"></td>
+              <td x-text="s.category || '—'"></td>
+              <td>
+                <span x-text="s.userName || 'Anónimo'"></span>
+                <span class="muted" style="font-size:11px" x-show="s.userLocation" x-text="' · ' + s.userLocation"></span>
+                <span class="muted" style="font-size:11px" x-show="s.platform" x-text="' · ' + s.platform"></span>
+              </td>
+              <td style="white-space:nowrap" x-text="fmtFecha(s)"></td>
+              <td>
+                <span class="status-pill" x-text="s.status || 'pendiente'"></span>
+                <span class="muted" style="font-size:11px" x-show="s._inFirebase === false" title="Ya no está en Firebase (resuelta o borrada)">· archivada</span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Reportes de fallitos -->
+    <div class="stats-group">
+      <h3 class="stats-group-title">
+        🐛 Reportes de fallitos
+        <span class="badge-count" x-text="peticiones.counts.fallitos_pendientes + ' pendientes · ' + peticiones.counts.fallitos_total + ' total'"></span>
+      </h3>
+      <p class="muted" x-show="peticiones.fallitos.length === 0 && !peticiones.loading">
+        No hay fallitos guardados todavía.</p>
+      <table class="songs" x-show="peticiones.fallitos.length > 0">
+        <thead>
+          <tr><th>Canción</th><th>Descripción</th><th>Categoría</th><th>Quién</th><th>Fecha</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="f in peticiones.fallitos" :key="f._id">
+            <tr :class="{ 'row-archived': f._inFirebase === false }">
+              <td>
+                <strong x-text="f.songTitle || '(sin título)'"></strong>
+                <div class="muted" style="font-size:11px;font-family:monospace" x-show="f.songFilename" x-text="f.songFilename"></div>
+              </td>
+              <td style="white-space:pre-wrap;max-width:420px" x-text="f.description || '—'"></td>
+              <td x-text="f.categoryName || f.categoryKey || '—'"></td>
+              <td>
+                <span x-text="f.userName || 'Anónimo'"></span>
+                <span class="muted" style="font-size:11px" x-show="f.userLocation" x-text="' · ' + f.userLocation"></span>
+                <span class="muted" style="font-size:11px" x-show="f.platform" x-text="' · ' + f.platform"></span>
+              </td>
+              <td style="white-space:nowrap" x-text="fmtFecha(f)"></td>
+              <td>
+                <span class="status-pill" x-text="f.status || 'pending'"></span>
+                <span class="muted" style="font-size:11px" x-show="f._inFirebase === false" title="Ya no está en Firebase (resuelto o borrado)">· archivado</span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <section x-show="view === 'backups'" x-cloak>
     <h1>🗂 Gestión de backups</h1>
     <p class="muted">Cada vez que guardas o borras una canción se crea una copia en
