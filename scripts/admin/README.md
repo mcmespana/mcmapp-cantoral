@@ -31,10 +31,13 @@ y **reportes de fallitos** (`songs/fallitos`) de la Realtime Database.
 Al pulsar **Consultar y guardar** descarga de Firebase, lo funde con el histórico
 y lo guarda en `peticiones/peticiones.json` (en la raíz del repo). Las peticiones
 que desaparecen de Firebase (ya resueltas) se conservan marcadas como archivadas.
-Haz `git commit` de ese archivo para guardar el histórico.
+Con el botón **📦 Guardar en el repo (commit)** hace `git add/commit/push` solo de
+la carpeta `peticiones/` (no toca otras ediciones `.cho` en curso).
 
-Necesita `FIREBASE_URL` y `FIREBASE_TOKEN` en el `.env` de la raíz del repo
-(los mismos que usan los scripts de sincronización). Ver `peticiones/README.md`.
+**Variables:** no hace falta añadir nada nuevo. Reutiliza el `FIREBASE_URL` del
+`.env` de la raíz que ya usan los scripts de sincronización. `FIREBASE_TOKEN` es
+**opcional**: como el nodo `songs` es de lectura pública (la app lo lee sin
+login), basta con la URL. Ver `peticiones/README.md`.
 
 ### Catálogo (📋)
 Tabla con todas las canciones del repo. Cada fila lleva badges:

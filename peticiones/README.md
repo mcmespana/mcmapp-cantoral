@@ -24,13 +24,25 @@ Al pulsar **Consultar y guardar**:
    resolvieron se conservan marcadas con `_inFirebase: false`).
 3. Guarda el resultado en `peticiones.json`.
 
-Para conservar el histórico en el repo, haz commit del archivo:
+Para conservar el histórico en el repo puedes pulsar **📦 Guardar en el repo
+(commit)**, que hace `git add/commit/push` solo de esta carpeta, o hacerlo a mano:
 
 ```bash
 git add peticiones/peticiones.json
 git commit -m "chore: actualizar peticiones de la gente"
 git push
 ```
+
+## ¿Hacen falta variables de Firebase?
+
+No hace falta configurar nada nuevo:
+
+- **`FIREBASE_URL`** (obligatoria): la URL de la Realtime Database. Es la misma
+  que ya usan los scripts de sincronización del repo, así que normalmente ya está
+  en tu `.env`. No es secreta (va dentro de la app móvil).
+- **`FIREBASE_TOKEN`** (opcional): el nodo `songs` es de lectura pública (la app
+  lo lee sin login), así que para *consultar* peticiones basta con la URL. Solo
+  haría falta un token si las reglas de la base de datos bloquearan la lectura.
 
 ## Formato de `peticiones.json`
 

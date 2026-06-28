@@ -1712,8 +1712,11 @@ def _peticiones_summary(data: dict) -> dict:
     fal = list((data.get("fallitos") or {}).values())
     sol.sort(key=lambda x: x.get("timestamp") or 0, reverse=True)
     fal.sort(key=lambda x: x.get("timestamp") or 0, reverse=True)
-    done_sol = {"hecho", "done", "resuelto", "rechazada", "rechazado"}
-    done_fal = {"hecho", "done", "resuelto"}
+    # Estados terminales (igual que el MCM Panel):
+    #   solicitudes → pendiente | en progreso | hecho | cancelado
+    #   fallitos    → pending | in progress | done
+    done_sol = {"hecho", "done", "cancelado", "cancelled", "resuelto"}
+    done_fal = {"done", "hecho", "resuelto"}
     return {
         "updatedAt": data.get("updatedAt"),
         "solicitudes": sol,
@@ -1770,6 +1773,49 @@ def api_peticiones_refresh():
     summary["fetched_fallitos"] = len(fal_fetched)
     summary["saved_to"] = str(PETICIONES_FILE.relative_to(REPO_DIR))
     return jsonify({"ok": True, **summary})
+
+
+@app.route("/api/peticiones/commit", methods=["POST"])
+def api_peticiones_commit():
+    """Hace git add/commit/push SOLO de la carpeta peticiones/ (no toca otras
+    ediciones .cho que tengas en curso)."""
+    data = _load_peticiones_file()
+    counts = _peticiones_summary(data)["counts"]
+    message = (
+        f"chore: actualizar peticiones de la gente "
+        f"({counts['solicitudes_total']} solicitudes, {counts['fallitos_total']} fallitos)"
+    )
+    steps = []
+
+    def step(name, proc):
+        steps.append({
+            "step": name, "returncode": proc.returncode,
+            "stdout": proc.stdout, "stderr": proc.stderr,
+        })
+        return proc.returncode == 0
+
+    try:
+        rel = str(PETICIONES_DIR.relative_to(REPO_DIR))
+        if not step("add", _run_git(["add", rel])):
+            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git add"}), 500
+        commit = _run_git(["commit", "-m", message])
+        step("commit", commit)
+        nothing = "nothing to commit" in (commit.stdout + commit.stderr)
+        if commit.returncode != 0 and not nothing:
+            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git commit"}), 500
+        if nothing:
+            return jsonify({"ok": True, "nothing": True, "steps": steps,
+                            "message": "No hay cambios nuevos que guardar (ya estaba todo commiteado)."})
+        branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        has_upstream = _run_git(["rev-parse", "--abbrev-ref", "@{u}"]).returncode == 0
+        push_args = ["push"] if has_upstream else ["push", "-u", "origin", branch]
+        if not step("push", _run_git(push_args, timeout=60)):
+            return jsonify({"ok": False, "steps": steps,
+                            "error": "Commit hecho, pero falló el push (¿conexión?)."}), 500
+        return jsonify({"ok": True, "branch": branch, "steps": steps,
+                        "message": f"Guardado y subido a la rama {branch}."})
+    except Exception as e:
+        return jsonify({"ok": False, "steps": steps, "error": str(e)}), 500
 
 
 @app.route("/api/health")

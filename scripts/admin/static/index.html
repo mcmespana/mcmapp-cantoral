@@ -1008,9 +1008,15 @@
        <code>peticiones/peticiones.json</code>. Haz <code>git commit</code> para conservar el histórico.</p>
 
     <div class="filter-bar" style="justify-content: flex-start;">
-      <button class="btn primary" @click="refreshPeticiones()" :disabled="peticiones.refreshing">
+      <button class="btn primary" @click="refreshPeticiones()" :disabled="peticiones.refreshing || peticiones.committing">
         <span x-show="!peticiones.refreshing">🔄 Consultar y guardar</span>
         <span x-show="peticiones.refreshing">⏳ Consultando Firebase…</span>
+      </button>
+      <button class="btn" @click="commitPeticiones()"
+              :disabled="peticiones.committing || peticiones.refreshing"
+              title="Hace git add/commit/push solo de la carpeta peticiones/">
+        <span x-show="!peticiones.committing">📦 Guardar en el repo (commit)</span>
+        <span x-show="peticiones.committing">⏳ Guardando en git…</span>
       </button>
       <span class="muted" style="font-size:12px" x-show="peticiones.updatedAt">
         Última consulta: <span x-text="fmtFecha({ _lastFetched: peticiones.updatedAt })"></span>

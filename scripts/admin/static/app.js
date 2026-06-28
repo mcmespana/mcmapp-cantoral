@@ -114,7 +114,7 @@ function app() {
 
     // Peticiones de la gente (solicitudes de canciones + fallitos desde Firebase)
     peticiones: {
-      loading: false, refreshing: false, loaded: false,
+      loading: false, refreshing: false, committing: false, loaded: false,
       updatedAt: null,
       solicitudes: [], fallitos: [],
       counts: { solicitudes_total: 0, solicitudes_pendientes: 0,
@@ -1961,6 +1961,21 @@ function app() {
         this.peticiones.error = 'No pude consultar Firebase: ' + e.message;
       } finally {
         this.peticiones.refreshing = false;
+      }
+    },
+    async commitPeticiones() {
+      this.peticiones.committing = true;
+      this.peticiones.error = null;
+      try {
+        const r = await fetch('/api/peticiones/commit', { method: 'POST' });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        this.peticiones.message = '✓ ' + (d.message || 'Guardado en el repo.');
+        this.loadGitStatus(true);
+      } catch (e) {
+        this.peticiones.error = 'No pude guardar en el repo: ' + e.message;
+      } finally {
+        this.peticiones.committing = false;
       }
     },
     fmtFecha(x) {
