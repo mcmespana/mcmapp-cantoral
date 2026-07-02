@@ -67,7 +67,7 @@ y su clave en `songs/ediciones`.
 | Álbum | `{album: ...}` | `album` | `albumNew` / `albumOld` | string | Ej. `¡Alégrate!, 2004`. |
 | Tiempo litúrgico | `{tiempo: ...}` | `liturgicalTime` | `liturgicalTimeNew` / `liturgicalTimeOld` | string | Ej. `Adviento`, `Entrada`. |
 | Fuente | `{fuente: ...}` | `source` | `sourceNew` / `sourceOld` | string | Atribución de origen. |
-| Vídeo embebido | `{video: ...}` | `videoEmbed` | `videoEmbedNew` / `videoEmbedOld` | string (url) | URL de embed (p.ej. `youtube.com/embed/...`). |
+| Vídeo embebido | `{video: ...}` | `videoEmbed` | `videoEmbedNew` / `videoEmbedOld` | string (url) | Cualquier forma de URL de YouTube vale (`embed/`, `watch?v=`, `youtu.be/`…): la app normaliza a embed al leerla. |
 | Enlaces YouTube | `{youtube: label \| url}` | `youtubeLinks` | `youtubeLinksNew` / `youtubeLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
 | Enlaces de audio | `{audio: label \| url}` | `audioLinks` | `audioLinksNew` / `audioLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
 | Comentario (meta) | `{comentario: ...}` | `comment` | `commentNew` / `commentOld` | string | OJO: solo `{comentario:}` (español) se extrae a metadato. |
@@ -122,6 +122,11 @@ etiqueta opcional de la URL:
 
 Tanto `{youtube:}` como `{audio:}` son **repetibles** (varias líneas → varios
 elementos del array).
+
+Para `{audio:}` con enlaces de Google Drive, vale el enlace de compartir tal
+cual (`drive.google.com/file/d/<id>/view?usp=drive_link`): la app extrae el
+ID y reproduce el audio dentro de la propia app (endpoint `/preview` de
+Drive). El fichero debe estar compartido como «cualquiera con el enlace».
 
 `{video:}` es distinto: una sola URL de embed que va al campo `videoEmbed`
 (string, no array).
