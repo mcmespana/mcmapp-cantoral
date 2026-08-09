@@ -1,5 +1,60 @@
 {
-  "updatedAt": null,
+  "updatedAt": "2026-08-09T18:50:19+02:00",
   "solicitudes": {},
-  "fallitos": {}
+  "fallitos": {
+    "catBaleluya/Aleluya (Si sientes que Cristo, en ti vivo está)/-OzapiKvb4ADvOph02UF": {
+      "description": "Test",
+      "platform": "ios",
+      "reportedAt": "2026-08-09T14:04:51.195Z",
+      "songFilename": "05.aleluya_si_sientes_que_cristo_en_ti_vivo_esta.cho",
+      "songTitle": "Aleluya (Si sientes que Cristo, en ti vivo está)",
+      "status": "pending",
+      "timestamp": 1786284291195,
+      "userDelegation": "MCM Castellón",
+      "userName": "David Soler",
+      "userProfileType": "monitor",
+      "categoryKey": "catBaleluya",
+      "categoryName": "Baleluya",
+      "_firstSeen": "2026-08-09T18:50:19+02:00",
+      "_id": "catBaleluya/Aleluya (Si sientes que Cristo, en ti vivo está)/-OzapiKvb4ADvOph02UF",
+      "_lastFetched": "2026-08-09T18:50:19+02:00",
+      "_inFirebase": true
+    },
+    "catZotros/Gloria a Dios en el Cielo/-OuY5jWH433I5EcBw0-V": {
+      "description": "No va",
+      "platform": "ios",
+      "reportedAt": "2026-06-07T17:21:54.291Z",
+      "songFilename": "08.gloria_genverde.cho",
+      "songTitle": "Gloria a Dios en el Cielo",
+      "status": "pending",
+      "timestamp": 1780852914291,
+      "userDelegation": "MCM Castellón",
+      "userName": "Izan Rivera",
+      "userProfileType": "miembro",
+      "categoryKey": "catZotros",
+      "categoryName": "Zotros",
+      "_firstSeen": "2026-08-09T18:50:19+02:00",
+      "_id": "catZotros/Gloria a Dios en el Cielo/-OuY5jWH433I5EcBw0-V",
+      "_lastFetched": "2026-08-09T18:50:19+02:00",
+      "_inFirebase": true
+    },
+    "catZotros/Gloria a Dios en el Cielo/-Oucquc66s3737DYbvj9": {
+      "description": "No se ve la letra",
+      "platform": "android",
+      "reportedAt": "2026-06-08T20:10:28.647Z",
+      "songFilename": "08.gloria_genverde.cho",
+      "songTitle": "Gloria a Dios en el Cielo",
+      "status": "pending",
+      "timestamp": 1780949428647,
+      "userDelegation": "MCM Benicarló-Vinaròs",
+      "userName": "AlbA",
+      "userProfileType": "monitor",
+      "categoryKey": "catZotros",
+      "categoryName": "Zotros",
+      "_firstSeen": "2026-08-09T18:50:19+02:00",
+      "_id": "catZotros/Gloria a Dios en el Cielo/-Oucquc66s3737DYbvj9",
+      "_lastFetched": "2026-08-09T18:50:19+02:00",
+      "_inFirebase": true
+    }
+  }
 }
