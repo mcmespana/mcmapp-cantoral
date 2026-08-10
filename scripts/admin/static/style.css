@@ -230,6 +230,30 @@ table.songs tr.has-match td { background: rgba(139, 92, 246, 0.06); }
 table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.08); }
 .theme-dark table.songs tr.has-doce td { background: rgba(234, 88, 12, 0.16); }
 
+/* Buscar a mano en doceacordes: discreto, sólo cuando no hay candidatos */
+.badge-doce-search {
+  display: inline-block; margin-left: 8px; padding: 1px 6px; font-size: 10px;
+  background: transparent; color: var(--fg-3); border-radius: 3px;
+  cursor: pointer; border: 1px dashed var(--border-strong);
+}
+.badge-doce-search:hover { color: #c2410c; border-color: rgba(234, 88, 12, 0.55); }
+.theme-dark .badge-doce-search:hover { color: #fdba74; }
+
+/* Selección múltiple en la tabla de doceacordes */
+.doce-batch-bar { margin-top: 0; }
+.doce-batch-bar .sep { width: 1px; height: 20px; background: var(--border-strong); }
+table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; }
+.theme-dark table.songs tr.is-selected td { background: rgba(96, 165, 250, 0.20) !important; }
+
+/* Aviso de "estoy emparejando esta del cantoral" */
+.doce-manual-banner {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin: 12px 0; padding: 10px 12px; font-size: 12px;
+  background: rgba(234, 88, 12, 0.10); border: 1px solid rgba(234, 88, 12, 0.40);
+  border-radius: 6px;
+}
+.doce-manual-banner .link-mini { margin-left: auto; }
+
 /* ─────── Multimedia (catálogo + editor) ─────── */
 .media-cell { white-space: nowrap; }
 .media-icon {

@@ -2,6 +2,54 @@
 
 Lista viva — añadir/quitar según se haga.
 
+## Pendiente de la ronda de rendimiento / UX de imports
+
+Cosas detectadas al arreglar la lentitud (ver sección "Rendimiento" del README)
+que **no** se hicieron en esa iteración pero merecen la pena:
+
+### Rendimiento
+
+- **No recargar `/api/catalog` entero tras cada import.** Ahora tarda ~80 ms,
+  pero devuelve 143 KB y recalcula todo el emparejado repo↔docx↔LaTeX↔doce
+  sólo para añadir una fila. Lo suyo sería que `/api/doce/import` y
+  `/api/docx/import` devolvieran ya la fila nueva y el front la insertara,
+  dejando la recarga completa para un botón de refresco.
+- **`/api/doce/list` devuelve 355 KB** con las 1.683 canciones (título, autor,
+  subtítulo, url…). Se podría paginar en servidor o recortar campos; el
+  subtítulo largo es la mayor parte del peso.
+- **`list_repo_songs()` relee los 120 `.cho` en cada llamada** (~10 ms hoy,
+  pero crece con el cantoral). Cachear por mtime de carpeta, como se hace ya
+  con el `.docx` y con los `.tex`.
+- **Sin `ETag`/`Cache-Control` en los endpoints de lectura.** Con un ETag por
+  mtime, un `/api/catalog` sin cambios sería un 304 en vez de 143 KB.
+- **Reusar la conexión HTTP con doceacordes.** Cada descarga abre una conexión
+  nueva (`urllib`). Con `requests.Session` o un `HTTPSConnection` reutilizado se
+  ahorra el handshake TLS en los imports en lote.
+- **El prefetch al pasar el ratón sólo calienta esa canción.** Se podría
+  precalentar también las 2-3 filas siguientes, con cuidado de no martillear
+  doceacordes.
+
+### UX
+
+- **Errores de consola preexistentes**: al arrancar, Alpine evalúa
+  `data.stats` / `data.categories` / `moveModal.number` antes de que existan y
+  suelta ~6 `TypeError` en consola. No rompen nada (el render se reintenta),
+  pero ensucian el debug. Guardar con `data &&` / optional chaining.
+- **La selección de doceacordes no se limpia al cambiar de pestaña**: si marcas
+  3 canciones y te vas al cantoral, al volver siguen marcadas y la barra dice
+  "Importar 3 marcadas". A veces es lo que quieres; conviene al menos avisarlo.
+- **Feedback de progreso real en el import en lote.** Ahora es un solo POST, así
+  que el contador salta de 0 a N de golpe. Con SSE o un endpoint de estado se
+  podría ver "3/10 descargadas".
+- **Deshacer un import.** Se crea el `.cho` y ya está; un "✕ deshacer" en la
+  lista de resultados que borre el archivo recién creado sería barato y quita
+  miedo a importar en lote.
+- **Emparejado inverso**: desde una canción del repo, poder buscarla en
+  doceacordes para comparar acordes y actualizarla (hoy sólo se importa lo que
+  no existe). Enlaza con el "preview comparativo" de más abajo.
+- **Filtrar el catálogo de doceacordes por lo que falta en el cantoral**, no
+  sólo por "está / no está en repo".
+
 ## Importadores adicionales para "Nueva canción a mano"
 
 El modal de nueva canción tiene los modos `blank` y `chordpro` funcionando.

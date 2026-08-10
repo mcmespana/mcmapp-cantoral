@@ -370,12 +370,19 @@
                     class="badge-latex-mini"
                     title="También en LaTeX"
                     @click.stop="view = 'latex'; loadLatex().then(() => filterLatexById(m.latex_id))">📐 LaTeX</span>
+              <span x-show="!m.doce_available"
+                    class="badge-doce-search"
+                    title="El emparejado automático no ha encontrado nada — buscar a mano en doceacordes"
+                    @click.stop="searchDoceFor(m)">🔎 buscar en doceacordes</span>
             </td>
             <td x-text="m.key"></td>
             <td x-text="m.capo || ''"></td>
             <td class="warn-cell" x-text="m.warnings.join('; ')"></td>
             <td style="white-space:nowrap">
               <button class="btn-mini" @click="previewDocx(m.docx_id)">👁 Ver</button>
+              <button class="btn-mini primary" :disabled="importing"
+                      title="Importar sólo ésta, tal y como viene del cantoral"
+                      @click="importOneDocx(m.docx_id)">📥 Importar</button>
               <button class="btn-mini btn-archive" @click="archiveSong(m.docx_id, m.title)" title="Archivar — no mostrar nunca para importar">🚫 Archivar</button>
             </td>
           </tr>
@@ -591,11 +598,48 @@
       <span class="count" x-text="filteredDoce().length + ' canciones'"></span>
     </div>
 
+    <!-- Emparejando a mano una canción del cantoral -->
+    <div class="doce-manual-banner" x-show="doceManualSearchFor" x-cloak>
+      🔎 Buscando en doceacordes la canción del cantoral
+      <strong x-text="doceManualSearchFor && doceManualSearchFor.title"></strong>
+      <span class="muted" x-show="doceManualSearchFor && doceManualSearchFor.sectionLetter"
+            x-text="'· sección ' + (doceManualSearchFor && doceManualSearchFor.sectionLetter) +
+                    (doceManualSearchFor && doceManualSearchFor.key ? ' · tono ' + doceManualSearchFor.key : '')"></span>
+      <span class="muted">— al pulsar <strong>Ver</strong> o <strong>Importar</strong> se aplican sección, posición y tono del cantoral.</span>
+      <button class="link-mini" @click="doceManualSearchFor = null; doceSearch = ''">✕ cancelar</button>
+    </div>
+
+    <!-- Barra de acciones en lote -->
+    <div class="filter-bar doce-batch-bar">
+      <button @click="selectAllDoceVisible()">Marcar las visibles</button>
+      <button @click="selectedDoce = new Set()" :disabled="selectedDoce.size === 0">Limpiar selección</button>
+      <span class="sep"></span>
+      <select x-model="doceBulkCategory" :disabled="selectedDoce.size === 0" class="cat-select-mini">
+        <option value="">Categoría para las marcadas…</option>
+        <template x-for="cat in data.categories" :key="cat.letter">
+          <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+        </template>
+      </select>
+      <button @click="applyDoceBulkCategory()"
+              :disabled="!doceBulkCategory || selectedDoce.size === 0">Aplicar a marcadas</button>
+      <span class="sep"></span>
+      <button class="btn primary"
+              :disabled="selectedDoce.size === 0 || doceImporting"
+              @click="importSelectedDoce()"
+              x-text="doceImporting
+                        ? (doceBatchProgress ? `Importando ${doceBatchProgress.done}/${doceBatchProgress.total}…` : 'Importando…')
+                        : `📥 Importar ${selectedDoce.size} marcadas`"></button>
+      <span class="muted" style="font-size:11px"
+            x-show="selectedDoce.size > 0 && doceSelectedWithoutCategory().length > 0"
+            x-text="'⚠️ ' + doceSelectedWithoutCategory().length + ' sin categoría'"></span>
+    </div>
+
     <div x-show="doceLoading" class="muted" style="padding:10px">Cargando catálogo…</div>
 
     <table class="songs">
       <thead>
         <tr>
+          <th></th>
           <th>ID</th>
           <th>Título</th>
           <th>Autor</th>
@@ -608,7 +652,12 @@
       </thead>
       <tbody>
         <template x-for="d in filteredDocePaged()" :key="d.id">
-          <tr :class="{ 'has-match': d.in_repo }">
+          <tr :class="{ 'has-match': d.in_repo, 'is-selected': selectedDoce.has(d.id) }"
+              @mouseenter="prefetchDoce(d.id)">
+            <td>
+              <input type="checkbox" :checked="selectedDoce.has(d.id)" @change="toggleDoce(d.id)"
+                     title="Marcar para importar en lote" />
+            </td>
             <td style="font-family:monospace;font-size:11px" x-text="d.id"></td>
             <td>
               <a href="#" @click.prevent="previewDoce(d.id)" x-text="d.title"></a>
@@ -643,6 +692,9 @@
             <td style="white-space:nowrap">
               <button class="btn-mini" @click="previewDoce(d.id)">👁 Ver</button>
               <button class="btn-mini primary" :disabled="!doceCategorySel[d.id] || doceImporting"
+                      :title="doceCategorySel[d.id]
+                                ? 'Importar a ' + doceCategorySel[d.id] + ' con el nº ' + (doceNumberSel[d.id] || doceSuggestedNumber[d.id] || 'siguiente libre')
+                                : 'Elige primero la categoría destino ⟵'"
                       @click="importOneDoce(d.id)">📥 Importar</button>
             </td>
           </tr>
@@ -651,9 +703,9 @@
     </table>
 
     <div class="filter-bar" x-show="filteredDoce().length > docePageSize">
-      <button @click="docePage = Math.max(0, docePage - 1)" :disabled="docePage === 0">← Anterior</button>
+      <button @click="docePage = Math.max(0, docePage - 1); prefetchDoceVisible()" :disabled="docePage === 0">← Anterior</button>
       <span class="muted" x-text="'Página ' + (docePage + 1) + ' de ' + Math.ceil(filteredDoce().length / docePageSize)"></span>
-      <button @click="docePage = Math.min(Math.ceil(filteredDoce().length / docePageSize) - 1, docePage + 1)"
+      <button @click="docePage = Math.min(Math.ceil(filteredDoce().length / docePageSize) - 1, docePage + 1); prefetchDoceVisible()"
               :disabled="(docePage + 1) * docePageSize >= filteredDoce().length">Siguiente →</button>
     </div>
 
@@ -774,7 +826,8 @@
   </div>
 
   <!-- DOCE PREVIEW MODAL -->
-  <div class="editor-overlay" x-show="docePreview" @click.self="docePreview = null" x-cloak>
+  <div class="editor-overlay" x-show="docePreview" @click.self="docePreview = null" x-cloak
+       @keydown.escape.window="docePreview = null">
     <div class="editor-modal">
       <div class="editor-header">
         <h2>
@@ -924,7 +977,8 @@
   </div>
 
   <!-- LATEX PREVIEW MODAL -->
-  <div class="editor-overlay" x-show="latexPreview" @click.self="latexPreview = null" x-cloak>
+  <div class="editor-overlay" x-show="latexPreview" @click.self="latexPreview = null" x-cloak
+       @keydown.escape.window="latexPreview = null">
     <div class="editor-modal">
       <div class="editor-header">
         <h2 x-text="latexPreview ? ('📐 ' + latexPreview.parsed.title) : ''"></h2>
@@ -1695,7 +1749,8 @@
   </div>
 
   <!-- DOCX PREVIEW MODAL -->
-  <div class="editor-overlay" x-show="docxPreview" @click.self="docxPreview = null" x-cloak>
+  <div class="editor-overlay" x-show="docxPreview" @click.self="docxPreview = null" x-cloak
+       @keydown.escape.window="docxPreview = null">
     <div class="editor-modal small">
       <div class="editor-header">
         <h2 x-text="docxPreview ? docxPreview.title : ''"></h2>

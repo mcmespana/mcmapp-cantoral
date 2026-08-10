@@ -104,6 +104,30 @@ Lista las canciones del `.docx` que aún no están en el repo. Checkboxes para
 seleccionar, batch import añade `{comment: TO DO: PENDIENTE REVISIÓN ACORDES}`
 al principio. Aparecen marcadas con 📝 en el catálogo.
 
+Cada fila tiene además:
+- **📥 Importar** — importa sólo esa canción, tal y como viene del cantoral,
+  sin tener que marcar el checkbox y subir a la barra de acciones.
+- **🎸 en doceacordes (N)** — la canción está en doceacordes; conviene importarla
+  de allí. Con varios candidatos abre un popover para elegir.
+- **🔎 buscar en doceacordes** — aparece cuando el emparejado automático no ha
+  encontrado nada. Salta a la pestaña de doceacordes buscando ese título y
+  muestra un aviso; la canción que elijas hereda la sección, la posición y el
+  tono que tenía en el cantoral.
+
+### Importar de doceacordes (🎸)
+Catálogo completo de doceacordes.es. Se puede importar **de una en una** (botón
+📥 de la fila) o **varias a la vez**:
+
+1. Marca las canciones con su checkbox (o **Marcar las visibles**).
+2. Elige una categoría en la barra de lote y pulsa **Aplicar a marcadas** —
+   reparte números libres sin repetir, respetando huecos.
+3. **📥 Importar N marcadas**.
+
+Si al importar un lote hubiera números repetidos en la misma categoría se
+reparten de nuevo automáticamente antes de escribir nada.
+
+`Esc` cierra los previews (doceacordes, LaTeX y cantoral).
+
 ### Reordenar (🔀)
 Elige categoría, arrastra filas, "Aplicar nuevo orden" renombra los archivos
 `01.xxx.cho`, `02.yyy.cho`… con backup previo de la carpeta entera.
@@ -147,6 +171,38 @@ pulsa **"✓ Revisada"** en el editor y se elimina la línea.
 Cada edición / borrado / reordenación deja una copia en
 `songs-backup-edits/<timestamp>/`. La carpeta crece — borra contenido antiguo
 de vez en cuando.
+
+## Rendimiento (por qué va rápido y qué no tocar)
+
+La app iba muy lenta y se arreglaron cuatro cosas. Si vuelve a ir lenta,
+mirar aquí primero:
+
+| Qué | Antes | Ahora |
+| --- | ----- | ----- |
+| `/api/catalog` (se recarga tras cada import) | ~16 s | ~80 ms |
+| Dashboard con datos al abrir la app | ~16 s | ~0,5 s |
+| Preview de una canción de doceacordes | ~2,3 s | ~1,5 s, o instantáneo si ya se pasó el ratón por la fila |
+| Importar 6 canciones de golpe | ~14 s | ~3 s |
+
+1. **`text_width_px()` está memoizado** (`scripts/docx2chordpro.py`). Mide el
+   ancho del texto carácter a carácter con Pillow para colocar los acordes;
+   eran 110.000 llamadas por conversión del docx y se comía 15 de los 16
+   segundos. El espacio de claves es diminuto (pares carácter/tamaño), así que
+   el `lru_cache` lo resuelve. **No quitarlo.**
+2. **`convert_docx_song()` cachea la conversión** por canción, y se invalida
+   cuando cambia el mtime del `.docx`.
+3. **El índice de doceacordes tiene índice invertido por token**, así que el
+   matching difuso sólo puntúa las canciones que comparten alguna palabra en
+   vez de recorrer las 1.700.
+4. **Las descargas van en paralelo**: el `.cho` y el HTML de una canción a la
+   vez, y en un import en lote se calientan todas antes de escribir. Además
+   `/api/doce/prefetch` deja en cache la canción cuando pasas el ratón por su
+   fila, y al arrancar el servidor se precalientan las cachés caras en un hilo
+   aparte.
+
+Los ficheros `.cho` generados son **idénticos** byte a byte a los de antes
+(verificado sobre las 225 canciones del docx): todo esto es cacheo y
+paralelismo, no se ha cambiado ninguna heurística de acordes.
 
 ## Limitaciones conocidas
 

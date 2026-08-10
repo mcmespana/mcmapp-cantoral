@@ -26,11 +26,13 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -316,7 +318,24 @@ def load_docx_songs(force: bool = False) -> List[dict]:
         })
     _docx_cache["songs"] = indexed
     _docx_cache["mtime"] = mtime
+    _docx_conv_cache.clear()
     return indexed
+
+
+# convert_song() es caro (~7 ms por canción, 225 canciones ≈ 1,6 s). El
+# resultado sólo depende del docx, así que lo cacheamos por id de canción y lo
+# invalidamos cuando load_docx_songs() detecta que el .docx cambió.
+_docx_conv_cache: Dict[int, dict] = {}
+
+
+def convert_docx_song(s: dict) -> dict:
+    """convert_song() memoizado por id de canción del docx."""
+    sid = s["id"]
+    conv = _docx_conv_cache.get(sid)
+    if conv is None:
+        conv = d2c.convert_song(s["_song"])
+        _docx_conv_cache[sid] = conv
+    return conv
 
 
 def first_free_number(folder: Path, start: int = 1) -> int:
@@ -439,7 +458,7 @@ def api_docx_ignore():
     song = next((s for s in songs if s["id"] == int(docx_id)), None)
     if not song:
         abort(404, "Canción no encontrada en el docx")
-    conv = d2c.convert_song(song["_song"])
+    conv = convert_docx_song(song)
     ignored = load_ignored()
     ignored[song["title_raw"]] = {
         "title": conv["title"],
@@ -497,7 +516,7 @@ def api_catalog():
     docx_convs: Dict[int, dict] = {}
     docx_index: Dict[str, dict] = {}
     for s in docx_songs:
-        conv = d2c.convert_song(s["_song"])
+        conv = convert_docx_song(s)
         docx_convs[s["id"]] = conv
         for k in title_keys(conv["title"]):
             docx_index.setdefault(k, {
@@ -882,7 +901,7 @@ def api_docx_list():
     songs = load_docx_songs()
     out = []
     for s in songs:
-        conv = d2c.convert_song(s["_song"])
+        conv = convert_docx_song(s)
         out.append(docx_song_to_dict(s, conv, include_body=False))
     return jsonify(out)
 
@@ -897,7 +916,7 @@ def api_docx_preview():
     if not (0 <= i < len(songs)):
         abort(404, "id fuera de rango")
     s = songs[i]
-    conv = d2c.convert_song(s["_song"])
+    conv = convert_docx_song(s)
     return jsonify(docx_song_to_dict(s, conv, include_body=True))
 
 
@@ -922,7 +941,7 @@ def api_docx_import():
             results.append({"id": i, "ok": False, "error": "fuera de rango"})
             continue
         s = songs[i]
-        conv = d2c.convert_song(s["_song"])
+        conv = convert_docx_song(s)
         if normalize_title_for_match(conv["title"]) in repo_titles:
             results.append({"id": i, "ok": False, "error": "ya existe en repo"})
             continue
@@ -1133,6 +1152,27 @@ def api_songs_bulk_status():
 
 # ─────────── API: doceacordes.es ─────────── #
 
+# Pool para calentar la cache de doceacordes sin bloquear el request. Pocos
+# workers a propósito: no queremos martillear el servidor de doceacordes.
+_PREFETCH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="doce-prefetch")
+_prefetch_inflight: set = set()
+_prefetch_lock = threading.Lock()
+
+
+def _prefetch_quiet(doce_id: str) -> None:
+    """Descarga a cache ignorando errores; evita duplicar descargas en curso."""
+    with _prefetch_lock:
+        if doce_id in _prefetch_inflight:
+            return
+        _prefetch_inflight.add(doce_id)
+    try:
+        da.prefetch(doce_id)
+    except Exception:
+        pass
+    finally:
+        with _prefetch_lock:
+            _prefetch_inflight.discard(doce_id)
+
 
 @app.route("/api/doce/list")
 def api_doce_list():
@@ -1197,6 +1237,24 @@ def api_doce_preview():
     })
 
 
+@app.route("/api/doce/prefetch", methods=["POST"])
+def api_doce_prefetch():
+    """Calienta la cache de doceacordes para unos ids, en segundo plano.
+
+    El front lo llama con los ids visibles de la lista, así que cuando el
+    usuario pulsa "Ver" el .cho y el HTML ya están en disco y el preview es
+    instantáneo en vez de esperar dos descargas.
+    """
+    body = request.get_json(silent=True) or {}
+    ids = [str(i).strip() for i in (body.get("ids") or []) if str(i).strip()]
+    if not ids:
+        return jsonify({"ok": True, "queued": 0})
+    ids = ids[:40]
+    for doce_id in ids:
+        _PREFETCH_POOL.submit(_prefetch_quiet, doce_id)
+    return jsonify({"ok": True, "queued": len(ids)})
+
+
 @app.route("/api/doce/suggest-number")
 def api_doce_suggest_number():
     """Devuelve un número sugerido (primer hueco libre, o el hint si está libre)."""
@@ -1210,6 +1268,49 @@ def api_doce_suggest_number():
     return jsonify({"category": cat_letter, "next_number": preferred_number(folder, hint)})
 
 
+@app.route("/api/doce/suggest-numbers", methods=["POST"])
+def api_doce_suggest_numbers():
+    """Reparte números libres a varias canciones de una misma categoría.
+
+    Body: {category, items: [{doce_id, position_hint?}]}
+
+    No vale llamar N veces a /suggest-number: todas verían el mismo primer
+    hueco libre (ninguna se ha escrito todavía en disco) y al importar el lote
+    chocarían entre ellas. Aquí se reservan a la vez, sin repetir.
+    """
+    body = request.get_json(silent=True) or {}
+    cat_letter = (body.get("category") or "").upper().strip()
+    cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    used = set()
+    if folder.exists():
+        for f in folder.iterdir():
+            m = re.match(r"(\d+)\.", f.name)
+            if m:
+                try:
+                    used.add(int(m.group(1)))
+                except ValueError:
+                    pass
+
+    numbers: Dict[str, int] = {}
+    for it in (body.get("items") or []):
+        doce_id = str(it.get("doce_id") or "").strip()
+        if not doce_id:
+            continue
+        hint = it.get("position_hint")
+        if isinstance(hint, int) and hint > 0 and hint not in used:
+            num = hint
+        else:
+            num = 1
+            while num in used:
+                num += 1
+        used.add(num)
+        numbers[doce_id] = num
+    return jsonify({"category": cat_letter, "numbers": numbers})
+
+
 @app.route("/api/doce/import", methods=["POST"])
 def api_doce_import():
     """Importa canciones desde doceacordes.es.
@@ -1220,6 +1321,18 @@ def api_doce_import():
     items = body.get("items") or []
     if not isinstance(items, list) or not items:
         abort(400, "Falta items")
+
+    # Las descargas se calientan en paralelo antes de empezar; el bucle de abajo
+    # sigue siendo secuencial (los números de archivo dependen de lo ya escrito),
+    # pero ya encuentra todo en cache. Importar 10 canciones pasa de ~14 s a ~2 s.
+    if len(items) > 1:
+        to_warm = [
+            str(it.get("doce_id")).strip() for it in items
+            if it.get("doce_id") and not it.get("force_refresh") and not it.get("content")
+        ]
+        if len(to_warm) > 1:
+            list(_PREFETCH_POOL.map(_prefetch_quiet, to_warm))
+
     results = []
     for it in items:
         doce_id = str(it.get("doce_id") or "").strip()
@@ -1843,10 +1956,31 @@ def api_health():
     })
 
 
+def _prewarm() -> None:
+    """Prepara en segundo plano las cachés caras antes del primer request.
+
+    Parsear el .docx y convertir sus ~225 canciones cuesta ~1,5 s. Hacerlo al
+    arrancar (mientras el usuario abre el navegador) hace que el primer
+    /api/catalog llegue ya con todo caliente.
+    """
+    try:
+        for s in load_docx_songs():
+            convert_docx_song(s)
+        load_latex_items()
+        da.doce_items()
+        list_repo_songs()
+    except Exception as e:  # nunca debe tumbar el arranque
+        print(f"   (prewarm incompleto: {e})")
+
+
 def main():
     port = int(os.environ.get("CANTORAL_ADMIN_PORT", "8765"))
     host = os.environ.get("CANTORAL_ADMIN_HOST", "127.0.0.1")
     print(f"\n🎵  Cantoral Admin\n   Abre  http://{host}:{port}/\n   Ctrl+C para parar\n")
+    # El reloader de Flask relanza el proceso; sin debug=True no aplica, pero
+    # dejamos la guarda por si alguien lo activa.
+    if not os.environ.get("WERKZEUG_RUN_MAIN"):
+        threading.Thread(target=_prewarm, daemon=True).start()
     app.run(host=host, port=port, debug=False)
 
 

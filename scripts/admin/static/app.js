@@ -1,6 +1,14 @@
 // Cantoral Admin - Alpine.js single-page app
 // Phase 3a/3b: catalog + raw editor + import. Visual drag&drop comes in 3c.
 
+// Memo del filtro de doceacordes. Vive fuera del objeto Alpine a propósito: si
+// fuese estado reactivo, escribirlo desde filteredDoce() (que se llama durante
+// el render) dispararía otro render y entraríamos en bucle.
+let _doceFilterMemo = null;
+// Ids ya enviados a /api/doce/prefetch en esta sesión: evita repetir la
+// petición cada vez que el ratón vuelve a pasar por la misma fila.
+const _docePrefetched = new Set();
+
 function app() {
   return {
     // ─────────── State ───────────
@@ -74,6 +82,12 @@ function app() {
     doceKeyConflict: null,    // { cantoralKey, doceKey } cuando los tonos difieren
     doceKeyResolved: false,   // true cuando el usuario eligió un tono
     doceCandidatesPopover: null,  // {missingId, anchor, candidates, sectionLetter}
+    selectedDoce: new Set(),      // ids marcados para importar en lote
+    doceBulkCategory: '',         // categoría a aplicar a toda la selección
+    doceBatchProgress: null,      // {done, total} mientras importa en lote
+    // Canción del cantoral que estamos emparejando a mano en doceacordes:
+    // {title, sectionLetter, positionHint, key}
+    doceManualSearchFor: null,
     moveModal: null,              // {path, title, fromLetter, targetLetter, number, suggested, saving}
 
     // Reorder
@@ -289,6 +303,48 @@ function app() {
       const ids = this.filteredMissing().map(m => m.docx_id);
       this.selectedImports = new Set([...this.selectedImports, ...ids]);
     },
+    // Importar una sola del cantoral, sin pasar por la selección. Es el gesto
+    // más habitual ("esta, tal y como viene") y antes obligaba a marcar el
+    // checkbox y subir a la barra de acciones.
+    async importOneDocx(docxId) {
+      this.selectedImports = new Set([docxId]);
+      await this.doImport();
+    },
+    // Para una canción del cantoral que el matching difuso no ha emparejado:
+    // abrir doceacordes buscando su título a mano, conservando la sección y la
+    // posición del cantoral como sugerencia.
+    async searchDoceFor(missing) {
+      this.view = 'doce';
+      await this.loadDoce();
+      this.doceSearch = missing.title;
+      this.doceMatchFilter = '';
+      this.docePage = 0;
+      this.doceManualSearchFor = {
+        title: missing.title,
+        sectionLetter: missing.section_letter,
+        positionHint: missing.position_in_section,
+        key: missing.key,
+      };
+      this.prefetchDoceVisible();
+    },
+    // Aplica a una canción de doceacordes los datos del cantoral que traíamos
+    // pendientes (sección, posición, tono) al emparejarla a mano.
+    adoptManualSearchTarget(doceId) {
+      const t = this.doceManualSearchFor;
+      if (!t) return;
+      // Se consume: sólo debe aplicarse a la canción que el usuario elija.
+      this.doceManualSearchFor = null;
+      if (t.positionHint) {
+        this.docePositionHint = { ...this.docePositionHint, [doceId]: t.positionHint };
+      }
+      if (t.key) {
+        this.doceCantoralKey = { ...this.doceCantoralKey, [doceId]: t.key };
+      }
+      if (t.sectionLetter && !this.doceCategorySel[doceId]) {
+        this.doceCategorySel = { ...this.doceCategorySel, [doceId]: t.sectionLetter };
+        return this.onDoceCategoryChange(doceId);
+      }
+    },
     async doImport() {
       if (this.selectedImports.size === 0) return;
       this.importing = true;
@@ -487,31 +543,59 @@ function app() {
         const r = await fetch('/api/doce/list');
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const d = await r.json();
-        this.doceItems = d.items || [];
+        // Precalculamos la clave de búsqueda: son ~1700 canciones y el filtro
+        // se reevalúa en cada tecla, normalizar ahí dentro costaba una barbaridad.
+        this.doceItems = (d.items || []).map(it => ({
+          ...it,
+          _search: this.normalizeSearch(it.title + ' ' + (it.artist || '')),
+        }));
+        _doceFilterMemo = null;
       } catch (e) {
         alert('No pude cargar el índice de doceacordes: ' + e.message);
       } finally {
         this.doceLoading = false;
       }
     },
+    // Alpine reevalúa este método varias veces por render (x-for, contador,
+    // paginación…). Con 1700 canciones eso se notaba al teclear, así que
+    // memoizamos por (búsqueda, filtro, lista cargada).
     filteredDoce() {
+      const key = this.doceMatchFilter + '\n' + this.doceSearch + '\n' + this.doceItems.length;
+      if (_doceFilterMemo && _doceFilterMemo.key === key) return _doceFilterMemo.list;
+
       let list = this.doceItems;
       if (this.doceMatchFilter === 'new') list = list.filter(d => !d.in_repo);
       else if (this.doceMatchFilter === 'match') list = list.filter(d => d.in_repo);
       if (this.doceSearch) {
         const q = this.normalizeSearch(this.doceSearch);
-        list = list.filter(d =>
-          this.normalizeSearch(d.title).includes(q) ||
-          this.normalizeSearch(d.artist).includes(q) ||
-          d.id.includes(q)
-        );
+        list = list.filter(d => d._search.includes(q) || d.id.includes(q));
       }
+      _doceFilterMemo = { key, list };
       return list;
     },
     filteredDocePaged() {
       const list = this.filteredDoce();
       const start = this.docePage * this.docePageSize;
       return list.slice(start, start + this.docePageSize);
+    },
+    // Pide al backend que deje en cache el .cho + HTML de unas canciones. Sin
+    // esto, abrir un preview son dos descargas a doceacordes (~1,5 s); con la
+    // cache caliente es instantáneo.
+    prefetchDoce(ids) {
+      const pending = (Array.isArray(ids) ? ids : [ids])
+        .filter(id => id && !_docePrefetched.has(id));
+      if (!pending.length) return;
+      pending.forEach(id => _docePrefetched.add(id));
+      fetch('/api/doce/prefetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: pending }),
+      }).catch(() => pending.forEach(id => _docePrefetched.delete(id)));
+    },
+    // Calienta sólo la cabecera de la página visible: prefetchear las 50 filas
+    // sería un centenar de peticiones a doceacordes por cada paginada.
+    prefetchDoceVisible() {
+      this.prefetchDoce(this.filteredDocePaged().slice(0, 6).map(d => d.id));
     },
     async onDoceCategoryChange(doceId) {
       const cat = this.doceCategorySel[doceId];
@@ -532,6 +616,9 @@ function app() {
       } catch (e) { /* silencio */ }
     },
     async previewDoce(doceId, force = false) {
+      // Si venimos de "buscar en doceacordes" para una del cantoral, la primera
+      // que abrimos hereda su sección/posición/tono.
+      await this.adoptManualSearchTarget(doceId);
       try {
         const cat = this.doceCategorySel[doceId] || '';
         const hint = this.docePositionHint[doceId];
@@ -611,35 +698,124 @@ function app() {
       this.doceKeyConflict = null;
       this.doceKeyResolved = false;
     },
+    doceImportItem(doceId, overrideContent) {
+      return {
+        doce_id: doceId,
+        category_letter: this.doceCategorySel[doceId],
+        number: this.doceNumberSel[doceId] || undefined,
+        position_hint: this.docePositionHint[doceId] || undefined,
+        include_meta: this.doceIncludeMeta,
+        content: overrideContent || undefined,
+      };
+    },
     async importOneDoce(doceId, overrideContent) {
-      const cat = this.doceCategorySel[doceId];
-      if (!cat) { alert('Elige categoría'); return; }
-      this.doceImporting = true;
+      await this.adoptManualSearchTarget(doceId);
+      if (!this.doceCategorySel[doceId]) { alert('Elige categoría'); return; }
+      await this.runDoceImport([this.doceImportItem(doceId, overrideContent)]);
+    },
+    // ─────────── Import en lote (varias canciones marcadas) ───────────
+    toggleDoce(id) {
+      const s = new Set(this.selectedDoce);
+      s.has(id) ? s.delete(id) : s.add(id);
+      this.selectedDoce = s;
+    },
+    selectAllDoceVisible() {
+      const s = new Set(this.selectedDoce);
+      this.filteredDocePaged().forEach(d => s.add(d.id));
+      this.selectedDoce = s;
+      this.prefetchDoce([...s].slice(0, 40));
+    },
+    // Cuántas de las marcadas les falta categoría: sin ella no se pueden importar.
+    doceSelectedWithoutCategory() {
+      return [...this.selectedDoce].filter(id => !this.doceCategorySel[id]);
+    },
+    // Aplica una categoría de golpe a todas las marcadas y reparte números.
+    async applyDoceBulkCategory() {
+      const cat = this.doceBulkCategory;
+      if (!cat) return;
+      const ids = [...this.selectedDoce];
+      const sel = { ...this.doceCategorySel };
+      ids.forEach(id => { sel[id] = cat; });
+      this.doceCategorySel = sel;
+      // Un solo request para todas: si pidiéramos el número una a una, todas
+      // recibirían el mismo primer hueco libre y al importar el lote chocarían.
       try {
-        const item = {
-          doce_id: doceId,
-          category_letter: cat,
-          number: this.doceNumberSel[doceId] || undefined,
-          position_hint: this.docePositionHint[doceId] || undefined,
-          include_meta: this.doceIncludeMeta,
-          content: overrideContent || undefined,
-        };
+        const r = await fetch('/api/doce/suggest-numbers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: cat,
+            items: ids.map(id => ({ doce_id: id, position_hint: this.docePositionHint[id] })),
+          }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const { numbers } = await r.json();
+        this.doceSuggestedNumber = { ...this.doceSuggestedNumber, ...numbers };
+        this.doceNumberSel = { ...this.doceNumberSel, ...numbers };
+      } catch (e) {
+        alert('No pude repartir los números: ' + e.message);
+      }
+    },
+    async importSelectedDoce() {
+      const ids = [...this.selectedDoce];
+      if (!ids.length) return;
+      const sinCat = this.doceSelectedWithoutCategory();
+      if (sinCat.length) {
+        alert(`${sinCat.length} de las ${ids.length} canciones marcadas no tienen categoría.\n` +
+              'Elige una arriba y pulsa "Aplicar a marcadas", o quítalas de la selección.');
+        return;
+      }
+      // Dos canciones con el mismo nº en la misma categoría se pisarían (la
+      // segunda fallaría con "ya existe"). Puede pasar si se han ido eligiendo
+      // categorías fila a fila, porque cada una vio el mismo hueco libre.
+      await this.fixDoceNumberClashes(ids);
+      if (!confirm(`¿Importar ${ids.length} canciones de doceacordes?`)) return;
+      await this.runDoceImport(ids.map(id => this.doceImportItem(id)));
+      this.selectedDoce = new Set();
+    },
+    // Reparte de nuevo los números de las categorías donde haya repetidos.
+    async fixDoceNumberClashes(ids) {
+      const byCat = {};
+      for (const id of ids) {
+        const cat = this.doceCategorySel[id];
+        if (cat) (byCat[cat] = byCat[cat] || []).push(id);
+      }
+      for (const [cat, catIds] of Object.entries(byCat)) {
+        const nums = catIds.map(id => this.doceNumberSel[id]).filter(Boolean);
+        if (new Set(nums).size === nums.length) continue;  // sin repetidos
+        this.doceBulkCategory = cat;
+        const prevSelection = this.selectedDoce;
+        this.selectedDoce = new Set(catIds);
+        await this.applyDoceBulkCategory();
+        this.selectedDoce = prevSelection;
+      }
+    },
+    // Punto único de importación: una o muchas. El backend ya acepta la lista
+    // entera, así que es un solo POST.
+    async runDoceImport(items) {
+      if (!items.length) return;
+      this.doceImporting = true;
+      this.doceBatchProgress = items.length > 1 ? { done: 0, total: items.length } : null;
+      try {
         const r = await fetch('/api/doce/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: [item] }),
+          body: JSON.stringify({ items }),
         });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
         const json = await r.json();
         const newResults = json.results || [];
         this.doceResults = [...newResults, ...this.doceResults].slice(0, 30);
-        await this.loadDoce(true);
-        await this.loadCatalog();
-        const paths = newResults.filter(r => r.ok && r.path).map(r => r.path);
+        if (this.doceBatchProgress) this.doceBatchProgress.done = newResults.length;
+        // En paralelo: son dos lecturas independientes y en serie se notaba.
+        await Promise.all([this.loadDoce(true), this.loadCatalog()]);
+        const paths = newResults.filter(x => x.ok && x.path).map(x => x.path);
         this.enqueueAndOpen(paths, 'de doceacordes');
       } catch (e) {
         alert('Error importando: ' + e.message);
       } finally {
         this.doceImporting = false;
+        this.doceBatchProgress = null;
       }
     },
     onDoceBadgeClick(missing, event) {

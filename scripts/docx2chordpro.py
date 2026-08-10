@@ -37,6 +37,7 @@ import re
 import sys
 import unicodedata
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
@@ -172,10 +173,21 @@ def get_font(sz_halfpoints: int) -> "ImageFont.ImageFont":
     return _font_cache[px]
 
 
+@lru_cache(maxsize=100_000)
+def _measure_px(text: str, sz_halfpoints: int) -> float:
+    return float(get_font(sz_halfpoints).getlength(text))
+
+
 def text_width_px(text: str, sz_halfpoints: int) -> float:
+    """Ancho en píxeles del texto con la fuente del cantoral.
+
+    Memoizado: `parse_lyric_line` mide carácter a carácter, así que el mismo
+    puñado de pares (carácter, tamaño) se repite decenas de miles de veces por
+    conversión. Sin cache, medir el docx completo se va a ~16 s.
+    """
     if not text:
         return 0.0
-    return float(get_font(sz_halfpoints).getlength(text))
+    return _measure_px(text, sz_halfpoints)
 
 
 def dxa_to_px(dxa: float) -> float:

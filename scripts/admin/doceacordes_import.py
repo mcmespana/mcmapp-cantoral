@@ -20,6 +20,7 @@ import re
 import unicodedata
 import urllib.request
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -478,20 +479,46 @@ def load_doce_index() -> List[dict]:
     if not DOCE_INDEX_JSON.exists():
         return []
     data = json.loads(DOCE_INDEX_JSON.read_text(encoding="utf-8"))
-    for entry in data:
+    for i, entry in enumerate(data):
+        entry["_idx"] = i
         entry["_norm_title"] = _normalize(entry.get("title", ""))
         entry["_norm_artist"] = _normalize(entry.get("artist", ""))
         entry["_tok_title"] = _tokens(entry.get("title", ""))
+        entry["_tok_artist"] = _tokens(entry.get("artist", ""))
     return data
 
 
-_doce_cache: Dict[str, object] = {"items": None}
+_doce_cache: Dict[str, object] = {"items": None, "by_token": None, "by_id": None}
 
 
 def doce_items() -> List[dict]:
     if _doce_cache["items"] is None:
         _doce_cache["items"] = load_doce_index()
     return _doce_cache["items"]  # type: ignore
+
+
+def _doce_by_token() -> Dict[str, List[dict]]:
+    """Índice invertido token → entradas que lo contienen en el título.
+
+    El índice tiene ~1700 canciones y el catálogo pide candidatos para cada
+    canción del repo y cada una que falta (~250 consultas). Recorrer la lista
+    entera en cada consulta es el cuello de botella; con el índice invertido
+    sólo puntuamos las entradas que comparten al menos un token, que son unas
+    pocas decenas.
+    """
+    if _doce_cache["by_token"] is None:
+        idx: Dict[str, List[dict]] = {}
+        for entry in doce_items():
+            for tok in entry["_tok_title"]:
+                idx.setdefault(tok, []).append(entry)
+        _doce_cache["by_token"] = idx
+    return _doce_cache["by_token"]  # type: ignore
+
+
+def _doce_by_id() -> Dict[str, dict]:
+    if _doce_cache["by_id"] is None:
+        _doce_cache["by_id"] = {str(e.get("id")): e for e in doce_items()}
+    return _doce_cache["by_id"]  # type: ignore
 
 
 def find_candidates(title: str, artist: str = "", top: int = 3) -> List[dict]:
@@ -508,15 +535,20 @@ def find_candidates(title: str, artist: str = "", top: int = 3) -> List[dict]:
         return []
     norm_a = _normalize(artist)
     toks_a = _tokens(artist)
+    # Sólo las entradas que comparten algún token pueden pasar el umbral: las
+    # que no comparten ninguno se descartaban igual con `if not inter: continue`.
+    by_token = _doce_by_token()
+    candidates: Dict[int, dict] = {}
+    for tok in toks_t:
+        for entry in by_token.get(tok, ()):
+            candidates[entry["_idx"]] = entry
     out: List[Tuple[float, dict, str]] = []
-    for entry in doce_items():
+    for entry in candidates.values():
         # Score base por título
         if entry["_norm_title"] == norm_t:
             base = 100.0
         else:
             inter = toks_t & entry["_tok_title"]
-            if not inter:
-                continue
             union = toks_t | entry["_tok_title"]
             base = 100.0 * len(inter) / len(union)
         # Penaliza si tamaños muy distintos
@@ -528,16 +560,17 @@ def find_candidates(title: str, artist: str = "", top: int = 3) -> List[dict]:
             if norm_a == entry["_norm_artist"]:
                 artist_match = "perfect"
                 base *= 2.0
-            else:
-                entry_toks_a = _tokens(entry["artist"])
-                if toks_a & entry_toks_a:
-                    artist_match = "partial"
-                    base *= 1.3
+            elif toks_a & entry["_tok_artist"]:
+                artist_match = "partial"
+                base *= 1.3
         # Umbral mínimo
         if base < 30:
             continue
         out.append((base, entry, artist_match))
-    out.sort(key=lambda x: -x[0])
+    # Desempate por posición en el índice: el orden del índice invertido no es
+    # el del JSON, así que sin esto los empates de score salían en orden
+    # arbitrario y el "top 3" bailaba entre llamadas.
+    out.sort(key=lambda x: (-x[0], x[1]["_idx"]))
     result = []
     for score, entry, am in out[:top]:
         e = {k: v for k, v in entry.items() if not k.startswith("_")}
@@ -558,11 +591,10 @@ def find_best_id(title: str, artist: str = "") -> Optional[str]:
 
 
 def get_entry(doce_id: str) -> Optional[dict]:
-    doce_id = str(doce_id)
-    for entry in doce_items():
-        if str(entry.get("id")) == doce_id:
-            return {k: v for k, v in entry.items() if not k.startswith("_")}
-    return None
+    entry = _doce_by_id().get(str(doce_id))
+    if entry is None:
+        return None
+    return {k: v for k, v in entry.items() if not k.startswith("_")}
 
 
 # ─────────── Render final ─────────── #
@@ -575,12 +607,25 @@ def fetch_and_adapt(doce_id: str, use_cache: bool = True,
     (ritmo, album, video, youtube_links, etc.) y los inserta como custom
     directives en el header del .cho resultante.
     """
-    raw = fetch_chordpro(doce_id, use_cache=use_cache)
-    adapted = adapt_chordpro(raw)
     if include_meta:
+        # El .cho y el HTML son dos URLs independientes: descargándolas en
+        # paralelo el preview tarda una petición en vez de dos (~3 s → ~1,5 s).
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fut_cho = ex.submit(fetch_chordpro, doce_id, use_cache)
+            fut_html = ex.submit(fetch_html, doce_id, use_cache)
+            raw = fut_cho.result()
+            try:
+                html = fut_html.result()
+            except Exception:
+                html = None
+    else:
+        raw = fetch_chordpro(doce_id, use_cache=use_cache)
+        html = None
+
+    adapted = adapt_chordpro(raw)
+    if html is not None:
         try:
-            extra = fetch_extra_meta(doce_id, use_cache=use_cache)
-            meta_lines = render_meta_directives(extra)
+            meta_lines = render_meta_directives(extract_metadata_from_html(html))
             if meta_lines:
                 adapted = inject_meta_lines(adapted, meta_lines)
         except Exception:
@@ -588,6 +633,21 @@ def fetch_and_adapt(doce_id: str, use_cache: bool = True,
             pass
     meta = extract_meta_from_cho(adapted)
     return adapted, meta
+
+
+def prefetch(doce_id: str) -> bool:
+    """Deja el .cho y el HTML de una canción en cache. True si ya está todo."""
+    doce_id = str(doce_id)
+    if _cache_path(doce_id).exists() and _cache_html_path(doce_id).exists():
+        return True
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futs = [ex.submit(fetch_chordpro, doce_id), ex.submit(fetch_html, doce_id)]
+        for f in futs:
+            try:
+                f.result()
+            except Exception:
+                return False
+    return True
 
 
 def inject_meta_lines(content: str, meta_lines: List[str]) -> str:
