@@ -413,8 +413,14 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 /* ─────── Doceacordes preview: chordpro grande, datos a la derecha ─────── */
 .editor-modal .editor-body { grid-template-columns: 280px 1fr; }
 .editor-modal .editor-body.single { grid-template-columns: 1fr; }
-/* Modal preview doceacordes: 2 columnas (chordpro ancho + meta) sin editor-meta */
-.doce-preview-body { display: grid; grid-template-columns: 1fr 1fr; }
+/* Modal preview doceacordes: la canción manda (2/3) y los datos acompañan (1/3).
+   OJO con la especificidad: `.editor-modal .editor-body` (2 clases) ganaba a un
+   `.doce-preview-body` suelto (1 clase), así que la canción acababa metida en
+   los 280 px de la columna izquierda y los metadatos se comían el resto. Hay
+   que igualar o superar esa especificidad para que esto tenga efecto. */
+.editor-modal .editor-body.doce-preview-body {
+  display: grid; grid-template-columns: 2fr 1fr;
+}
 .doce-preview-body .chordpro-pane { padding: 16px; overflow: auto; background: var(--bg); }
 .doce-preview-body .chordpro-pane pre {
   margin: 0; font-family: 'SF Mono', Menlo, Consolas, monospace;
@@ -425,6 +431,65 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
   border-left: 1px solid var(--border);
 }
 .doce-preview-body .chordpro-pane .preview-render { font-size: 15px; }
+
+/* ─────── Selector visual de número de canción ─────── */
+/* Se abre DESDE otros modales (mover de categoría, nueva canción), así que tiene
+   que quedar por encima de ellos: todos los .editor-overlay comparten z-index
+   100 y ganaba el último del DOM, dejando el selector inaccesible. */
+.editor-overlay.overlay-top { z-index: 200; }
+.editor-modal.numpick-modal { max-width: 780px; }
+.numpick-legend {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;
+}
+.numpick-chip {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border-strong);
+}
+.numpick-chip.np-free { background: var(--bg-2); color: var(--fg-2); }
+.numpick-chip.np-reserved { background: rgba(202, 138, 4, 0.16); color: #a16207; border-color: rgba(202,138,4,0.5); }
+.numpick-chip.np-used { background: var(--bg-3); color: var(--fg-3); text-decoration: line-through; }
+.numpick-chip.np-sel { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.theme-dark .numpick-chip.np-reserved { color: #fcd34d; }
+
+.numpick-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 5px; margin-top: 12px;
+}
+.numpick-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 2px; border: 1px solid var(--border-strong); border-radius: 5px;
+  background: var(--bg-2); color: var(--fg); cursor: pointer; font: inherit;
+  min-height: 40px; overflow: hidden;
+}
+/* `:not(.np-sel)`: sin él el hover (más específico por la pseudo-clase) pintaba
+   el fondo por encima del azul de "elegido" y la celda parecía no seleccionada. */
+.numpick-cell:hover:not(:disabled):not(.np-sel) { border-color: var(--accent); background: var(--bg-3); }
+.numpick-cell .np-num { font-size: 14px; font-weight: 700; line-height: 1; }
+/* El título sólo es una pista: se recorta a una línea para que la rejilla no baile */
+.numpick-cell .np-title {
+  font-size: 8px; line-height: 1.1; color: var(--fg-3); max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.numpick-cell.np-used {
+  background: var(--bg-3); color: var(--fg-3); cursor: not-allowed; opacity: 0.75;
+}
+.numpick-cell.np-used .np-num { text-decoration: line-through; }
+.numpick-cell.np-reserved {
+  background: rgba(202, 138, 4, 0.14); border-color: rgba(202, 138, 4, 0.5); border-style: dashed;
+}
+.numpick-cell.np-reserved .np-num { color: #a16207; }
+.theme-dark .numpick-cell.np-reserved .np-num { color: #fcd34d; }
+.numpick-cell.np-sel {
+  background: var(--accent); border-color: var(--accent); border-style: solid;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+}
+.numpick-cell.np-sel .np-num, .numpick-cell.np-sel .np-title { color: var(--accent-fg); }
+
+/* Botoncito que abre el selector, junto a un input de número */
+.numpick-open {
+  padding: 3px 6px; border: 1px solid var(--border-strong); border-radius: 4px;
+  background: var(--bg-3); color: var(--fg); cursor: pointer; font-size: 12px; line-height: 1;
+}
+.numpick-open:hover { border-color: var(--accent); }
 
 /* ─────── Conflicto de tono ─────── */
 .key-conflict {
@@ -585,11 +650,55 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .chuleta-key { background: var(--bg-2); border: 1px solid var(--border-strong); border-radius: 3px; padding: 0 4px; font-size: 10px; white-space: nowrap; color: var(--fg); font-family: inherit; flex-shrink: 0; }
 
 .editor-pane { flex: 1; padding: 16px; overflow: auto; }
+/* ─────── Raw con resaltado ───────
+   El <pre> y el <textarea> se solapan pixel a pixel. TODA propiedad que afecte
+   a la maquetación del texto tiene que ser idéntica en los dos (fuente, tamaño,
+   interlineado, padding, borde, y el modo de salto de línea). Por eso el
+   resaltado sólo cambia color y grosor, nunca font-size. */
+.editor-pane.raw { display: flex; flex-direction: column; min-height: 0; }
+.raw-wrap { position: relative; flex: 1; min-height: 320px; }
+/* `.editor-pane pre` (más específico que `.raw-highlight` a secas) le colaba un
+   font-family: monospace genérico y la capa dejaba de cuadrar con el textarea
+   en cuanto la fuente real tenía otras métricas. De ahí el selector largo. */
+.editor-pane.raw textarea,
+.editor-pane.raw pre.raw-highlight {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; margin: 0; resize: none;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.6;
+  border: 1px solid transparent; border-radius: 4px; padding: 12px;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
+  tab-size: 4;
+}
+.editor-pane.raw pre.raw-highlight {
+  border-color: var(--border); background: var(--bg-2);
+  overflow: auto; pointer-events: none; color: var(--fg);
+}
+.editor-pane.raw pre.raw-highlight code {
+  font: inherit; background: none; padding: 0; white-space: inherit;
+}
 .editor-pane.raw textarea {
-  width: 100%; height: 100%; min-height: 400px; resize: none;
-  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; line-height: 1.6;
-  border: 1px solid var(--border); border-radius: 4px; padding: 12px;
-  background: var(--bg-2); color: var(--fg);
+  /* Texto invisible: lo que se lee es el <pre> de debajo. El caret sí se pinta. */
+  color: transparent; background: transparent; caret-color: var(--accent);
+  overflow: auto; z-index: 1;
+}
+.editor-pane.raw textarea::selection { background: rgba(37, 99, 235, 0.28); }
+.editor-pane.raw textarea:focus { outline: none; border-color: var(--accent); }
+
+/* Colores del resaltado */
+.hl-directive { color: var(--fg-3); }
+.theme-dark .hl-directive { color: #8b95a5; }
+.hl-comment { color: var(--todo); font-weight: 600; }
+.hl-arr { color: #e15c62; font-weight: 600; }
+.hl-chorus { color: var(--warn); font-weight: 700; }
+.hl-chord { color: var(--accent); font-weight: 700; }
+.theme-dark .hl-chord { color: #7dd3fc; }
+.theme-dark .hl-chorus { color: #fcd34d; }
+.theme-dark .hl-comment { color: #fdba74; }
+
+.raw-legend {
+  display: flex; gap: 14px; flex-wrap: wrap; padding: 6px 4px 0;
+  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11px;
 }
 .editor-pane pre { white-space: pre-wrap; font-family: monospace; font-size: 13px; }
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
@@ -605,6 +714,32 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .visual-toolbar .sel-clear { font-size: 11px; color: var(--fg-3); cursor: pointer; margin-left: auto; padding: 0 6px; }
 .visual-toolbar .sel-clear:hover { color: var(--danger); text-decoration: underline; }
 .visual-toolbar .help-mini { background: transparent; border: none; font-size: 14px; cursor: pointer; margin-left: auto; }
+/* Grupos con etiqueta: la barra tiene muchos botones y sin agrupar no se
+   entendía qué actuaba sobre la selección y qué no. */
+.visual-toolbar .tb-group {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 5px 2px 4px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg-2);
+}
+.visual-toolbar .tb-label {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--fg-3); font-weight: 700; margin-right: 2px;
+}
+/* Grupo que necesita selección y no la hay: se atenúa entero, así se ve de un
+   vistazo que primero hay que marcar líneas. */
+.visual-toolbar .tb-group.tb-off { opacity: 0.5; }
+.visual-toolbar .danger-mini:not(:disabled) { color: var(--danger); border-color: rgba(220, 38, 38, 0.4); }
+.visual-toolbar .danger-mini:not(:disabled):hover { background: rgba(220, 38, 38, 0.12); }
+
+/* Vista compacta del documento visual: quita aire sin tocar la métrica de la
+   fuente (los acordes se recolocan midiendo el DOM tras el toggle). */
+.visual-doc.dense { padding: 10px; }
+.visual-doc.dense .ed-line.ed-lyric { padding-top: 15px; padding-bottom: 0; }
+.visual-doc.dense .ed-lyric-row { line-height: 1.12; }
+.visual-doc.dense .ed-line.ed-blank { height: 5px; }
+.visual-doc.dense .ed-marker { margin: 2px 0 1px 28px; padding-top: 0; padding-bottom: 0; }
+.visual-doc.dense .ed-line.ed-directive .ed-meta-line,
+.visual-doc.dense .ed-line.ed-comment .ed-meta-line { padding: 0 0 0 28px; }
 
 .visual-add-hint { background: rgba(22, 163, 74, 0.12); color: var(--ok); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 6px; }
 

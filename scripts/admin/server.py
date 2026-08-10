@@ -355,16 +355,80 @@ def first_free_number(folder: Path, start: int = 1) -> int:
     return n
 
 
-def preferred_number(folder: Path, hint: Optional[int] = None) -> int:
-    """Si el número 'hint' está libre, lo usa. Si no, primer hueco libre desde 1."""
-    if isinstance(hint, int) and hint > 0:
-        if not folder.exists():
-            return hint
-        used = {int(m.group(1)) for f in folder.iterdir()
-                if (m := re.match(r"(\d+)\.", f.name))}
-        if hint not in used:
-            return hint
-    return first_free_number(folder)
+def used_numbers(folder: Path) -> Dict[int, str]:
+    """{número: nombre de archivo} de los slots ocupados de una carpeta."""
+    out: Dict[int, str] = {}
+    if folder.exists():
+        for f in sorted(folder.iterdir()):
+            m = re.match(r"(\d+)\.", f.name)
+            if m:
+                try:
+                    out.setdefault(int(m.group(1)), f.name)
+                except ValueError:
+                    pass
+    return out
+
+
+def preferred_number(folder: Path, hint: Optional[int] = None,
+                     reserved: Optional[set] = None) -> int:
+    """Si el número 'hint' está libre, lo usa. Si no, primer hueco libre desde 1.
+
+    `reserved` son números que están libres en disco pero "apalabrados" por
+    canciones del docx que aún no se han importado. Se saltan al buscar hueco
+    para que una canción nueva no le robe el sitio a una del cantoral, pero NO
+    bloquean un `hint` explícito (ahí el hint suele ser justo esa canción del
+    docx reclamando su número).
+    """
+    used = used_numbers(folder)
+    if isinstance(hint, int) and hint > 0 and hint not in used:
+        return hint
+    n = 1
+    while n in used or (reserved and n in reserved):
+        n += 1
+    return n
+
+
+def docx_pending_by_section() -> Dict[str, Dict[int, str]]:
+    """{letra: {posición: título}} de canciones del docx que aún NO están en repo.
+
+    Sirve para reservar su número: si quedan 20 canciones por integrar de una
+    categoría, una canción nueva no debería colarse en el hueco de ninguna.
+    """
+    docx_songs = load_docx_songs()
+    repo_songs = list_repo_songs()
+    convs: Dict[int, dict] = {}
+    docx_index: Dict[str, dict] = {}
+    for s in docx_songs:
+        conv = convert_docx_song(s)
+        convs[s["id"]] = conv
+        for k in title_keys(conv["title"]):
+            docx_index.setdefault(k, {"id": s["id"]})
+    matched = set()
+    for r in repo_songs:
+        m = best_match(title_keys(r["title"]), docx_index)
+        if m:
+            matched.add(m["id"])
+    ignored = load_ignored()
+    out: Dict[str, Dict[int, str]] = {}
+    for s in docx_songs:
+        if s["id"] in matched or s["title_raw"] in ignored:
+            continue
+        letter = s.get("section_letter") or ""
+        pos = s.get("position_in_section")
+        if not letter or not isinstance(pos, int) or pos <= 0:
+            continue
+        out.setdefault(letter, {})[pos] = convs[s["id"]]["title"]
+    return out
+
+
+def reserved_numbers_for(letter: str) -> Dict[int, str]:
+    """Números apalabrados por el docx en esa categoría (sólo los que están libres)."""
+    cat = next((c for c in list_categories() if c["letter"] == letter), None)
+    if not cat:
+        return {}
+    pending = docx_pending_by_section().get(letter, {})
+    used = used_numbers(SONGS_DIR / cat["folder"])
+    return {n: t for n, t in pending.items() if n not in used}
 
 
 def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
@@ -687,11 +751,15 @@ def _render_meta_directive_lines(meta: Dict[str, object]) -> List[str]:
         lines.append(f"{{tiempo: {_sanitize_directive_value(meta['liturgicalTime'])}}}")
     if meta.get("source"):
         lines.append(f"{{fuente: {_sanitize_directive_value(meta['source'])}}}")
+    # Todo lo de YouTube se guarda en formato embed, que es lo que reproduce la
+    # app. Da igual lo que pegue el usuario (watch, youtu.be, shorts…): en el
+    # .cho acaba como /embed/<id>. En la interfaz se le muestra como link normal.
     if meta.get("videoEmbed"):
-        lines.append(f"{{video: {_sanitize_directive_value(meta['videoEmbed'])}}}")
+        video = cp.to_youtube_embed(_sanitize_directive_value(meta["videoEmbed"]))
+        lines.append(f"{{video: {video}}}")
     for yt in (meta.get("youtubeLinks") or []):
         label = _sanitize_link_label(yt.get("label") or "")
-        url = _sanitize_directive_value(yt.get("url") or "")
+        url = cp.to_youtube_embed(_sanitize_directive_value(yt.get("url") or ""))
         if not url:
             continue
         lines.append(f"{{youtube: {label} | {url}}}" if label else f"{{youtube: {url}}}")
@@ -799,12 +867,18 @@ def api_song_new():
         abort(404, "Categoría no encontrada")
     folder = SONGS_DIR / cat["folder"]
     folder.mkdir(exist_ok=True)
-    num = d2c.next_song_number(folder)
+    # Número: el que pida el usuario, o el primer hueco libre saltándose los
+    # que están apalabrados por canciones del docx sin importar todavía.
+    num = body.get("number")
+    if isinstance(num, str) and num.strip().isdigit():
+        num = int(num)
+    if not (isinstance(num, int) and num > 0):
+        num = preferred_number(folder, None, set(reserved_numbers_for(cat_letter)))
     slug = d2c.slugify(d2c.pretty_title_case(title))
     fname = f"{num:02d}.{slug}.cho"
     fpath = folder / fname
     if fpath.exists():
-        abort(409, "Ya existe un archivo con ese nombre")
+        abort(409, f"Ya existe {fname}. Elige otro número.")
 
     if mode == "chordpro" and user_content.strip():
         # Limpieza mínima: asegurar que tiene la línea TO DO al principio
@@ -875,7 +949,7 @@ def api_song_move():
     if isinstance(num, str) and num.strip().isdigit():
         num = int(num)
     if not (isinstance(num, int) and num > 0):
-        num = preferred_number(folder, None)
+        num = preferred_number(folder, None, set(reserved_numbers_for(cat_letter)))
     fname = f"{num:02d}.{slug_part}"
     dest = folder / fname
     if dest.exists():
@@ -950,8 +1024,10 @@ def api_docx_import():
             results.append({"id": i, "ok": False, "error": "sin carpeta destino"})
             continue
         # Sugerencia de número: posición de la canción dentro de su sección
-        # en el DOCX. Si está libre se respeta; si no, primer hueco libre.
-        num = preferred_number(folder, s.get("position_in_section"))
+        # en el DOCX. Si está libre se respeta; si no, primer hueco libre que no
+        # esté apalabrado por otra canción del docx pendiente de importar.
+        num = preferred_number(folder, s.get("position_in_section"),
+                               set(reserved_numbers_for(s.get("section_letter") or "")))
         fname = f"{num:02d}.{conv['slug']}.cho"
         fpath = folder / fname
         if fpath.exists():
@@ -1224,7 +1300,8 @@ def api_doce_preview():
     if cat_letter:
         cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
         if cat:
-            suggested_number = preferred_number(SONGS_DIR / cat["folder"], hint)
+            suggested_number = preferred_number(SONGS_DIR / cat["folder"], hint,
+                                                set(reserved_numbers_for(cat_letter)))
     extras = parse_extra_meta(content)
     return jsonify({
         "id": doce_id,
@@ -1265,7 +1342,10 @@ def api_doce_suggest_number():
     folder = SONGS_DIR / cat["folder"]
     hint_raw = request.args.get("position_hint", "").strip()
     hint = int(hint_raw) if hint_raw.isdigit() else None
-    return jsonify({"category": cat_letter, "next_number": preferred_number(folder, hint)})
+    reserved = reserved_numbers_for(cat_letter)
+    num = preferred_number(folder, hint, set(reserved))
+    return jsonify({"category": cat_letter, "next_number": num,
+                    "reserved_count": len(reserved)})
 
 
 @app.route("/api/doce/suggest-numbers", methods=["POST"])
@@ -1284,15 +1364,10 @@ def api_doce_suggest_numbers():
     if not cat:
         abort(404, "Categoría no encontrada")
     folder = SONGS_DIR / cat["folder"]
-    used = set()
-    if folder.exists():
-        for f in folder.iterdir():
-            m = re.match(r"(\d+)\.", f.name)
-            if m:
-                try:
-                    used.add(int(m.group(1)))
-                except ValueError:
-                    pass
+    used = set(used_numbers(folder))
+    # Apalabrados por el docx: se saltan al buscar hueco, pero un hint explícito
+    # sí puede reclamarlos (es la propia canción del cantoral pidiendo su sitio).
+    reserved = set(reserved_numbers_for(cat_letter))
 
     numbers: Dict[str, int] = {}
     for it in (body.get("items") or []):
@@ -1304,7 +1379,7 @@ def api_doce_suggest_numbers():
             num = hint
         else:
             num = 1
-            while num in used:
+            while num in used or num in reserved:
                 num += 1
         used.add(num)
         numbers[doce_id] = num
@@ -1368,7 +1443,8 @@ def api_doce_import():
             if not (isinstance(num, int) and num > 0):
                 hint = it.get("position_hint")
                 hint_int = hint if (isinstance(hint, int) and hint > 0) else None
-                num = preferred_number(folder, hint_int)
+                num = preferred_number(folder, hint_int,
+                                       set(reserved_numbers_for(cat_letter)))
             fname = f"{num:02d}.{slug}.cho"
             fpath = folder / fname
             if fpath.exists():
@@ -1414,6 +1490,54 @@ def api_category_slots():
     for fn in unnumbered:
         slots.append({"number": None, "filename": fn})
     return jsonify({"category": letter, "slots": slots})
+
+
+@app.route("/api/category/number-map")
+def api_category_number_map():
+    """Mapa de números 1..N de una categoría para el selector visual.
+
+    Cada entrada: {number, state, title}
+      - state 'used'     → ya hay un .cho con ese número
+      - state 'reserved' → libre en disco, pero es el sitio de una canción del
+                           docx que todavía no se ha importado
+      - state 'free'     → se puede usar
+    Devuelve además `suggested`: el primer 'free'.
+    """
+    letter = request.args.get("category", "").upper().strip()
+    cat = next((c for c in list_categories() if c["letter"] == letter), None)
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    try:
+        upto = int(request.args.get("upto", "100"))
+    except ValueError:
+        upto = 100
+    upto = max(20, min(upto, 300))
+
+    folder = SONGS_DIR / cat["folder"]
+    used = used_numbers(folder)
+    reserved = reserved_numbers_for(letter)
+    titles = {r["number"]: r["title"] for r in list_repo_songs(letter) if r.get("number")}
+
+    top = max([upto] + list(used) + list(reserved))
+    entries = []
+    for n in range(1, top + 1):
+        if n in used:
+            entries.append({"number": n, "state": "used",
+                            "title": titles.get(n) or used[n]})
+        elif n in reserved:
+            entries.append({"number": n, "state": "reserved", "title": reserved[n]})
+        else:
+            entries.append({"number": n, "state": "free", "title": ""})
+
+    suggested = next((e["number"] for e in entries if e["state"] == "free"), top + 1)
+    return jsonify({
+        "category": letter,
+        "category_title": cat["title"],
+        "numbers": entries,
+        "suggested": suggested,
+        "used_count": len(used),
+        "reserved_count": len(reserved),
+    })
 
 
 @app.route("/api/reorder", methods=["POST"])

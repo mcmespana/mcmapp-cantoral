@@ -86,14 +86,46 @@ encima centrados sobre la letra a la que apuntan.
 - 📥 **Pegar acordes** — aplica el patrón a la selección actual, alineando
   por _palabra_: acorde de la palabra N origen → palabra N destino. Después
   solo hay que retocar a mano lo que haga falta.
-- 🔁 **Insertar estribillo** — pega un bloque `{soc}…{eoc}` ya existente
-  después de la selección.
+- 🔁 **Estribillo** — repite un bloque `{soc}…{eoc}` ya existente **debajo de la
+  selección** (o al final si no hay), con una blanca a cada lado.
 
-**Atajo de teclado**: `Ctrl/Cmd+S` guarda.
+**Grupo «Líneas»** — trabajar con líneas enteras sin bajar al Raw. Todo actúa
+sobre la selección e inserta **debajo** de ella (o al final si no hay):
+
+| acción | atajo | qué hace |
+| ------ | ----- | -------- |
+| 🗑 Borrar | `Supr` / `Retroceso` | borra las líneas marcadas (confirma a partir de 3) |
+| ⧉+ Duplicar | `Ctrl/Cmd+D` | duplica la selección con letra y acordes |
+| ⧉ Copiar / 📌 Pegar debajo | — | copia el bloque entero (letra + acordes) y lo pega donde quieras, tantas veces como haga falta |
+| ␣ Blanco | `Ctrl/Cmd+Enter` | línea en blanco de separación |
+| ＋ Letra | — | línea de letra nueva, se abre para escribirla |
+| ▲ ▼ | `Alt+↑` / `Alt+↓` | sube o baja el bloque |
+
+Ojo con la diferencia: **⧉ Copiar** se lleva el bloque completo (letra +
+acordes) para repetirlo; **📋 Copiar patrón** se lleva sólo los acordes para
+aplicarlos a *otra* letra.
+
+Sin líneas seleccionadas, `Supr` sigue borrando el acorde marcado.
+
+**↕ Cómoda / Compacta** — densidad del documento. La compacta quita el aire
+entre líneas (~17 % menos de alto) para ver más canción de una vez; se recuerda
+en `localStorage`. Es seguro: los acordes se posicionan midiendo los caracteres
+ya renderizados, y el toggle vuelve a llamar a `layoutChords()`.
+
+**Atajos de teclado**: `Ctrl/Cmd+S` guarda · `Esc` quita la selección.
 
 #### 📝 Raw
-ChordPro crudo en textarea. Para reorganizar líneas grandes, mover bloques,
-añadir comentarios, etc. Sincroniza con el Visual al cambiar de pestaña.
+ChordPro crudo, editable como texto plano, pero **con formato**: directivas en
+gris, `{c: comentarios}` en naranja, `{soc}`/`{eoc}` en ámbar y `[acordes]` en
+azul. Sincroniza con el Visual al cambiar de pestaña.
+
+Está hecho con un `<pre>` coloreado justo detrás de un `<textarea>` de texto
+transparente. Las dos capas comparten fuente, tamaño, interlineado, padding,
+borde y modo de salto de línea — **si se toca una hay que tocar la otra**, o el
+cursor deja de caer sobre la letra que se está escribiendo. Por eso las
+directivas salen en gris pero **no** más pequeñas: un `font-size` distinto en la
+capa de color descuadraría el cursor, ya que el textarea no puede estilar partes
+de su propio texto.
 
 #### 👁 Preview
 Render limpio sin botones — como se verá en la app móvil. Los acordes salen
@@ -127,6 +159,47 @@ Si al importar un lote hubiera números repetidos en la misma categoría se
 reparten de nuevo automáticamente antes de escribir nada.
 
 `Esc` cierra los previews (doceacordes, LaTeX y cantoral).
+
+## Números de canción (🔢)
+
+El botón **🔢** que hay junto a cada campo de número (filas de doceacordes,
+«nueva canción», «mover de categoría») abre una rejilla del 1 al 100:
+
+| estado | pinta | se puede elegir |
+| ------ | ----- | --------------- |
+| **ocupado** | tachado y gris, con el título de la canción que lo tiene | no |
+| **reservado** | a rayas ámbar, con el título de la canción del cantoral | sí, avisando |
+| **libre** | normal | sí |
+
+**Reservado** quiere decir: ese número le corresponde a una canción que está en
+el `.docx` del cantoral y **todavía no has importado**. Antes, una canción nueva
+se metía en el primer hueco libre y le robaba el sitio; ahora el número que se
+propone por defecto es el primer hueco libre **saltándose los reservados**. Si
+quedan 20 canciones por integrar de una categoría, una canción nueva se va
+detrás de todas ellas en lugar de colarse en medio.
+
+Se puede elegir un número reservado a mano (a veces es lo que quieres); sólo los
+ocupados están vetados, porque el archivo no se podría escribir.
+
+Esto afecta a todos los caminos que asignan número: nueva canción a mano,
+importar de doceacordes (una o en lote), importar del cantoral y mover de
+categoría. La excepción sana: cuando una canción **del cantoral** reclama su
+propio número (`position_hint`), ese número se le da aunque esté reservado —
+justamente porque el reservado es ella.
+
+## Vídeos de YouTube
+
+Pega el link **como te venga**: `watch?v=`, `youtu.be/`, `shorts/`, `live/`, con
+lista, con `&t=90` o `?t=1m30s`. En el `.cho` se guarda **siempre** como
+`https://www.youtube.com/embed/<id>` (con `?start=` si había minuto), que es el
+formato que reproduce la app móvil. En el editor, en cambio, siempre se muestra
+y se abre como link normal de YouTube — que es el que uno reconoce, copia y
+pega.
+
+La conversión vive en `scripts/chordpro.py` (`to_youtube_embed` /
+`to_youtube_watch`) con un espejo en `static/app.js` para la interfaz: **si se
+cambia el criterio en un lado, hay que cambiarlo en el otro**. Lo que no es de
+YouTube (Vimeo, un mp3, un Drive) se deja intacto.
 
 ### Reordenar (🔀)
 Elige categoría, arrastra filas, "Aplicar nuevo orden" renombra los archivos

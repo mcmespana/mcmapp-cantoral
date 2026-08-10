@@ -34,7 +34,7 @@
 
   <div class="sidebar-section" x-show="data">
     <div class="sidebar-section-title">Categorías</div>
-    <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+    <template x-for="cat in (data ? data?.categories : [])" :key="cat.letter">
       <a class="cat-link" href="#"
          @click.prevent="view = 'catalog'; categoryFilter = cat.letter"
          :class="{active: categoryFilter === cat.letter && view === 'catalog'}">
@@ -95,15 +95,15 @@
       <h3 class="stats-group-title">📚 Catálogo</h3>
       <div class="stats-grid">
         <div class="stat">
-          <div class="stat-val" x-text="data.stats.repo_total"></div>
+          <div class="stat-val" x-text="data?.stats?.repo_total"></div>
           <div class="stat-lbl">canciones en el repo</div>
         </div>
         <div class="stat">
-          <div class="stat-val" x-text="data.stats.docx_total"></div>
+          <div class="stat-val" x-text="data?.stats?.docx_total"></div>
           <div class="stat-lbl">canciones en el cantoral</div>
         </div>
         <div class="stat info">
-          <div class="stat-val" x-text="data.stats.only_in_repo"></div>
+          <div class="stat-val" x-text="data?.stats?.only_in_repo"></div>
           <div class="stat-lbl">solo en repo (manuales)</div>
         </div>
       </div>
@@ -113,15 +113,15 @@
       <h3 class="stats-group-title">📝 Pendiente de revisión</h3>
       <div class="stats-grid">
         <div class="stat warn">
-          <div class="stat-val" x-text="data.stats.missing_from_repo"></div>
+          <div class="stat-val" x-text="data?.stats?.missing_from_repo"></div>
           <div class="stat-lbl">faltan en el repo</div>
         </div>
         <div class="stat todo" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar'">
-          <div class="stat-val" x-text="data.stats.todo_count"></div>
+          <div class="stat-val" x-text="data?.stats?.todo_count"></div>
           <div class="stat-lbl">📝 revisar canción</div>
         </div>
         <div class="stat chord-review" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar_acordes'">
-          <div class="stat-val" x-text="data.stats.chord_review_count"></div>
+          <div class="stat-val" x-text="data?.stats?.chord_review_count"></div>
           <div class="stat-lbl">🎵 revisar acordes</div>
         </div>
       </div>
@@ -131,7 +131,7 @@
       <h3 class="stats-group-title">📥 Fuentes de importación</h3>
       <div class="stats-grid">
         <div class="stat" style="background: rgba(139, 92, 246, 0.10); cursor: pointer" @click="view = 'latex'; loadLatex()">
-          <div class="stat-val" x-text="(data.stats.latex_new || 0) + '/' + (data.stats.latex_total || 0)"></div>
+          <div class="stat-val" x-text="(data?.stats?.latex_new || 0) + '/' + (data?.stats?.latex_total || 0)"></div>
           <div class="stat-lbl">📐 nuevas / total en LaTeX</div>
         </div>
         <div class="stat" style="background: rgba(234, 88, 12, 0.10); cursor: pointer"
@@ -149,20 +149,20 @@
              @click="view='catalog'; mediaFilter='any_media'; categoryFilter=''"
              title="Canciones con vídeo, YouTube o audio">
           <div class="stat-val">
-            <span x-text="(data.stats.with_youtube || 0)"></span><span class="muted" style="font-size:13px"> / </span><span class="muted" style="font-size:13px" x-text="(data.stats.with_audio || 0)"></span>
+            <span x-text="(data?.stats?.with_youtube || 0)"></span><span class="muted" style="font-size:13px"> / </span><span class="muted" style="font-size:13px" x-text="(data?.stats?.with_audio || 0)"></span>
           </div>
           <div class="stat-lbl">📺 con YouTube · 🎧 con Audio</div>
         </div>
         <div class="stat" style="background: rgba(239, 68, 68, 0.10); cursor: pointer"
              @click="view='catalog'; mediaFilter='no_youtube'; categoryFilter=''"
              title="Canciones sin link de YouTube ni vídeo">
-          <div class="stat-val" x-text="data.stats.without_youtube || 0"></div>
+          <div class="stat-val" x-text="data?.stats?.without_youtube || 0"></div>
           <div class="stat-lbl">📺 sin YouTube/Vídeo</div>
         </div>
         <div class="stat" style="background: rgba(20, 184, 166, 0.10); cursor: pointer"
              @click="view='catalog'; mediaFilter='no_audio'; categoryFilter=''"
              title="Canciones sin audio interno">
-          <div class="stat-val" x-text="data.stats.without_audio || 0"></div>
+          <div class="stat-val" x-text="data?.stats?.without_audio || 0"></div>
           <div class="stat-lbl">🎧 sin Audio</div>
         </div>
       </div>
@@ -297,7 +297,7 @@
       <input type="search" placeholder="Buscar…" x-model="importSearch" />
       <select x-model="importSectionFilter">
         <option value="">Todas las secciones</option>
-        <template x-for="cat in data.categories" :key="cat.letter">
+        <template x-for="cat in data?.categories" :key="cat.letter">
           <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
         </template>
       </select>
@@ -496,7 +496,7 @@
               <select x-model="latexCategoryOverride[l.id]" class="cat-select-mini"
                       :disabled="(latexImportMode[l.id] || (l.repo_match ? 'overwrite' : 'new')) === 'overwrite'">
                 <option :value="''" x-text="'auto: ' + (l.target_letter || '?')"></option>
-                <template x-for="cat in data.categories" :key="cat.letter">
+                <template x-for="cat in data?.categories" :key="cat.letter">
                   <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '').slice(0,18)"></option>
                 </template>
               </select>
@@ -616,7 +616,7 @@
       <span class="sep"></span>
       <select x-model="doceBulkCategory" :disabled="selectedDoce.size === 0" class="cat-select-mini">
         <option value="">Categoría para las marcadas…</option>
-        <template x-for="cat in data.categories" :key="cat.letter">
+        <template x-for="cat in data?.categories" :key="cat.letter">
           <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
         </template>
       </select>
@@ -678,16 +678,20 @@
               <select x-model="doceCategorySel[d.id]" class="cat-select-mini"
                       @change="onDoceCategoryChange(d.id)">
                 <option value="">—</option>
-                <template x-for="cat in data.categories" :key="cat.letter">
+                <template x-for="cat in data?.categories" :key="cat.letter">
                   <option :value="cat.letter"
                           x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '').slice(0,18)"></option>
                 </template>
               </select>
             </td>
-            <td>
-              <input type="number" min="1" max="99" style="width:50px"
+            <td style="white-space:nowrap">
+              <input type="number" min="1" max="99" style="width:46px"
                      x-model.number="doceNumberSel[d.id]"
                      :placeholder="doceSuggestedNumber[d.id] || '?'" />
+              <button class="numpick-open"
+                      :disabled="!doceCategorySel[d.id]"
+                      :title="doceCategorySel[d.id] ? 'Ver qué números están ocupados y elegir uno' : 'Elige primero la categoría'"
+                      @click="openNumberPicker(doceCategorySel[d.id], {kind:'doce', id:d.id}, doceNumberSel[d.id])">🔢</button>
             </td>
             <td style="white-space:nowrap">
               <button class="btn-mini" @click="previewDoce(d.id)">👁 Ver</button>
@@ -724,8 +728,64 @@
     </div>
   </section>
 
+  <!-- SELECTOR VISUAL DE NÚMERO -->
+  <div class="editor-overlay overlay-top" x-show="numberPicker" x-cloak
+       @click.self="numberPicker = null"
+       @keydown.escape.window="if (numberPicker) { $event.stopImmediatePropagation(); numberPicker = null; }">
+    <div class="editor-modal compact numpick-modal">
+      <div class="editor-header">
+        <h2>🔢 Elegir número
+          <span class="muted" style="font-size:13px;font-weight:normal"
+                x-text="numberPicker ? '· ' + numberPicker.categoryTitle : ''"></span>
+        </h2>
+        <div class="header-actions">
+          <button class="btn primary" :disabled="!numberPicker || !numberPicker.selected"
+                  @click="applyNumberPicker()"
+                  x-text="numberPicker && numberPicker.selected ? 'Usar el nº ' + numberPicker.selected : 'Elige un número'"></button>
+          <button class="btn" @click="numberPicker = null">✕ Cerrar</button>
+        </div>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto;padding:16px">
+          <div class="numpick-legend">
+            <span class="numpick-chip np-free">libre</span>
+            <span class="numpick-chip np-reserved">reservado por el cantoral</span>
+            <span class="numpick-chip np-used">ocupado</span>
+            <span class="numpick-chip np-sel">elegido</span>
+            <span class="muted" style="margin-left:auto;font-size:11px" x-text="numberPickerCounts()"></span>
+          </div>
+          <p class="muted small" x-show="numberPicker && numberPicker.suggested">
+            Por defecto se propone el <strong x-text="numberPicker && numberPicker.suggested"></strong>:
+            el primer hueco libre <em>saltándose</em> los números que le corresponden a canciones
+            del cantoral que aún no has importado (así no les quitas el sitio).
+            Puedes elegir uno reservado si quieres; sólo los ocupados están vetados.
+          </p>
+          <div x-show="numberPicker && numberPicker.loading" class="muted">Cargando números…</div>
+          <div class="numpick-grid" x-show="numberPicker && !numberPicker.loading">
+            <template x-for="e in (numberPicker ? numberPicker.numbers : [])" :key="e.number">
+              <button class="numpick-cell"
+                      :class="'np-' + e.state + (numberPicker.selected === e.number ? ' np-sel' : '')"
+                      :disabled="e.state === 'used'"
+                      :title="e.state === 'used' ? 'Ocupado por: ' + e.title
+                              : (e.state === 'reserved' ? 'Reservado en el cantoral para: ' + e.title + ' (puedes usarlo igualmente)'
+                              : 'Libre')"
+                      @click="pickNumber(e)">
+                <span class="np-num" x-text="e.number"></span>
+                <span class="np-title" x-text="e.title"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- GIT COMMIT & PUSH RÁPIDO MODAL -->
-  <div class="editor-overlay" x-show="gitModal" @click.self="gitModal = null" x-cloak>
+  <div class="editor-overlay" x-show="gitModal" @click.self="gitModal = null" x-cloak
+       @keydown.escape.window="gitModal = null">
+    <!-- x-if: igual que en "mover", con x-show los bindings de gitModal seguían
+         evaluándose con gitModal=null. -->
+    <template x-if="gitModal">
     <div class="editor-modal compact">
       <div class="editor-header">
         <h2>📤 Guardar y subir cambios</h2>
@@ -765,24 +825,29 @@
                     placeholder="Ej: Corregidos acordes de varias canciones de Entrada"
                     @keydown.meta.enter="doGitCommit()" @keydown.ctrl.enter="doGitCommit()"></textarea>
 
-          <div class="git-confirm-banner" x-show="gitModal && gitModal.message.trim()">
+          <div class="git-confirm-banner" x-show="gitModal && gitModal?.message.trim()">
             Vas a <strong>guardar y subir tus cambios a la nube</strong>. ¿Todo correcto?
           </div>
 
           <div class="actions-row">
             <button class="btn" @click="gitModal = null" :disabled="gitModal && gitModal.saving">Cancelar</button>
             <button class="btn primary"
-                    :disabled="!gitModal || !gitModal.message.trim() || gitModal.saving"
+                    :disabled="!gitModal || !gitModal?.message.trim() || gitModal.saving"
                     @click="doGitCommit()"
                     x-text="gitModal && gitModal.saving ? 'Guardando…' : (gitModal && gitModal.result === 'ok' ? '✓ Guardado' : '📤 Guardar en la nube')"></button>
           </div>
         </div>
       </div>
     </div>
+    </template>
   </div>
 
   <!-- MOVER DE CATEGORÍA MODAL -->
-  <div class="editor-overlay" x-show="moveModal" @click.self="moveModal = null" x-cloak>
+  <div class="editor-overlay" x-show="moveModal" @click.self="moveModal = null" x-cloak
+       @keydown.escape.window="moveModal = null">
+    <!-- x-if (no x-show): con x-show los bindings siguen vivos con el modal
+         cerrado y `moveModal.number` reventaba en cada render con moveModal=null. -->
+    <template x-if="moveModal">
     <div class="editor-modal compact">
       <div class="editor-header">
         <h2>↔ Mover de categoría</h2>
@@ -798,14 +863,19 @@
             <label>Categoría destino</label>
             <select x-model="moveModal.targetLetter" @change="onMoveCategoryChange()">
               <option value="">— Elige —</option>
-              <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+              <template x-for="cat in (data ? data?.categories : [])" :key="cat.letter">
                 <option :value="cat.letter"
                         x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
               </template>
             </select>
             <label>Número</label>
-            <input type="number" min="1" x-model="moveModal.number"
-                   :placeholder="moveModal && moveModal.suggested ? ('Hueco libre: ' + moveModal.suggested) : 'Auto'">
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" min="1" style="width:80px" x-model="moveModal.number"
+                     :placeholder="moveModal && moveModal.suggested ? ('Libre: ' + moveModal.suggested) : 'Auto'">
+              <button class="numpick-open" :disabled="!moveModal || !moveModal?.targetLetter"
+                      title="Ver los números ocupados de la categoría destino"
+                      @click="openNumberPicker(moveModal?.targetLetter, {kind:'move'}, moveModal?.number)">🔢 elegir…</button>
+            </div>
           </div>
           <p class="muted small">
             Déjalo vacío para usar el primer hueco libre de la categoría destino.
@@ -816,13 +886,14 @@
           </p>
           <div class="actions-row">
             <button class="btn primary"
-                    :disabled="!moveModal || !moveModal.targetLetter || moveModal.saving"
+                    :disabled="!moveModal || !moveModal?.targetLetter || moveModal.saving"
                     @click="doMoveSong()"
                     x-text="moveModal && moveModal.saving ? 'Moviendo…' : '↔ Mover canción'"></button>
           </div>
         </div>
       </div>
     </div>
+    </template>
   </div>
 
   <!-- DOCE PREVIEW MODAL -->
@@ -838,7 +909,7 @@
         <div class="header-actions">
           <select x-model="docePreviewCategory" style="margin-right:6px">
             <option value="">— Categoría —</option>
-            <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+            <template x-for="cat in (data ? data?.categories : [])" :key="cat.letter">
               <option :value="cat.letter"
                       x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
             </template>
@@ -931,8 +1002,9 @@
                 </tr>
                 <tr x-show="docePreview.extras.videoEmbed">
                   <th>Vídeo</th>
-                  <td><a :href="docePreview.extras.videoEmbed" target="_blank"
-                         class="link-url" x-text="docePreview.extras.videoEmbed"></a></td>
+                  <!-- Se guarda en embed, pero se enseña y se abre como link normal -->
+                  <td><a :href="ytWatch(docePreview.extras.videoEmbed)" target="_blank"
+                         class="link-url" x-text="ytWatch(docePreview.extras.videoEmbed)"></a></td>
                 </tr>
               </table>
               <template x-if="docePreview.extras.youtubeLinks && docePreview.extras.youtubeLinks.length > 0">
@@ -943,7 +1015,8 @@
                       <li>
                         <span class="link-num" x-text="i+1"></span>
                         <span class="link-label" x-text="yt.label || '(sin etiqueta)'"></span>
-                        <a :href="yt.url" target="_blank" class="link-url" x-text="yt.url"></a>
+                        <a :href="ytWatch(yt.url)" target="_blank" class="link-url"
+                           x-text="ytWatch(yt.url)"></a>
                       </li>
                     </template>
                   </ul>
@@ -1009,7 +1082,7 @@
     <div class="filter-bar">
       <select x-model="reorderCategory" @change="loadReorder()">
         <option value="">— Elige categoría —</option>
-        <template x-for="cat in data.categories" :key="cat.letter">
+        <template x-for="cat in data?.categories" :key="cat.letter">
           <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
         </template>
       </select>
@@ -1318,6 +1391,17 @@
             <div class="chuleta-row"><span class="chuleta-key">2×click letra</span> editar letra</div>
             <div class="chuleta-row"><span class="chuleta-key">drag acorde</span> sílaba · Shift=palabra · Alt=libre</div>
           </div>
+          <div class="meta-chuleta">
+            <div class="chuleta-title">Líneas (con selección)</div>
+            <div class="chuleta-row"><span class="chuleta-key">Supr</span> / <span class="chuleta-key">Retroceso</span> borrar las líneas marcadas</div>
+            <div class="chuleta-row"><span class="chuleta-key">Ctrl/Cmd+D</span> duplicar debajo</div>
+            <div class="chuleta-row"><span class="chuleta-key">Ctrl/Cmd+Enter</span> línea en blanco debajo</div>
+            <div class="chuleta-row"><span class="chuleta-key">Alt+↑</span> / <span class="chuleta-key">Alt+↓</span> mover la selección</div>
+            <div class="chuleta-row"><span class="chuleta-key">Esc</span> quitar la selección</div>
+            <div class="chuleta-row" style="margin-top:4px;color:var(--fg-3)">
+              Sin selección, <span class="chuleta-key">Supr</span> borra el acorde marcado.
+            </div>
+          </div>
         </div>
 
         <!-- VISUAL -->
@@ -1330,30 +1414,74 @@
 
             <span class="sep"></span>
             <span class="sel-info" x-show="visualSelectedLines.size > 0"
-                  x-text="visualSelectedLines.size + ' línea(s) sel.'"></span>
-            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
-                    @click="markSelectionAsChorus()">🟡 Marcar estribillo</button>
-            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
-                    @click="unmarkSelectionChorus()">Quitar marca</button>
+                  x-text="visualSelectedLines.size + ' línea(s)'"></span>
+
+            <!-- Líneas: sólo tiene sentido con selección, así que va agrupado -->
+            <span class="tb-group" :class="{ 'tb-off': visualSelectedLines.size === 0 }">
+              <span class="tb-label">Líneas</span>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="copySelectedLines()"
+                      title="Copiar las líneas seleccionadas con su letra y sus acordes">⧉ Copiar</button>
+              <button class="btn-mini" :disabled="!visualLineClipboard"
+                      @click="pasteLinesBelow()"
+                      title="Pegar debajo de la selección (o al final si no hay selección)">📌 Pegar debajo</button>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="duplicateSelectedLines()"
+                      title="Duplicar la selección justo debajo · Ctrl/Cmd+D">⧉+ Duplicar</button>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="moveSelectedLines(-1)" title="Subir la selección · Alt+↑">▲</button>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="moveSelectedLines(1)" title="Bajar la selección · Alt+↓">▼</button>
+              <button class="btn-mini danger-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="deleteSelectedLines()"
+                      title="Borrar las líneas seleccionadas · Supr o Retroceso">🗑 Borrar</button>
+            </span>
 
             <span class="sep"></span>
-            <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
-                    @click="copyChordPattern()">📋 Copiar acordes</button>
-            <button class="btn-mini"
-                    :disabled="!visualChordClipboard || visualSelectedLines.size === 0"
-                    @click="pasteChordPattern()">📥 Pegar acordes</button>
+            <span class="tb-group">
+              <span class="tb-label">Insertar</span>
+              <button class="btn-mini" @click="insertBlankLine()"
+                      title="Línea en blanco debajo de la selección · Ctrl/Cmd+Enter">␣ Blanco</button>
+              <button class="btn-mini" @click="insertLyricLine()"
+                      title="Línea de letra nueva debajo de la selección">＋ Letra</button>
+              <button class="btn-mini" @click="addComment()"
+                      title="Comentario debajo de la selección">💬 Comentario</button>
+              <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
+                      @click="insertChorusHere()"
+                      title="Repetir un estribillo ya existente debajo de la selección (o al final)">🔁 Estribillo</button>
+            </span>
+
+            <span class="sep"></span>
+            <span class="tb-group" :class="{ 'tb-off': visualSelectedLines.size === 0 }">
+              <span class="tb-label">Estribillo</span>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="markSelectionAsChorus()">🟡 Marcar</button>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="unmarkSelectionChorus()">Quitar</button>
+            </span>
+
+            <span class="sep"></span>
+            <span class="tb-group">
+              <span class="tb-label">Acordes</span>
+              <button class="btn-mini" :disabled="visualSelectedLines.size === 0"
+                      @click="copyChordPattern()"
+                      title="Copiar SÓLO el patrón de acordes, para aplicarlo a otra estrofa">📋 Copiar patrón</button>
+              <button class="btn-mini"
+                      :disabled="!visualChordClipboard || visualSelectedLines.size === 0"
+                      @click="pasteChordPattern()">📥 Pegar patrón</button>
+            </span>
 
             <span class="sep"></span>
             <button class="btn-mini" :class="{primary: arrMode}"
                     @click="arrMode = !arrMode"
                     :title="arrMode ? 'Modo arreglos activo — click para desactivar' : 'Activar modo arreglos (botones ✍ + tecla «a»)'">
-              ✍ Modo arreglos
+              ✍ Arreglos
             </button>
-            <span class="sep"></span>
-            <button class="btn-mini" :disabled="getChorusBlocks().length === 0"
-                    @click="insertChorusHere()">🔁 Insertar estribillo</button>
-            <button class="btn-mini" @click="addComment()"
-                    title="Añadir un comentario (se inserta donde tengas la selección)">💬 Comentario</button>
+            <button class="btn-mini" :class="{primary: visualDense}"
+                    @click="toggleVisualDense()"
+                    :title="visualDense ? 'Vista compacta activa — click para volver a la cómoda' : 'Vista compacta: menos aire entre líneas, se ve más canción de una vez'">
+              <span x-text="visualDense ? '↕ Compacta' : '↕ Cómoda'"></span>
+            </button>
 
             <span class="sel-clear" x-show="visualSelectedLines.size > 0"
                   @click="clearLineSelection()">Limpiar selección</span>
@@ -1375,11 +1503,9 @@
                     @click="cancelChordClipboard()" title="Cancelar el patrón copiado">✕ cancelar copia</button>
           </div>
 
-          <div class="visual-doc"
+          <div class="visual-doc" :class="{ dense: visualDense }"
                @click="onVisualClick($event)"
-               @keydown.delete.prevent="deleteSelectedChord()"
-               @keydown.backspace.prevent="deleteSelectedChord()"
-               @keydown="if($event.key==='a' && arrMode && !$event.ctrlKey && !$event.metaKey && !$event.altKey){ $event.preventDefault(); insertArrLine(); }"
+               @keydown="onVisualKeydown($event)"
                tabindex="0">
             <template x-for="(ln, idx) in editor.parsed" :key="idx">
               <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
@@ -1469,9 +1595,24 @@
 
         <!-- RAW -->
         <div class="editor-pane raw" x-show="editor.tab === 'raw'" x-cloak>
-          <textarea x-model="editor.content"
-                    @input="editor.dirty = true; refreshMetaFromRaw()"
-                    spellcheck="false"></textarea>
+          <!-- Resaltado: un <pre> pintado justo detrás de un textarea con el
+               texto transparente. Ambas capas comparten fuente, tamaño,
+               interlineado, padding y modo de salto de línea; si se toca uno
+               hay que tocar el otro o el cursor deja de cuadrar con la letra. -->
+          <div class="raw-wrap">
+            <pre class="raw-highlight" aria-hidden="true"
+                 x-ref="rawHighlight"><code x-html="highlightCho(editor.content)"></code></pre>
+            <textarea x-model="editor.content"
+                      @input="editor.dirty = true; refreshMetaFromRaw()"
+                      @scroll="syncRawScroll($event)"
+                      spellcheck="false"></textarea>
+          </div>
+          <div class="raw-legend">
+            <span class="hl-directive">{directivas}</span>
+            <span class="hl-comment">{c: comentarios}</span>
+            <span class="hl-chorus">{soc} {eoc}</span>
+            <span class="hl-chord">[acordes]</span>
+          </div>
         </div>
 
         <!-- PREVIEW -->
@@ -1494,9 +1635,17 @@
           <div class="media-grid">
             <div class="media-section">
               <h4>📺 YouTube / Vídeo</h4>
-              <label>Vídeo principal (embed)</label>
+              <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.4">
+                Pega el link de YouTube como te venga (<code>watch?v=</code>, <code>youtu.be</code>,
+                <code>shorts</code>…). Al guardar se convierte solo a formato <code>embed</code>,
+                que es el que reproduce la app; aquí siempre lo verás como link normal.
+              </p>
+              <label>Vídeo principal</label>
               <input type="url" x-model="mediaForm.videoEmbed" @input="mediaDirty = true"
-                     placeholder="https://www.youtube.com/embed/VIDEO_ID" />
+                     placeholder="https://www.youtube.com/watch?v=VIDEO_ID" />
+              <a class="link-url" style="font-size:11px" target="_blank"
+                 x-show="mediaForm.videoEmbed && ytWatch(mediaForm.videoEmbed)"
+                 :href="ytWatch(mediaForm.videoEmbed)">▶ abrir en YouTube</a>
 
               <div class="link-list-editor">
                 <div class="link-list-header">
@@ -1655,11 +1804,26 @@
             <tr><th>Hover sobre línea</th><td>Muestra puntos grises (<code>·</code>) en los inicios de sílaba y barras azules en los inicios de palabra, para ver visualmente dónde puedes anclar.</td></tr>
             <tr><th>Doble-click acorde</th><td>Edita texto del acorde (vacío = borrar).</td></tr>
             <tr><th>Click derecho acorde</th><td>Borra con confirmación.</td></tr>
-            <tr><th><kbd>Supr</kbd></th><td>Borra el acorde seleccionado.</td></tr>
+            <tr><th><kbd>Supr</kbd> sin selección</th><td>Borra el acorde seleccionado.</td></tr>
             <tr><th>Doble-click en letra</th><td>Edita el texto de esa línea entera (los acordes se reubican por palabra).</td></tr>
             <tr><th>Click en margen izq.</th><td>Selecciona la línea (azul). Útil para marcar estribillos o copiar acordes.</td></tr>
             <tr><th><kbd>Shift</kbd>+click en margen</th><td>Selección de rango.</td></tr>
             <tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></th><td>Guarda la canción.</td></tr>
+            <tr><th>↕ Cómoda / Compacta</th><td>Cambia la densidad del documento: la compacta quita aire entre líneas y deja ver bastante más canción de una vez. Se recuerda entre sesiones.</td></tr>
+          </table>
+
+          <h3>Trabajar con líneas enteras (sin bajar al Raw)</h3>
+          <p>Todo esto actúa sobre las líneas que tengas marcadas con el círculo
+             <code>○</code> del margen izquierdo, y se inserta <strong>debajo</strong> de la
+             selección (o al final si no hay ninguna).</p>
+          <table class="kbd-help">
+            <tr><th><kbd>Supr</kbd> / <kbd>Retroceso</kbd></th><td>Borra las líneas marcadas. A partir de 3 pide confirmación.</td></tr>
+            <tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>D</kbd> · ⧉+ Duplicar</th><td>Duplica la selección justo debajo, con su letra y sus acordes. Para repetir una estrofa o un estribillo y retocarla.</td></tr>
+            <tr><th>⧉ Copiar · 📌 Pegar debajo</th><td>Copia el bloque completo (letra + acordes) y lo pega donde quieras, tantas veces como haga falta. Distinto de «Copiar patrón», que sólo lleva los acordes a otra letra.</td></tr>
+            <tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd> · ␣ Blanco</th><td>Inserta una línea en blanco para separar bloques.</td></tr>
+            <tr><th>＋ Letra</th><td>Añade una línea de letra nueva y la abre para escribirla.</td></tr>
+            <tr><th><kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>Alt</kbd>+<kbd>↓</kbd> · ▲▼</th><td>Sube o baja el bloque seleccionado.</td></tr>
+            <tr><th><kbd>Esc</kbd></th><td>Quita la selección.</td></tr>
           </table>
           <h3>Marcar estribillo</h3>
           <ol>
@@ -1668,7 +1832,30 @@
             <li>Para quitar marcadores, pulsa <strong>"Quitar marcadores"</strong>.</li>
           </ol>
           <h3>Copiar / pegar estribillo</h3>
-          <p>Botón <strong>"Insertar estribillo"</strong> → elige cuál de los estribillos ya marcados quieres pegar; se inserta justo después de la línea actualmente seleccionada (o al final).</p>
+          <p>Botón <strong>"🔁 Estribillo"</strong> → elige cuál de los estribillos ya marcados quieres repetir; se inserta justo <strong>debajo de la línea seleccionada</strong> (o al final del documento si no hay selección), con una línea en blanco a cada lado.</p>
+
+          <h3>Raw con formato</h3>
+          <p>La pestaña <strong>📝 Raw</strong> sigue siendo texto plano editable, pero se
+             colorea sobre la marcha: las <span class="hl-directive">{directivas}</span> en gris,
+             los <span class="hl-comment">{c: comentarios}</span> en naranja, las marcas de
+             <span class="hl-chorus">{soc}/{eoc}</span> en ámbar y los
+             <span class="hl-chord">[acordes]</span> en azul. El tamaño de letra es igual para
+             todo a propósito: el color va en una capa detrás del área de texto y, si cambiara
+             de tamaño, el cursor dejaría de cuadrar con las letras.</p>
+
+          <h3>Números de canción</h3>
+          <p>El botón <strong>🔢</strong> abre una rejilla del 1 al 100 con lo que está
+             <strong>ocupado</strong> (tachado, no se puede elegir), lo que está
+             <strong>reservado</strong> (a rayas: es el número que le toca a una canción del
+             cantoral que aún no has importado — puedes usarlo, pero se lo quitas) y lo
+             <strong>libre</strong>. Por defecto se propone el primer hueco libre saltándose
+             los reservados.</p>
+
+          <h3>Vídeos de YouTube</h3>
+          <p>Pega el link como te venga (<code>watch?v=</code>, <code>youtu.be</code>,
+             <code>shorts</code>, con lista o con minuto). En el <code>.cho</code> se guarda
+             siempre en formato <code>embed</code>, que es el que reproduce la app; en el editor
+             lo verás y lo abrirás siempre como link normal de YouTube.</p>
           <h3>Arreglos (notas sobre una línea)</h3>
           <ul>
             <li><strong>Activar modo:</strong> pulsa el botón <em>"✍ Modo arreglos"</em>
@@ -1711,10 +1898,21 @@
             <label>Categoría</label>
             <select x-model="newSong.category">
               <option value="">— Elige —</option>
-              <template x-for="cat in (data ? data.categories : [])" :key="cat.letter">
+              <template x-for="cat in (data ? data?.categories : [])" :key="cat.letter">
                 <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
               </template>
             </select>
+            <label>Número</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" min="1" max="199" style="width:70px"
+                     x-model.number="newSong.number" placeholder="auto" />
+              <button class="numpick-open" :disabled="!newSong.category"
+                      :title="newSong.category ? 'Ver los números ocupados y elegir uno' : 'Elige primero la categoría'"
+                      @click="openNumberPicker(newSong.category, {kind:'new'}, newSong.number)">🔢 elegir…</button>
+              <span class="muted" style="font-size:11px">
+                Vacío = primer hueco libre, respetando los números del cantoral por importar.
+              </span>
+            </div>
             <label>Título</label>
             <input type="text" x-model="newSong.title" placeholder="Ven a celebrar" />
             <label>Autor / Artista</label>

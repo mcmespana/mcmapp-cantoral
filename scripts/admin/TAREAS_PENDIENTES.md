@@ -31,10 +31,6 @@ que **no** se hicieron en esa iteración pero merecen la pena:
 
 ### UX
 
-- **Errores de consola preexistentes**: al arrancar, Alpine evalúa
-  `data.stats` / `data.categories` / `moveModal.number` antes de que existan y
-  suelta ~6 `TypeError` en consola. No rompen nada (el render se reintenta),
-  pero ensucian el debug. Guardar con `data &&` / optional chaining.
 - **La selección de doceacordes no se limpia al cambiar de pestaña**: si marcas
   3 canciones y te vas al cantoral, al volver siguen marcadas y la barra dice
   "Importar 3 marcadas". A veces es lo que quieres; conviene al menos avisarlo.
@@ -49,6 +45,54 @@ que **no** se hicieron en esa iteración pero merecen la pena:
   no existe). Enlaza con el "preview comparativo" de más abajo.
 - **Filtrar el catálogo de doceacordes por lo que falta en el cantoral**, no
   sólo por "está / no está en repo".
+
+## Pendiente de la ronda de editor visual / raw / números
+
+Detectado al hacer el selector de números, las operaciones de línea y el raw
+coloreado. No hecho todavía:
+
+### Editor visual
+
+- **Undo/Redo.** Ahora mismo es lo que más se echa en falta: borrar o duplicar
+  líneas no tiene marcha atrás salvo cerrar sin guardar. Con un stack de
+  `editor.parsed` serializado (y un tope de ~50 estados) y `Ctrl+Z`/`Ctrl+Shift+Z`
+  bastaría; todas las operaciones ya pasan por `afterLineEdit()`, que es el
+  sitio natural para apilar el estado anterior.
+- **Editar la letra en línea, no con `prompt()`.** `editLyricLine()` abre un
+  `prompt` del navegador, que corta el flujo y no deja ver los acordes mientras
+  escribes. Un input inline como el de los arreglos (`ed-arr-input`) encajaría.
+- **Pegar varias líneas de texto de golpe** en el visual (hoy hay que ir al Raw
+  o crear las líneas una a una con «＋ Letra»).
+- **Selección no contigua real.** `selectedLineRange()` colapsa la selección a
+  min..max, así que marcar las líneas 1 y 5 actúa también sobre 2-4. Para borrar
+  o duplicar bloques salteados haría falta respetar el conjunto exacto
+  (`deleteSelectedLines` ya lo hace, pero duplicar/copiar/mover no).
+- **Arrastrar líneas para reordenar**, como en la vista de reordenar categorías.
+  Los botones ▲▼ y `Alt+↑/↓` funcionan, pero mover un bloque 10 líneas cansa.
+
+### Raw
+
+- **Directivas en letra más pequeña.** Se pidió y no se puede con este montaje:
+  el color va en un `<pre>` detrás del `<textarea>`, y un `font-size` distinto
+  descuadraría el cursor (el textarea no puede estilar partes de su texto). Para
+  tenerlo habría que cambiar el textarea por un `contenteditable`, lo que obliga
+  a rehacer el manejo del caret, el pegado y el undo del navegador. Valorar si
+  merece la pena.
+- **Números de línea** en la capa de resaltado, y resaltar la línea del cursor.
+- **Avisar de acordes que no se reconocen** (por ejemplo `[Xyz]`) pintándolos en
+  rojo: sería un chivato barato de erratas.
+
+### Números
+
+- **La rejilla llega hasta 100 fijo** (o hasta el mayor ocupado). Si alguna
+  categoría pasara de ahí habría que subir el `upto`; el endpoint ya lo acepta
+  como parámetro.
+- **Ver los reservados también en la vista de reordenar**, para saber qué huecos
+  conviene dejar libres al recolocar una categoría.
+- **`docx_pending_by_section()` recalcula el emparejado repo↔docx en cada
+  llamada.** Está cacheado por debajo (conversiones + docx), así que sale a unos
+  pocos ms, pero es el mismo trabajo que hace `/api/catalog`: se podría compartir
+  un único resultado memoizado por mtime.
 
 ## Importadores adicionales para "Nueva canción a mano"
 

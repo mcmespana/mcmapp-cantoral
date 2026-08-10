@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unicodedata
 import urllib.request
 import urllib.error
@@ -32,6 +33,11 @@ CACHE_DIR = SCRIPTS_DIR / "cache_doceacordes"
 
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
 BASE_URL = "https://doceacordes.es"
+
+# Módulo común: mapeo campo↔directiva y normalización de URLs de YouTube.
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+import chordpro as cp  # noqa: E402
 
 # ─────────── Traducción ES → EN de acordes ─────────── #
 
@@ -447,11 +453,13 @@ def render_meta_directives(extra: Dict[str, object]) -> List[str]:
     if extra.get("parroquia"):
         fuente_parts.append(f"Parroquia {extra['parroquia']}")
     lines.append(f"{{fuente: {' - '.join(fuente_parts)}}}")
+    # Normalizamos a embed igual que el editor: doceacordes da el iframe ya en
+    # /embed/ pero los links de la ficha vienen como /watch?v=.
     if extra.get("video_embed"):
-        lines.append(f"{{video: {extra['video_embed']}}}")
+        lines.append(f"{{video: {cp.to_youtube_embed(extra['video_embed'])}}}")
     for yt in (extra.get("youtube_links") or []):
         label = yt.get("label") or "YouTube"
-        url = yt.get("url") or ""
+        url = cp.to_youtube_embed(yt.get("url") or "")
         if url:
             lines.append(f"{{youtube: {label} | {url}}}")
     if extra.get("comentario"):

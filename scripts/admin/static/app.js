@@ -1,6 +1,40 @@
 // Cantoral Admin - Alpine.js single-page app
 // Phase 3a/3b: catalog + raw editor + import. Visual drag&drop comes in 3c.
 
+// ─────────── YouTube: embed por dentro, link normal por fuera ───────────
+// Espejo de scripts/chordpro.py (to_youtube_embed / to_youtube_watch). Si se
+// cambia el criterio en un lado hay que cambiarlo en el otro.
+const YT_ID_RE = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i;
+const YT_START_RE = /[?&](?:start|t)=(\d+h)?(\d+m)?(\d+)s?(?:&|$)/i;
+
+function youtubeId(url) {
+  const m = YT_ID_RE.exec(String(url || ''));
+  return m ? m[1] : '';
+}
+function youtubeStartSeconds(url) {
+  const m = YT_START_RE.exec(String(url || ''));
+  if (!m) return 0;
+  let total = parseInt(m[3] || '0', 10);
+  if (m[2]) total += parseInt(m[2], 10) * 60;
+  if (m[1]) total += parseInt(m[1], 10) * 3600;
+  return total;
+}
+// Lo que no es de YouTube (Vimeo, un mp3, Drive…) se devuelve intacto.
+function toYoutubeEmbed(url) {
+  const raw = String(url || '').trim();
+  const id = youtubeId(raw);
+  if (!id) return raw;
+  const s = youtubeStartSeconds(raw);
+  return 'https://www.youtube.com/embed/' + id + (s ? '?start=' + s : '');
+}
+function toYoutubeWatch(url) {
+  const raw = String(url || '').trim();
+  const id = youtubeId(raw);
+  if (!id) return raw;
+  const s = youtubeStartSeconds(raw);
+  return 'https://www.youtube.com/watch?v=' + id + (s ? '&t=' + s : '');
+}
+
 // Memo del filtro de doceacordes. Vive fuera del objeto Alpine a propósito: si
 // fuese estado reactivo, escribirlo desde filteredDoce() (que se llama durante
 // el render) dispararía otro render y entraríamos en bucle.
@@ -109,17 +143,25 @@ function app() {
     },
     visualAddMode: false,
     arrMode: false,
+    // Densidad del documento visual. Los acordes se posicionan midiendo los
+    // caracteres ya renderizados, así que cambiar tamaños es seguro siempre que
+    // se vuelva a llamar a layoutChords() después.
+    visualDense: localStorage.visualDense === '1',
     visualSelectedChord: null,
     visualSelectedLines: new Set(),
     visualLastClickedLine: null,
     visualChordClipboard: null,   // [{lyric, chords}]  patrón copiado
+    visualLineClipboard: null,    // bloque de líneas completas copiado (letra + acordes)
     clipboardInfo: '',            // texto persistente cuando hay acordes copiados
     showHelp: false,
     // Cola de revisión: tras importar varias, abre el editor en secuencia
     editorQueue: [],            // [{path, source, label}]
     editorQueueIdx: 0,
     newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
-               mode: 'blank', content: '', creating: false },
+               number: null, mode: 'blank', content: '', creating: false },
+    // Selector visual de número de canción.
+    // {category, categoryTitle, numbers, suggested, selected, target, loading}
+    numberPicker: null,
     saveIndicator: { text: 'Sin cambios', cls: 'saved' },
     lastSaveAt: null,
 
@@ -597,6 +639,61 @@ function app() {
     prefetchDoceVisible() {
       this.prefetchDoce(this.filteredDocePaged().slice(0, 6).map(d => d.id));
     },
+    // ─────────── Selector visual de número ───────────
+    // `target` dice a dónde va el número elegido: {kind:'doce', id} | {kind:'new'}
+    // | {kind:'move'}.
+    async openNumberPicker(category, target, current) {
+      if (!category) {
+        alert('Elige primero la categoría destino: los números ocupados dependen de ella.');
+        return;
+      }
+      this.numberPicker = {
+        category, target, categoryTitle: '', numbers: [],
+        suggested: null, selected: current || null, loading: true,
+      };
+      try {
+        const r = await fetch('/api/category/number-map?category=' + encodeURIComponent(category));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        this.numberPicker = {
+          ...this.numberPicker,
+          categoryTitle: d.category_title,
+          numbers: d.numbers,
+          suggested: d.suggested,
+          // Por defecto el primer hueco libre, saltándose los del docx pendientes.
+          selected: current || d.suggested,
+          loading: false,
+        };
+      } catch (e) {
+        alert('No pude leer los números de la categoría: ' + e.message);
+        this.numberPicker = null;
+      }
+    },
+    pickNumber(entry) {
+      // Los ocupados no se pueden elegir (el backend rechazaría el archivo).
+      // Los reservados por el docx sí: es una decisión consciente del usuario.
+      if (!this.numberPicker || entry.state === 'used') return;
+      this.numberPicker = { ...this.numberPicker, selected: entry.number };
+    },
+    numberPickerCounts() {
+      const p = this.numberPicker;
+      if (!p || !p.numbers.length) return '';
+      const n = s => p.numbers.filter(e => e.state === s).length;
+      return `${n('used')} ocupados · ${n('reserved')} reservados por el cantoral · ${n('free')} libres`;
+    },
+    applyNumberPicker() {
+      const p = this.numberPicker;
+      if (!p || !p.selected) return;
+      const t = p.target || {};
+      if (t.kind === 'doce') {
+        this.doceNumberSel = { ...this.doceNumberSel, [t.id]: p.selected };
+      } else if (t.kind === 'new') {
+        this.newSong.number = p.selected;
+      } else if (t.kind === 'move' && this.moveModal) {
+        this.moveModal.number = p.selected;
+      }
+      this.numberPicker = null;
+    },
     async onDoceCategoryChange(doceId) {
       const cat = this.doceCategorySel[doceId];
       if (!cat) return;
@@ -967,16 +1064,22 @@ function app() {
     },
 
     // Tab Multimedia del editor
+    // Envoltorio para las plantillas: enseña/abre cualquier URL de YouTube en
+    // su forma normal, aunque por dentro esté guardada como embed.
+    ytWatch(url) { return toYoutubeWatch(url); },
     loadMediaForm() {
       const m = this.editor.meta || {};
+      // En el .cho los vídeos de YouTube viven en formato embed (es lo que
+      // reproduce la app), pero al editar se muestran como link normal: es lo
+      // que uno reconoce, copia y pega. Al guardar se vuelven a embed.
       this.mediaForm = {
         rhythm: m.rhythm || '',
         album: m.album || '',
         liturgicalTime: m.liturgicalTime || '',
         source: m.source || '',
-        videoEmbed: m.videoEmbed || '',
+        videoEmbed: toYoutubeWatch(m.videoEmbed || ''),
         comment: m.comment || '',
-        youtubeLinks: (m.youtubeLinks || []).map(l => ({ ...l })),
+        youtubeLinks: (m.youtubeLinks || []).map(l => ({ ...l, url: toYoutubeWatch(l.url) })),
         audioLinks: (m.audioLinks || []).map(l => ({ ...l })),
       };
       this.mediaOriginal = JSON.stringify(this.mediaForm);
@@ -1509,6 +1612,161 @@ function app() {
       return { start: arr[0], end: arr[arr.length - 1] };
     },
 
+    toggleVisualDense() {
+      this.visualDense = !this.visualDense;
+      localStorage.visualDense = this.visualDense ? '1' : '0';
+      // Imprescindible: las posiciones de los acordes se miden del DOM.
+      this.$nextTick(() => this.layoutChords());
+    },
+
+    // Mensaje concreto en el indicador de guardado. Va en $nextTick porque el
+    // $watch de editor.dirty escribe '● Sin guardar' de forma asíncrona y, si lo
+    // pusiéramos de inmediato, ese watcher lo pisaría.
+    announce(msg) {
+      this.$nextTick(() => this.setSaveIndicator('dirty', msg));
+    },
+
+    // Teclado del documento visual. Todo en un sitio para que Supr/Retroceso
+    // puedan decidir entre borrar líneas o borrar el acorde seleccionado.
+    onVisualKeydown(ev) {
+      const mod = ev.ctrlKey || ev.metaKey;
+      const k = ev.key;
+      if (k === 'Delete' || k === 'Backspace') {
+        ev.preventDefault();
+        if (this.visualSelectedLines.size > 0) this.deleteSelectedLines();
+        else this.deleteSelectedChord();
+        return;
+      }
+      if (mod && (k === 'd' || k === 'D')) {
+        ev.preventDefault();
+        this.duplicateSelectedLines();
+        return;
+      }
+      if (mod && k === 'Enter') {
+        ev.preventDefault();
+        this.insertBlankLine();
+        return;
+      }
+      if (ev.altKey && (k === 'ArrowUp' || k === 'ArrowDown')) {
+        ev.preventDefault();
+        this.moveSelectedLines(k === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+      if (k === 'Escape') {
+        this.clearLineSelection();
+        return;
+      }
+      if (k === 'a' && this.arrMode && !mod && !ev.altKey) {
+        ev.preventDefault();
+        this.insertArrLine();
+      }
+    },
+
+    // ─────────── Operaciones sobre líneas seleccionadas ───────────
+    // Reaplica marcas + layout tras cualquier cambio estructural. Todas las
+    // operaciones de abajo terminan aquí para no repetir el mismo trío.
+    afterLineEdit(newSelection) {
+      this.editor.parsed = [...this.editor.parsed];
+      this.commitParsed();
+      this.markChorusFlags();
+      this.visualSelectedLines = newSelection || new Set();
+      this.visualLastClickedLine = null;
+      this.$nextTick(() => this.layoutChords());
+    },
+    // Índices seleccionados, de mayor a menor: así se pueden ir borrando sin
+    // que los splice() desplacen los que quedan por procesar.
+    selectedIdxDesc() {
+      return [...this.visualSelectedLines].sort((a, b) => b - a);
+    },
+    deleteSelectedLines() {
+      const idx = this.selectedIdxDesc();
+      if (!idx.length) return;
+      const n = idx.length;
+      // Sólo preguntamos cuando el borrado es grande: para 1-2 líneas estorba.
+      if (n > 2 && !confirm(`¿Borrar ${n} líneas?`)) return;
+      for (const i of idx) this.editor.parsed.splice(i, 1);
+      this.afterLineEdit();
+      this.announce(`🗑 ${n} línea(s) borrada(s) · pulsa 💾 para guardar`);
+    },
+    // Duplica la selección (letra + acordes) justo debajo. Para repetir un
+    // estribillo o una estrofa sin pasar por el raw.
+    duplicateSelectedLines() {
+      const r = this.selectedLineRange();
+      if (!r) return;
+      const clone = JSON.parse(JSON.stringify(this.editor.parsed.slice(r.start, r.end + 1)));
+      clone.forEach(ln => { delete ln._editing; });
+      this.editor.parsed.splice(r.end + 1, 0, ...clone);
+      // Deja seleccionada la copia, que es lo que se va a retocar.
+      const sel = new Set();
+      for (let i = 0; i < clone.length; i++) sel.add(r.end + 1 + i);
+      this.afterLineEdit(sel);
+      this.announce(`⧉ ${clone.length} línea(s) duplicadas debajo · pulsa 💾`);
+    },
+    // Copia la selección entera (letra + acordes) al portapapeles interno.
+    // Distinto de copyChordPattern(), que copia sólo el patrón de acordes para
+    // aplicarlo a OTRA letra.
+    copySelectedLines() {
+      const r = this.selectedLineRange();
+      if (!r) {
+        alert('Marca primero las líneas con el círculo ○ del margen izquierdo.');
+        return;
+      }
+      const block = JSON.parse(JSON.stringify(this.editor.parsed.slice(r.start, r.end + 1)));
+      block.forEach(ln => { delete ln._editing; });
+      this.visualLineClipboard = block;
+      const lyrics = block.filter(l => l.type === 'lyric').length;
+      this.clipboardInfo = `⧉ ${block.length} línea(s) copiadas (${lyrics} con letra y acordes)`;
+    },
+    // Pega el bloque copiado: debajo de la selección, o al final si no hay.
+    pasteLinesBelow() {
+      const block = this.visualLineClipboard;
+      if (!block || !block.length) {
+        alert('No has copiado líneas todavía. Marca unas líneas y pulsa "⧉ Copiar líneas".');
+        return;
+      }
+      const clone = JSON.parse(JSON.stringify(block));
+      const r = this.selectedLineRange();
+      const at = r ? r.end + 1 : this.editor.parsed.length;
+      this.editor.parsed.splice(at, 0, ...clone);
+      const sel = new Set();
+      for (let i = 0; i < clone.length; i++) sel.add(at + i);
+      this.afterLineEdit(sel);
+      this.announce(`⧉ ${clone.length} línea(s) pegadas · pulsa 💾`);
+    },
+    cancelLineClipboard() {
+      this.visualLineClipboard = null;
+      this.clipboardInfo = '';
+    },
+    // Línea en blanco debajo de la selección (o al final). Para separar bloques
+    // sin tener que bajar al raw.
+    insertBlankLine() {
+      const r = this.selectedLineRange();
+      const at = r ? r.end + 1 : this.editor.parsed.length;
+      this.editor.parsed.splice(at, 0, { type: 'blank', raw: '' });
+      this.afterLineEdit();
+    },
+    // Línea de letra nueva y vacía, lista para escribir con el editor de letra.
+    insertLyricLine() {
+      const r = this.selectedLineRange();
+      const at = r ? r.end + 1 : this.editor.parsed.length;
+      this.editor.parsed.splice(at, 0, { type: 'lyric', lyric: '', chords: [], raw: '' });
+      this.afterLineEdit();
+      this.$nextTick(() => this.editLyricLine(at));
+    },
+    moveSelectedLines(dir) {
+      const r = this.selectedLineRange();
+      if (!r) return;
+      const arr = this.editor.parsed;
+      if (dir < 0 && r.start === 0) return;
+      if (dir > 0 && r.end === arr.length - 1) return;
+      const block = arr.splice(r.start, r.end - r.start + 1);
+      const at = r.start + dir;
+      arr.splice(at, 0, ...block);
+      const sel = new Set();
+      for (let i = 0; i < block.length; i++) sel.add(at + i);
+      this.afterLineEdit(sel);
+    },
+
     // ─────────── Estribillo: marcar / desmarcar / insertar ───────────
     markSelectionAsChorus() {
       const r = this.selectedLineRange();
@@ -1699,13 +1957,18 @@ function app() {
       const clone = JSON.parse(JSON.stringify(this.editor.parsed.slice(block.startIdx, block.endIdx + 1)));
       // Insertar después de la última línea seleccionada (o al final del doc si no hay)
       const r = this.selectedLineRange();
-      let insertAt = r ? r.end + 1 : this.editor.parsed.length;
+      const insertAt = r ? r.end + 1 : this.editor.parsed.length;
       // Añadir línea blanca de separación antes y después
       const toInsert = [{ type: 'blank', raw: '' }, ...clone, { type: 'blank', raw: '' }];
       this.editor.parsed.splice(insertAt, 0, ...toInsert);
-      this.commitParsed();
-      this.markChorusFlags();
-      this.$nextTick(() => this.layoutChords());
+      // Deja seleccionado el estribillo recién pegado y avisa de DÓNDE ha caído:
+      // sin este mensaje parecía que el botón sólo sabía añadir al final.
+      const sel = new Set();
+      for (let i = 0; i < toInsert.length; i++) sel.add(insertAt + i);
+      this.afterLineEdit(sel);
+      this.announce(r
+        ? '🔁 Estribillo insertado debajo de la selección · pulsa 💾'
+        : '🔁 Estribillo insertado al final (no había selección) · pulsa 💾');
     },
 
     // ─────────── Copiar / pegar patrón de acordes ───────────
@@ -1858,6 +2121,46 @@ function app() {
       this.$nextTick(() => this.layoutChords());
     },
 
+    // ─────────── Resaltado del editor raw ───────────
+    // Devuelve HTML con las directivas, comentarios, marcas de estribillo y
+    // acordes envueltos en <span>. Se pinta en la capa de debajo del textarea.
+    // OJO: sólo se cambian colores/peso, nunca el tamaño de letra ni el
+    // espaciado — el textarea de encima no puede estilar partes de su texto, así
+    // que cualquier cambio de métrica descuadraría el cursor de la letra.
+    highlightCho(text) {
+      if (!text) return '\n';
+      const esc = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      const re = /\{[^}\n]*\}|\[[^\]\n]*\]/g;
+      let out = '';
+      let last = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        out += esc(text.slice(last, m.index));
+        const tok = m[0];
+        if (tok[0] === '[') {
+          out += '<span class="hl-chord">' + esc(tok) + '</span>';
+        } else {
+          const inner = tok.slice(1, -1).trim().toLowerCase();
+          let cls = 'hl-directive';
+          if (/^(c|comment)\s*:/.test(inner)) cls = 'hl-comment';
+          else if (/^(soc|eoc|start_of_chorus|end_of_chorus)$/.test(inner)) cls = 'hl-chorus';
+          else if (/^arr\s*:/.test(inner)) cls = 'hl-arr';
+          out += '<span class="' + cls + '">' + esc(tok) + '</span>';
+        }
+        last = m.index + tok.length;
+      }
+      out += esc(text.slice(last));
+      // Newline final: si no, la última línea del <pre> mide menos que la del
+      // textarea y el resaltado se desplaza al llegar abajo.
+      return out + '\n';
+    },
+    syncRawScroll(ev) {
+      const pre = this.$refs.rawHighlight;
+      if (!pre) return;
+      pre.scrollTop = ev.target.scrollTop;
+      pre.scrollLeft = ev.target.scrollLeft;
+    },
+
     refreshMetaFromRaw() {
       const c = this.editor.content;
       const get = (k) => {
@@ -1894,7 +2197,33 @@ function app() {
       if (next !== c) {
         this.editor.content = next;
         this.editor.dirty = true;
+        // Y el modelo del visual también, o se pierde el cambio: cualquier
+        // acción del visual llama a commitParsed(), que reserializa desde
+        // editor.parsed y machacaría el {título} que acabamos de escribir.
+        this.syncMetaIntoParsed(key, value);
       }
+    },
+    // Refleja un {key: value} del panel de metadatos en editor.parsed.
+    syncMetaIntoParsed(key, value) {
+      const parsed = this.editor.parsed;
+      if (!parsed || !parsed.length) return;
+      const raw = `{${key}: ${value}}`;
+      const re = new RegExp('^\\s*\\{\\s*' + key + '\\s*:', 'i');
+      const at = parsed.findIndex(ln => ln.type === 'directive' && re.test(ln.raw || ''));
+      if (at >= 0) {
+        parsed[at] = { ...parsed[at], raw };
+      } else {
+        // No existía: la colocamos al final del bloque de cabecera, igual que
+        // hace updateMetaInRaw() con el texto crudo.
+        let insertAt = 0;
+        for (let i = 0; i < parsed.length; i++) {
+          const ln = parsed[i];
+          if (ln.type === 'directive' || ln.type === 'comment') insertAt = i + 1;
+          else if (ln.type === 'blank' && insertAt > 0) break;
+        }
+        parsed.splice(insertAt, 0, { type: 'directive', raw });
+      }
+      this.editor.parsed = [...parsed];
     },
     async saveSong() {
       if (!this.editor.dirty) return;
@@ -2169,7 +2498,7 @@ function app() {
     // ─────────── Nueva canción ───────────
     openNewSongModal() {
       this.newSong = { open: true, category: '', title: '', artist: '', key: '', capo: 0,
-                       mode: 'blank', content: '', creating: false };
+                       number: null, mode: 'blank', content: '', creating: false };
     },
     async createNewSong() {
       if (!this.newSong.category || !this.newSong.title) return;
@@ -2184,6 +2513,7 @@ function app() {
             artist: this.newSong.artist,
             key: this.newSong.key,
             capo: parseInt(this.newSong.capo) || 0,
+            number: this.newSong.number || undefined,
             mode: this.newSong.mode,
             content: this.newSong.content,
           }),

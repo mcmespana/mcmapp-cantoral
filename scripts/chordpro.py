@@ -44,6 +44,66 @@ def nl(s) -> str:
     return s if s.endswith("\n") else s + "\n"
 
 
+# ─────────── YouTube: guardamos siempre en formato embed ─────────── #
+
+# Cualquier forma de enlazar un vídeo de YouTube → el id de 11 caracteres.
+_YT_ID_RX = re.compile(
+    r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|v/|shorts/|live/)"
+    r"|youtu\.be/)"
+    r"([A-Za-z0-9_-]{11})",
+    re.IGNORECASE,
+)
+# Segundo de inicio, tanto ?t=90 / ?t=1m30s como ?start=90
+_YT_START_RX = re.compile(r"[?&](?:start|t)=(\d+h)?(\d+m)?(\d+)s?(?:&|$)", re.IGNORECASE)
+
+
+def youtube_id(url) -> str:
+    """Devuelve el id del vídeo, o '' si la URL no es de YouTube."""
+    m = _YT_ID_RX.search(str(url or ""))
+    return m.group(1) if m else ""
+
+
+def _youtube_start_seconds(url: str) -> int:
+    m = _YT_START_RX.search(url)
+    if not m:
+        return 0
+    h, mi, s = m.group(1), m.group(2), m.group(3)
+    total = int(s or 0)
+    if mi:
+        total += int(mi[:-1]) * 60
+    if h:
+        total += int(h[:-1]) * 3600
+    # '?t=90' cae en el grupo de segundos, que es lo que queremos.
+    return total
+
+
+def to_youtube_embed(url) -> str:
+    """Normaliza cualquier URL de YouTube a la forma embed.
+
+    La app móvil reproduce el vídeo embebido, así que en el .cho guardamos
+    siempre `https://www.youtube.com/embed/<id>`. Lo que NO es de YouTube
+    (Vimeo, un mp3, un Drive…) se devuelve tal cual: aquí no se inventa nada.
+    """
+    url = str(url or "").strip()
+    vid = youtube_id(url)
+    if not vid:
+        return url
+    out = f"https://www.youtube.com/embed/{vid}"
+    start = _youtube_start_seconds(url)
+    return f"{out}?start={start}" if start else out
+
+
+def to_youtube_watch(url) -> str:
+    """Inversa de `to_youtube_embed`: la forma normal para abrir y compartir."""
+    url = str(url or "").strip()
+    vid = youtube_id(url)
+    if not vid:
+        return url
+    out = f"https://www.youtube.com/watch?v={vid}"
+    start = _youtube_start_seconds(url)
+    return f"{out}&t={start}" if start else out
+
+
 def parse_label_url(value: str) -> dict:
     """'Etiqueta | https://url' → {label,url}. Sin '|' → label='' y url=value."""
     value = str(value)
