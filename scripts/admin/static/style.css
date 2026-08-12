@@ -804,11 +804,11 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
      valor: la capa de acordes se coloca justo encima del texto con un offset
      negativo, así que si el padding fuera menor los acordes se comerían la línea
      de arriba. Por eso van los dos de la misma variable. */
-  --ed-chord-h: 14px;
-  --ed-lyric-lh: 1.18;
-  --ed-blank-h: 7px;
-  --ed-gap: 1px;
-  outline: none; padding: 12px 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+  --ed-chord-h: 18px;
+  --ed-lyric-lh: 1.4;
+  --ed-blank-h: 11px;
+  --ed-gap: 3px;
+  outline: none; padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
   /* Carlito = clon métrico de Calibri (mismas anchuras de caracteres).
      Por eso los acordes calculados con Calibri caen pixel-fiel en pantalla. */
   font-family: "Carlito", "Calibri", "Segoe UI", sans-serif;
