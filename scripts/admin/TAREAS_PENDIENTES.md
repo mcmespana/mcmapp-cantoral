@@ -9,11 +9,6 @@ que **no** se hicieron en esa iteración pero merecen la pena:
 
 ### Rendimiento
 
-- **No recargar `/api/catalog` entero tras cada import.** Ahora tarda ~80 ms,
-  pero devuelve 143 KB y recalcula todo el emparejado repo↔docx↔LaTeX↔doce
-  sólo para añadir una fila. Lo suyo sería que `/api/doce/import` y
-  `/api/docx/import` devolvieran ya la fila nueva y el front la insertara,
-  dejando la recarga completa para un botón de refresco.
 - **`/api/doce/list` devuelve 355 KB** con las 1.683 canciones (título, autor,
   subtítulo, url…). Se podría paginar en servidor o recortar campos; el
   subtítulo largo es la mayor parte del peso.
@@ -31,10 +26,6 @@ que **no** se hicieron en esa iteración pero merecen la pena:
 
 ### UX
 
-- **Errores de consola preexistentes**: al arrancar, Alpine evalúa
-  `data.stats` / `data.categories` / `moveModal.number` antes de que existan y
-  suelta ~6 `TypeError` en consola. No rompen nada (el render se reintenta),
-  pero ensucian el debug. Guardar con `data &&` / optional chaining.
 - **La selección de doceacordes no se limpia al cambiar de pestaña**: si marcas
   3 canciones y te vas al cantoral, al volver siguen marcadas y la barra dice
   "Importar 3 marcadas". A veces es lo que quieres; conviene al menos avisarlo.
@@ -49,6 +40,49 @@ que **no** se hicieron en esa iteración pero merecen la pena:
   no existe). Enlaza con el "preview comparativo" de más abajo.
 - **Filtrar el catálogo de doceacordes por lo que falta en el cantoral**, no
   sólo por "está / no está en repo".
+
+## Pendiente de la ronda de editor visual / raw / números
+
+Detectado al hacer el selector de números, las operaciones de línea y el raw
+coloreado. No hecho todavía:
+
+### Editor visual
+
+- **Pegar acordes desde el portapapeles del sistema** (Ctrl+V) en el visual, no
+  sólo desde el modal de «Pegar texto».
+- **Deshacer con granularidad de acorde.** Un arrastre de acorde es un paso de
+  undo, lo cual está bien, pero arrastrar el mismo acorde tres veces seguidas
+  deja tres pasos; se podrían agrupar por acorde y tiempo, como se hace ya con
+  las ráfagas de tecleo en los metadatos.
+- **Mover el bloque marcado con arrastre a otra canción** / entre pestañas. Hoy
+  el portapapeles de líneas vive sólo dentro de la canción abierta.
+- **Autoscroll al arrastrar** cerca del borde del documento: en canciones largas
+  hay que soltar, hacer scroll y volver a agarrar.
+
+### Raw
+
+- **Directivas en letra más pequeña.** Se pidió y no se puede con este montaje:
+  el color va en un `<pre>` detrás del `<textarea>`, y un `font-size` distinto
+  descuadraría el cursor (el textarea no puede estilar partes de su texto). Para
+  tenerlo habría que cambiar el textarea por un `contenteditable`, lo que obliga
+  a rehacer el manejo del caret, el pegado y el undo del navegador. Valorar si
+  merece la pena.
+- **Resaltar la línea del cursor** en la capa de resaltado. Los números de línea
+  ya están; esto es el complemento natural y encaja en la misma rejilla.
+- **Ir a la línea N** (y saltar desde el aviso de «corchetes que no parecen un
+  acorde» a la línea que lo tiene).
+
+### Números
+
+- **La rejilla llega hasta 100 fijo** (o hasta el mayor ocupado). Si alguna
+  categoría pasara de ahí habría que subir el `upto`; el endpoint ya lo acepta
+  como parámetro.
+- **Ver los reservados también en la vista de reordenar**, para saber qué huecos
+  conviene dejar libres al recolocar una categoría.
+- **`docx_pending_by_section()` recalcula el emparejado repo↔docx en cada
+  llamada.** Está cacheado por debajo (conversiones + docx), así que sale a unos
+  pocos ms, pero es el mismo trabajo que hace `/api/catalog`: se podría compartir
+  un único resultado memoizado por mtime.
 
 ## Importadores adicionales para "Nueva canción a mano"
 
@@ -90,7 +124,6 @@ con la misma lógica de detección.
 - **Render con la fuente real del cantoral (Calibri)**: cargar Calibri
   via @font-face o web font equivalente (Carlito es métricamente compatible
   y libre). Mejoraría la fidelidad visual a Word.
-- **Undo/Redo** local en el editor visual (stack de estados).
 - **Atajo `+ acorde` directo con tecla**: hold de una tecla (`A`?) + click
   para añadir sin tener que activar el modo en la toolbar.
 - **Indicador de palabra/sílaba** durante el drag: mostrar visualmente
@@ -104,10 +137,8 @@ con la misma lógica de detección.
 
 - **Vista compacta por categoría**: poder ver una categoría como tabla
   estilo "índice" (número · título · key · capo · pendiente).
-- **Acción masiva**: seleccionar varias canciones del catálogo y
-  - mover de categoría
-  - aplicar/quitar TO DO en bloque
-  - exportar a un zip
+- **Exportar a un zip** las canciones seleccionadas del catálogo (mover de
+  categoría y el TO DO en bloque ya están).
 
 ## Importar del cantoral
 

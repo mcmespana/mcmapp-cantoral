@@ -47,6 +47,13 @@ Tabla con todas las canciones del repo. Cada fila lleva badges:
 
 Filtros: por categoría, por TO DO, por "solo manuales", buscador.
 
+**Acciones masivas**: marca varias con su checkbox y la barra de arriba permite
+poner o quitar el estado de revisión en bloque, y **mover todas a otra
+categoría** de una vez. Al mover, los números se reparten sobre la marcha (sin
+chocar entre ellas ni con lo que ya hay, y saltándose los reservados del
+cantoral) y se hace backup de cada archivo antes de tocarlo. Una canción que ya
+esté en la categoría destino se deja como está en vez de renumerarla sin motivo.
+
 ### Editor de canción
 
 Click en cualquier título → editor con 3 pestañas + panel lateral de metadatos.
@@ -86,14 +93,85 @@ encima centrados sobre la letra a la que apuntan.
 - 📥 **Pegar acordes** — aplica el patrón a la selección actual, alineando
   por _palabra_: acorde de la palabra N origen → palabra N destino. Después
   solo hay que retocar a mano lo que haga falta.
-- 🔁 **Insertar estribillo** — pega un bloque `{soc}…{eoc}` ya existente
-  después de la selección.
+- 🔁 **Estribillo** — repite un bloque `{soc}…{eoc}` ya existente **debajo de la
+  selección** (o al final si no hay), con una blanca a cada lado.
 
-**Atajo de teclado**: `Ctrl/Cmd+S` guarda.
+**Deshacer / rehacer** — `Ctrl/Cmd+Z` y `Ctrl/Cmd+Shift+Z` (o `Ctrl+Y`), y los
+botones ↶ ↷ de la barra. Cubre **todo** lo que se hace en el visual: mover un
+acorde, editar letra, borrar o duplicar líneas, transponer, cambiar metadatos…
+
+El enganche está en `commitParsed()`, por donde pasan todas las mutaciones, así
+que una operación nueva entra en el historial sin tocar nada. Guarda contenidos
+enteros (el `.cho` serializado), no diffs: son unos pocos KB por paso y el tope
+son 60. Dentro de un campo de texto manda el `Ctrl+Z` del navegador — si lo
+secuestrásemos no se podría deshacer lo que se está escribiendo. Lo que teclees
+en el Raw deja **un** paso al salir de la pestaña, no uno por pulsación.
+
+**Grupo «Líneas»** — trabajar con líneas enteras sin bajar al Raw. Todo actúa
+sobre la selección e inserta **debajo** de ella (o al final si no hay):
+
+| acción | atajo | qué hace |
+| ------ | ----- | -------- |
+| 🗑 Borrar | `Supr` / `Retroceso` | borra las líneas marcadas (confirma a partir de 3) |
+| ⧉+ Duplicar | `Ctrl/Cmd+D` | duplica la selección con letra y acordes |
+| ⧉ Copiar / 📌 Pegar debajo | — | copia el bloque entero (letra + acordes) y lo pega donde quieras, tantas veces como haga falta |
+| ␣ Blanco | `Ctrl/Cmd+Enter` | línea en blanco de separación |
+| ＋ Letra | — | línea de letra nueva, se abre para escribirla |
+| 📋 Pegar texto | — | pega un bloque de texto: una línea por verso, opcionalmente envuelto en `{soc}`/`{eoc}` |
+| ▲ ▼ | `Alt+↑` / `Alt+↓` | sube o baja el bloque |
+| arrastrar el `○` | — | mueve la línea (o todo el bloque marcado) donde la sueltes |
+
+**La selección respeta las líneas exactas que marcas.** Si marcas la 1 y la 5,
+duplicar/copiar/mover/borrar actúan sobre esas dos y no sobre el tramo 1-5. La
+excepción es **🟡 Marcar estribillo**, que por definición necesita un bloque
+seguido: si la selección está salteada avisa de que marcará todo el tramo.
+
+**Edición de letra en línea** — doble-click en una letra abre un input **en el
+sitio de la línea**, con la misma fuente, y los acordes siguen flotando encima
+mientras escribes (antes era un `prompt()` del navegador que tapaba la canción).
+`Enter` confirma, `Esc` cancela y `Tab` salta a la siguiente línea de letra para
+repasar una estrofa del tirón. Si escribes `[acordes]` entre corchetes se
+parsean como acordes de verdad; si no, los que ya había se reubican en la misma
+palabra del texto nuevo.
+
+Ojo con la diferencia: **⧉ Copiar** se lleva el bloque completo (letra +
+acordes) para repetirlo; **📋 Copiar patrón** se lleva sólo los acordes para
+aplicarlos a *otra* letra.
+
+Sin líneas seleccionadas, `Supr` sigue borrando el acorde marcado.
+
+**↕ Cómoda / Compacta** — densidad del documento. La compacta quita el aire
+entre líneas (~17 % menos de alto) para ver más canción de una vez; se recuerda
+en `localStorage`. Es seguro: los acordes se posicionan midiendo los caracteres
+ya renderizados, y el toggle vuelve a llamar a `layoutChords()`.
+
+**Atajos de teclado**: `Ctrl/Cmd+S` guarda · `Esc` quita la selección.
 
 #### 📝 Raw
-ChordPro crudo en textarea. Para reorganizar líneas grandes, mover bloques,
-añadir comentarios, etc. Sincroniza con el Visual al cambiar de pestaña.
+ChordPro crudo, editable como texto plano, pero **con formato**: directivas en
+gris, `{c: comentarios}` en naranja, `{soc}`/`{eoc}` en ámbar y `[acordes]` en
+azul. Sincroniza con el Visual al cambiar de pestaña.
+
+Trae **números de línea** y marca con un subrayado ondulado rojo los corchetes
+que **no parecen un acorde** (`[Xyz]`, o un `[Do]`/`[Fa]` que se quedó sin
+traducir en un import), con el recuento al pie. El detector es a propósito
+permisivo: antes no señalar un acorde raro pero válido que pintar de rojo media
+canción.
+
+Está hecho con un `<pre>` coloreado justo detrás de un `<textarea>` de texto
+transparente. Las dos capas comparten fuente, tamaño, interlineado y modo de
+salto de línea — **si se toca una hay que tocar la otra**, o el cursor deja de
+caer sobre la letra que se está escribiendo. Detalles que importan:
+
+- El `<pre>` es una **rejilla de dos columnas** (nº de línea + código) y el
+  textarea se coloca encima **sólo de la segunda**. El número vive en la misma
+  fila que su línea, así que cuando una línea larga hace *wrap* la fila crece y
+  el número sigue cuadrado. Con una columna aparte se iría desplazando.
+- El borde va en el contenedor, no en cada capa: si lo llevara cada una, el
+  ancho de contenido no coincidiría y el texto bailaría.
+- Las directivas salen en gris pero **no** más pequeñas: un `font-size` distinto
+  en la capa de color descuadraría el cursor, ya que el textarea no puede estilar
+  partes de su propio texto.
 
 #### 👁 Preview
 Render limpio sin botones — como se verá en la app móvil. Los acordes salen
@@ -127,6 +205,47 @@ Si al importar un lote hubiera números repetidos en la misma categoría se
 reparten de nuevo automáticamente antes de escribir nada.
 
 `Esc` cierra los previews (doceacordes, LaTeX y cantoral).
+
+## Números de canción (🔢)
+
+El botón **🔢** que hay junto a cada campo de número (filas de doceacordes,
+«nueva canción», «mover de categoría») abre una rejilla del 1 al 100:
+
+| estado | pinta | se puede elegir |
+| ------ | ----- | --------------- |
+| **ocupado** | tachado y gris, con el título de la canción que lo tiene | no |
+| **reservado** | a rayas ámbar, con el título de la canción del cantoral | sí, avisando |
+| **libre** | normal | sí |
+
+**Reservado** quiere decir: ese número le corresponde a una canción que está en
+el `.docx` del cantoral y **todavía no has importado**. Antes, una canción nueva
+se metía en el primer hueco libre y le robaba el sitio; ahora el número que se
+propone por defecto es el primer hueco libre **saltándose los reservados**. Si
+quedan 20 canciones por integrar de una categoría, una canción nueva se va
+detrás de todas ellas en lugar de colarse en medio.
+
+Se puede elegir un número reservado a mano (a veces es lo que quieres); sólo los
+ocupados están vetados, porque el archivo no se podría escribir.
+
+Esto afecta a todos los caminos que asignan número: nueva canción a mano,
+importar de doceacordes (una o en lote), importar del cantoral y mover de
+categoría. La excepción sana: cuando una canción **del cantoral** reclama su
+propio número (`position_hint`), ese número se le da aunque esté reservado —
+justamente porque el reservado es ella.
+
+## Vídeos de YouTube
+
+Pega el link **como te venga**: `watch?v=`, `youtu.be/`, `shorts/`, `live/`, con
+lista, con `&t=90` o `?t=1m30s`. En el `.cho` se guarda **siempre** como
+`https://www.youtube.com/embed/<id>` (con `?start=` si había minuto), que es el
+formato que reproduce la app móvil. En el editor, en cambio, siempre se muestra
+y se abre como link normal de YouTube — que es el que uno reconoce, copia y
+pega.
+
+La conversión vive en `scripts/chordpro.py` (`to_youtube_embed` /
+`to_youtube_watch`) con un espejo en `static/app.js` para la interfaz: **si se
+cambia el criterio en un lado, hay que cambiarlo en el otro**. Lo que no es de
+YouTube (Vimeo, un mp3, un Drive) se deja intacto.
 
 ### Reordenar (🔀)
 Elige categoría, arrastra filas, "Aplicar nuevo orden" renombra los archivos
@@ -180,6 +299,7 @@ mirar aquí primero:
 | Qué | Antes | Ahora |
 | --- | ----- | ----- |
 | `/api/catalog` (se recarga tras cada import) | ~16 s | ~80 ms |
+| Abrir el editor tras importar | esperaba al catálogo entero | ~240 ms |
 | Dashboard con datos al abrir la app | ~16 s | ~0,5 s |
 | Preview de una canción de doceacordes | ~2,3 s | ~1,5 s, o instantáneo si ya se pasó el ratón por la fila |
 | Importar 6 canciones de golpe | ~14 s | ~3 s |
@@ -199,6 +319,13 @@ mirar aquí primero:
    `/api/doce/prefetch` deja en cache la canción cuando pasas el ratón por su
    fila, y al arrancar el servidor se precalientan las cachés caras en un hilo
    aparte.
+5. **Importar no espera al catálogo completo.** `/api/catalog/rows?paths=…`
+   devuelve las filas nuevas ya enriquecidas (mismo código que `/api/catalog`,
+   ver `enrich_repo_song`), el front las mete en el catálogo que ya tiene en
+   pantalla y abre el editor; la recarga completa se lanza **en segundo plano**
+   para cuadrar el resto de contadores. Los contadores que dependen de esas
+   listas se recalculan en el parcheo, y está verificado que coinciden con lo que
+   devuelve la recarga.
 
 Los ficheros `.cho` generados son **idénticos** byte a byte a los de antes
 (verificado sobre las 225 canciones del docx): todo esto es cacheo y
