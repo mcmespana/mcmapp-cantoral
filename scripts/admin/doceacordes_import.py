@@ -2,19 +2,39 @@
 # -*- coding: utf-8 -*-
 """Importador de canciones desde doceacordes.es → ChordPro estilo MCM.
 
-Descarga el ChordPro de https://doceacordes.es/cancion/{ID}/chordpro y lo
-adapta a nuestras convenciones:
+De dónde sale la canción
+------------------------
+La ruta `https://doceacordes.es/cancion/{ID}/chordpro` que usábamos **ya no
+existe** (404): rehicieron la web con Astro y la quitaron. Su botón
+«Descargar → ChordPro» tampoco sirve para nosotros, porque no es un enlace sino
+un `blob:` que su JavaScript fabrica en el navegador — no hay nada que pedirle al
+servidor.
+
+Lo que sí pasa es que **todo lo que ese fichero contiene está en el HTML de la
+ficha**: el cuerpo viaja en las props del componente `SongChordProViewer` y el
+resto (título, autor, álbum, parroquia, vídeo) en el marcado. Así que se compone
+el .cho desde la ficha. Comprobado contra una descarga real de su botón: sale
+idéntico salvo una blanca que su JS mete tras cada `{end_of_chorus}`. Encima nos
+sale más barato, porque la ficha ya la descargábamos para los metadatos: una
+petición en vez de dos.
+
+Adaptación a nuestras convenciones:
   - {start_of_chorus}/{end_of_chorus} → {soc}/{eoc}
-  - Acordes en español (Do, Re, Mi…) → inglés (C, D, E…)
-  - {key: Re} → {key: D}
+  - Acordes en español (Do, Re, Mi…) → inglés (C, D, E…), tolerando erratas de
+    su web (`SOl7`, `[[la]`) y acordes ingleses en minúscula (`[c]`, `[b7]`)
+  - {key} deducido de `toneFrom` + el modo del primer acorde (su propia descarga
+    no incluye el tono)
   - Prepend {comment: TO DO: PENDIENTE REVISIÓN ACORDES}
   - Limpia espacios sobrantes dentro de los corchetes ([F ] → [F])
 
 Usa el JSON local scripts/canciones_doce_acordes.json como índice
-título/artista → ID. Permite matching difuso para sugerir candidatos.
+título/artista → ID. **Es la única fuente del listado**: ya no hay API pública,
+así que si borras ese fichero no hay forma de regenerarlo salvo recorriendo su
+sitemap.
 """
 from __future__ import annotations
 
+import html as html_mod
 import json
 import re
 import sys
@@ -60,20 +80,35 @@ def translate_chord_token(tok: str) -> str:
     """Traduce un solo token de acorde español→inglés. Idempotente para acordes ya en EN."""
     if not tok:
         return tok
+    # Corchetes sueltos: en doceacordes hay erratas tipo "[[la]", que el parser
+    # nos entrega como "[la". Se limpian antes de intentar traducir.
+    tok = tok.strip().strip("[]").strip()
+    if not tok:
+        return tok
     # Procesa "Do/Mi" → "C/E"
     if "/" in tok:
         parts = tok.split("/")
         return "/".join(translate_chord_token(p) for p in parts)
 
-    # Buscar la nota española al inicio
+    # Buscar la nota española al inicio. Sin distinguir mayúsculas: el mayor o
+    # menor lo marca el sufijo ("m"), no la caja de la nota, y en su web hay
+    # erratas de caja como "SOl7" que antes se quedaban sin traducir.
     m = re.match(
-        r"^(Sol|SOL|sol|Do|DO|do|Re|RE|re|Mi|MI|mi|Fa|FA|fa|La|LA|la|Si|SI|si)(.*)$",
+        r"^(sol|do|re|mi|fa|la|si)(.*)$",
         tok,
+        re.IGNORECASE,
     )
     if not m:
+        # No es español. Puede ser un acorde inglés escrito en minúscula
+        # ("[c]", "[em]", "[b7]"): se le pone la raíz en mayúscula, que es como
+        # lo espera el resto del cantoral. Es inequívoco porque ninguna nota
+        # española es una sola letra a-g.
+        m_en = re.match(r"^([a-g])([#b]?)(.*)$", tok)
+        if m_en:
+            return m_en.group(1).upper() + m_en.group(2) + m_en.group(3)
         return tok
     note_es, rest = m.group(1), m.group(2)
-    note_en = ES_NOTE_MAP.get(note_es, note_es)
+    note_en = ES_NOTE_MAP.get(note_es, ES_NOTE_MAP.get(note_es.capitalize(), note_es))
     # En español "m" minúscula = menor; en inglés también "m". OK pasa tal cual.
     # "M" mayúscula a veces se usa para mayor, en inglés se omite.
     if rest.startswith("M") and not rest.startswith("Maj") and not rest.startswith("m"):
@@ -299,28 +334,124 @@ def _cache_html_path(doce_id: str) -> Path:
     return CACHE_DIR / f"{doce_id}.html"
 
 
+class DoceFormatoCambiado(RuntimeError):
+    """La ficha no tiene el ChordPro donde lo esperamos.
+
+    Se lanza a propósito en vez de devolver vacío: si doceacordes vuelve a
+    rediseñar su web, es mejor que el import falle con un mensaje claro que
+    generar un .cho sin canción dentro.
+    """
+
+
+# El cuerpo de la canción viaja en las props del componente Astro que pinta el
+# visor de ChordPro. Ojo: la ruta /cancion/<id>/chordpro que usábamos antes YA NO
+# EXISTE (404 desde el rediseño de la web); y el botón "Descargar → ChordPro" no
+# es un enlace, es un blob que su JavaScript fabrica en el navegador, así que no
+# hay nada que pedir al servidor. Todo lo que ese fichero contiene está aquí.
+_ISLAND_RE = re.compile(
+    r'component-export="SongChordProViewer"[^>]*?props="([^"]*)"', re.IGNORECASE | re.DOTALL
+)
+
+
+def _astro_prop(props: dict, key: str) -> str:
+    """Lee una prop de un astro-island.
+
+    Astro serializa cada valor como `[tipo, valor]`; el tipo 0 es un valor
+    plano. Se acepta también el valor suelto por si cambian el formato.
+    """
+    v = props.get(key)
+    if isinstance(v, list) and len(v) > 1:
+        return v[1] if isinstance(v[1], str) else ""
+    return v if isinstance(v, str) else ""
+
+
+def extract_song_from_page(page_html: str) -> Tuple[str, str]:
+    """Devuelve (cuerpo_chordpro, tono) leídos de la ficha de la canción."""
+    m = _ISLAND_RE.search(page_html)
+    if not m:
+        raise DoceFormatoCambiado(
+            "no encuentro el visor de ChordPro en la ficha (¿han cambiado otra vez la web?)"
+        )
+    try:
+        props = json.loads(html_mod.unescape(m.group(1)))
+    except Exception as e:
+        raise DoceFormatoCambiado(f"no puedo leer las props del visor: {e}") from e
+    return _astro_prop(props, "songText"), _astro_prop(props, "toneFrom")
+
+
+def guess_key(body: str, tone_from: str) -> str:
+    """Tono de la canción, ya en inglés.
+
+    `toneFrom` sólo trae la nota raíz y siempre en mayúsculas, así que pierde el
+    modo: una canción en La menor viene como "LA". Recuperamos el menor del
+    primer acorde del cuerpo, pero sólo si su raíz coincide con la de `toneFrom`
+    (si la canción empieza en un acorde que no es la tónica, no inventamos).
+    """
+    root = translate_key_value(tone_from) if tone_from else ""
+    m = re.search(r"\[([^\]\n]+)\]", body or "")
+    first = translate_chord_token(m.group(1)) if m else ""
+    if first and root and first.startswith(root):
+        return first
+    return root
+
+
+def compose_chordpro(doce_id: str, page_html: str) -> str:
+    """Rehace el .cho que antes servía /chordpro, a partir de la ficha.
+
+    Comprobado contra una descarga real del botón de su web: sale idéntico
+    salvo una línea en blanco que su JS mete tras cada {end_of_chorus} (y que
+    `adapt_chordpro` normaliza de todas formas). Además añadimos {key}, que su
+    propia descarga no incluye.
+    """
+    body, tone = extract_song_from_page(page_html)
+    if not (body or "").strip():
+        raise DoceFormatoCambiado("la ficha no trae letra en el visor de ChordPro")
+
+    entry = get_entry(doce_id) or {}
+    page_meta = extract_metadata_from_html(page_html)
+    title = entry.get("title") or page_meta.get("titulo") or f"cancion-{doce_id}"
+    artist = entry.get("artist") or page_meta.get("autor") or ""
+
+    header = [f"{{title: {title}}}"]
+    if artist:
+        header.append(f"{{artist: {artist}}}")
+    key = guess_key(body, tone)
+    if key:
+        header.append(f"{{key: {key}}}")
+    header.append("{capo: 0}")
+    return "\n".join(header) + "\n\n" + body
+
+
 def fetch_chordpro(doce_id: str, use_cache: bool = True) -> str:
-    """Descarga (o lee de cache) el .cho crudo de una canción."""
+    """Devuelve el .cho de una canción, componiéndolo desde su ficha."""
     doce_id = str(doce_id)
     cache = _cache_path(doce_id)
     if use_cache and cache.exists():
         return cache.read_text(encoding="utf-8")
-    url = f"{BASE_URL}/cancion/{doce_id}/chordpro"
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "mcmapp-cantoral admin/1.0"}
-    )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read().decode("utf-8", errors="replace")
+    raw = compose_chordpro(doce_id, fetch_html(doce_id, use_cache=use_cache))
     cache.write_text(raw, encoding="utf-8")
     return raw
 
 
+def _page_looks_current(page: str) -> bool:
+    """¿Esta ficha es de la web actual?
+
+    El visor de ChordPro está incluso en las canciones que no tienen acordes, así
+    que su ausencia significa que la página es de la web vieja.
+    """
+    return bool(_ISLAND_RE.search(page or ""))
+
+
 def fetch_html(doce_id: str, use_cache: bool = True) -> str:
-    """Descarga la página HTML de la canción (para extraer metadatos extra)."""
+    """Descarga la ficha HTML de la canción (de ahí sale TODO: letra y metadatos)."""
     doce_id = str(doce_id)
     cache = _cache_html_path(doce_id)
     if use_cache and cache.exists():
-        return cache.read_text(encoding="utf-8")
+        cached = cache.read_text(encoding="utf-8")
+        # Las fichas guardadas antes del rediseño no sirven: se tiran y se
+        # vuelven a bajar solas, sin tener que vaciar la cache a mano.
+        if _page_looks_current(cached):
+            return cached
     url = f"{BASE_URL}/cancion/{doce_id}"
     req = urllib.request.Request(
         url, headers={"User-Agent": "mcmapp-cantoral admin/1.0"}
@@ -348,73 +479,72 @@ def _strip_html(s: str) -> str:
     return s
 
 
-def extract_metadata_from_html(html: str) -> Dict[str, object]:
-    """Extrae metadatos extra del HTML de doceacordes (sin BeautifulSoup).
+# Bloque de datos de la ficha: pares de <div> con la etiqueta en gris y el valor
+# debajo. Las etiquetas vistas son "Autor", "Album" y "Título original".
+_INFO_PAIR_RE = re.compile(
+    r'<div class="text-gray-500">([^<]{1,40})</div>\s*<div class="text-gray-700">(.*?)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
+_PARISH_RE = re.compile(r"Footer - Parish\s*-->\s*<div[^>]*>([^<]*)</div>", re.IGNORECASE)
+_H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
 
-    Returns dict con: ritmo, parroquia, album, momento, tiempo_liturgico,
-    fiestas (list), comentario, video_embed, youtube_links (list of {label,url}).
+
+def extract_metadata_from_html(html: str) -> Dict[str, object]:
+    """Extrae los metadatos que la ficha de doceacordes sigue publicando.
+
+    Tras el rediseño de su web quedan: título, autor, álbum, título original,
+    parroquia, vídeo embebido y algún link de YouTube. Ya NO publican ritmo,
+    tiempo litúrgico, momento, fiestas ni comentario, así que esas claves se
+    devuelven vacías (se mantienen para no romper a quien las lea).
     """
     meta: Dict[str, object] = {
-        "ritmo": "", "parroquia": "", "album": "", "momento": "",
-        "tiempo_liturgico": "", "fiestas": [], "comentario": "",
-        "video_embed": "", "youtube_links": [],
+        "titulo": "", "autor": "", "album": "", "titulo_original": "",
+        "parroquia": "", "video_embed": "", "youtube_links": [],
+        # Ya no vienen en la ficha; se conservan por compatibilidad.
+        "ritmo": "", "momento": "", "tiempo_liturgico": "",
+        "fiestas": [], "comentario": "",
     }
 
-    # Video embebido (primer iframe de youtube)
-    m = re.search(r'<iframe[^>]+src="([^"]*youtube[^"]*)"', html, re.IGNORECASE)
+    m = _H1_RE.search(html)
     if m:
-        meta["video_embed"] = m.group(1)
+        meta["titulo"] = _strip_html(m.group(1))
 
-    # Links de YouTube (no embed) con su texto como etiqueta
-    for m in re.finditer(
-        r'<a[^>]+href="([^"]*youtube\.com/watch[^"]*)"[^>]*>(.*?)</a>',
-        html, re.IGNORECASE | re.DOTALL,
-    ):
-        url = m.group(1)
-        label = _strip_html(m.group(2)) or "YouTube"
-        meta["youtube_links"].append({"label": label, "url": url})
-
-    # Pares <b>Campo</b> [<br>] <i>Valor</i>  → "Álbum", "Momento", "Tiempo litúrgico", "Comentario"
-    for m in re.finditer(
-        r"<b[^>]*>([^<]+)</b>\s*(?:<br\s*/?>\s*)?<i[^>]*>(.*?)</i>",
-        html, re.IGNORECASE | re.DOTALL,
-    ):
+    for m in _INFO_PAIR_RE.finditer(html):
         k = _strip_html(m.group(1)).rstrip(":").lower()
         v = _strip_html(m.group(2))
         if not v:
             continue
-        if k.startswith("álbum") or k.startswith("album"):
+        if k.startswith("autor"):
+            meta["autor"] = v
+        elif k.startswith("album") or k.startswith("álbum"):
             meta["album"] = v
-        elif k.startswith("momento"):
-            meta["momento"] = v
-        elif k.startswith("tiempo"):
-            meta["tiempo_liturgico"] = v
-        elif k.startswith("comentario"):
-            meta["comentario"] = v
+        elif k.startswith("t") and "original" in k:
+            meta["titulo_original"] = v
 
-    # Fiestas: badges
+    m = _PARISH_RE.search(html)
+    if m:
+        meta["parroquia"] = _strip_html(m.group(1))
+
+    # Vídeo embebido (primer iframe de youtube)
+    m = re.search(r'<iframe[^>]+src="([^"]*youtube[^"]*)"', html, re.IGNORECASE)
+    if m:
+        meta["video_embed"] = m.group(1)
+
+    # Links de YouTube sueltos. Se acepta cualquier forma (watch, youtu.be,
+    # shorts…) y se descarta el que ya sea el vídeo embebido para no duplicarlo.
+    embed_id = cp.youtube_id(meta["video_embed"])
+    seen = {embed_id} if embed_id else set()
     for m in re.finditer(
-        r'class="[^"]*badge[^"]*"[^>]*>(.*?)</', html, re.IGNORECASE | re.DOTALL,
+        r'<a[^>]+href="([^"]*youtu[^"]*)"[^>]*>(.*?)</a>',
+        html, re.IGNORECASE | re.DOTALL,
     ):
-        v = _strip_html(m.group(1))
-        if v and v.lower() not in ("álbum", "momento", "tiempo litúrgico", "comentario"):
-            meta["fiestas"].append(v)
-
-    # Cejilla, Ritmo, Parroquia (en card-footer)
-    fm = re.search(r'class="[^"]*card-footer[^"]*"[^>]*>(.*?)</div>',
-                   html, re.IGNORECASE | re.DOTALL)
-    footer_text = _strip_html(fm.group(1)) if fm else ""
-    if not footer_text:
-        # Fallback: buscar palabras clave en todo el HTML
-        footer_text = _strip_html(html)
-    rm = re.search(r"Ritmo:\s*([^\n,]+?)(?:\s+(?:Parroquia|Cejilla)|$)",
-                   footer_text, re.IGNORECASE)
-    if rm:
-        meta["ritmo"] = rm.group(1).strip()
-    pm = re.search(r"Parroquia\s+([^\n]+?)(?:\s+(?:Ritmo|Cejilla)|$)",
-                   footer_text, re.IGNORECASE)
-    if pm:
-        meta["parroquia"] = pm.group(1).strip()
+        url = m.group(1)
+        vid = cp.youtube_id(url)
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+        label = _strip_html(m.group(2)) or "YouTube"
+        meta["youtube_links"].append({"label": label, "url": url})
 
     return meta
 
@@ -609,52 +739,41 @@ def get_entry(doce_id: str) -> Optional[dict]:
 
 def fetch_and_adapt(doce_id: str, use_cache: bool = True,
                     include_meta: bool = True) -> Tuple[str, Dict[str, str]]:
-    """Descarga el .cho, lo adapta y devuelve (contenido, meta).
+    """Compone el .cho desde la ficha, lo adapta y devuelve (contenido, meta).
 
-    Si include_meta=True, además descarga el HTML, extrae los metadatos extra
-    (ritmo, album, video, youtube_links, etc.) y los inserta como custom
-    directives en el header del .cho resultante.
+    Una sola petición: la letra y los metadatos salen de la MISMA página. Antes
+    eran dos URLs (el .cho y la ficha) que se pedían en paralelo; desde que
+    doceacordes quitó la ruta /chordpro todo vive en la ficha, así que esto es
+    además más rápido que antes.
     """
-    if include_meta:
-        # El .cho y el HTML son dos URLs independientes: descargándolas en
-        # paralelo el preview tarda una petición en vez de dos (~3 s → ~1,5 s).
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            fut_cho = ex.submit(fetch_chordpro, doce_id, use_cache)
-            fut_html = ex.submit(fetch_html, doce_id, use_cache)
-            raw = fut_cho.result()
-            try:
-                html = fut_html.result()
-            except Exception:
-                html = None
-    else:
-        raw = fetch_chordpro(doce_id, use_cache=use_cache)
-        html = None
-
+    # fetch_chordpro compone desde la ficha (o usa el .cho ya cacheado, que
+    # incluye los que se bajaron con la ruta vieja y siguen siendo válidos).
+    raw = fetch_chordpro(doce_id, use_cache=use_cache)
     adapted = adapt_chordpro(raw)
-    if html is not None:
+    if include_meta:
         try:
-            meta_lines = render_meta_directives(extract_metadata_from_html(html))
+            # La ficha ya está en cache tras el paso anterior: 0 peticiones extra.
+            page = fetch_html(doce_id, use_cache=use_cache)
+            meta_lines = render_meta_directives(extract_metadata_from_html(page))
             if meta_lines:
                 adapted = inject_meta_lines(adapted, meta_lines)
         except Exception:
-            # Si el scraping falla, devolvemos el .cho sin meta extra
+            # Si el scraping de los extras falla, devolvemos el .cho sin ellos:
+            # la canción (que es lo importante) ya la tenemos.
             pass
     meta = extract_meta_from_cho(adapted)
     return adapted, meta
 
 
 def prefetch(doce_id: str) -> bool:
-    """Deja el .cho y el HTML de una canción en cache. True si ya está todo."""
+    """Deja la ficha de una canción en cache. True si ya estaba o si se pudo."""
     doce_id = str(doce_id)
-    if _cache_path(doce_id).exists() and _cache_html_path(doce_id).exists():
+    if _cache_html_path(doce_id).exists():
         return True
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        futs = [ex.submit(fetch_chordpro, doce_id), ex.submit(fetch_html, doce_id)]
-        for f in futs:
-            try:
-                f.result()
-            except Exception:
-                return False
+    try:
+        fetch_html(doce_id)
+    except Exception:
+        return False
     return True
 
 

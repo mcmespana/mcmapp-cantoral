@@ -206,6 +206,64 @@ reparten de nuevo automáticamente antes de escribir nada.
 
 `Esc` cierra los previews (doceacordes, LaTeX y cantoral).
 
+#### De dónde sale la canción (importante si vuelve a romperse)
+
+En agosto de 2026 doceacordes **rehizo su web con Astro** y la ruta
+`/cancion/{id}/chordpro` que usábamos **dejó de existir** (404). Su botón
+«Descargar → ChordPro» tampoco vale: no es un enlace, es un `blob:` que su
+JavaScript fabrica en el navegador, así que no hay nada que pedirle al servidor
+(por eso la URL del blob sólo funciona una vez — es cómo funcionan los blobs, no
+una defensa anti-scraping).
+
+La solución: **todo lo que ese fichero contiene está en el HTML de la ficha.** El
+cuerpo viaja en las props del componente `SongChordProViewer` y el resto (título,
+autor, álbum, parroquia, vídeo) en el marcado. Comprobado contra una descarga
+real de su botón: sale idéntico salvo una línea en blanco que su JS mete tras
+cada `{end_of_chorus}`, y que `adapt_chordpro` normaliza igualmente.
+
+Encima sale más barato: la ficha ya se descargaba para los metadatos, así que
+ahora es **una petición en vez de dos**.
+
+Detalles que conviene saber:
+
+- **El tono lo deducimos nosotros.** Su `toneFrom` sólo trae la nota raíz y en
+  mayúsculas, así que una canción en La menor viene como `LA`. Recuperamos el
+  modo del primer acorde del cuerpo, pero sólo si su raíz coincide con la de
+  `toneFrom` (si la canción no empieza en la tónica, no inventamos). Su propia
+  descarga no incluye `{key}` en absoluto.
+- **Se perdieron metadatos** que ya no publican: ritmo, tiempo litúrgico,
+  momento, fiestas y comentario. Sobreviven autor, álbum, parroquia, vídeo
+  embebido y los links de YouTube. Aparece un campo nuevo «Título original» que
+  por ahora no se guarda (haría falta una directiva nueva en `chordpro.py`).
+- **La cache se cura sola.** Una ficha guardada antes del rediseño se detecta
+  (no tiene el visor) y se vuelve a bajar; no hay que vaciar
+  `scripts/cache_doceacordes/` a mano.
+- **Si vuelven a cambiar la web**, el import falla con `DoceFormatoCambiado` y un
+  mensaje claro, en vez de crear un `.cho` vacío.
+- **`scripts/canciones_doce_acordes.json` es la única fuente del listado.** No
+  hay API pública (es un sitio estático), así que las canciones que suban a
+  partir de ahora no aparecerán en la lista hasta que se regenere ese índice.
+
+#### Traducción de acordes
+
+Los acordes de doceacordes vienen en español con la convención
+**mayúscula = mayor / minúscula = menor**: `[DO]` → `C`, `[lam]` → `Am`,
+`[rem]` → `Dm`, `[fa#m]` → `F#m`.
+
+Auditando los 175 candidatos de las canciones del cantoral que faltan (79
+acordes distintos, 7.269 usos) salieron tres casos que antes no se traducían:
+
+| caso | ejemplo | ahora |
+| ---- | ------- | ----- |
+| acordes ingleses en minúscula | `[c]` `[em]` `[b7]` | `C` `Em` `B7` |
+| errata de caja en la nota | `[SOl7]` | `G7` |
+| errata de doble corchete | `[[la]` | `A` |
+
+Los ingleses en minúscula se resuelven poniendo la raíz en mayúscula, que es
+inequívoco porque **ninguna nota española es una sola letra `a`-`g`**. Tras el
+arreglo los 79 acordes traducen a nota inglesa válida, sin regresiones en los que
+ya iban bien.
+
 ## Números de canción (🔢)
 
 El botón **🔢** que hay junto a cada campo de número (filas de doceacordes,
