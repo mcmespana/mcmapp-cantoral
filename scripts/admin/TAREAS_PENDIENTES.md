@@ -9,11 +9,6 @@ que **no** se hicieron en esa iteración pero merecen la pena:
 
 ### Rendimiento
 
-- **No recargar `/api/catalog` entero tras cada import.** Ahora tarda ~80 ms,
-  pero devuelve 143 KB y recalcula todo el emparejado repo↔docx↔LaTeX↔doce
-  sólo para añadir una fila. Lo suyo sería que `/api/doce/import` y
-  `/api/docx/import` devolvieran ya la fila nueva y el front la insertara,
-  dejando la recarga completa para un botón de refresco.
 - **`/api/doce/list` devuelve 355 KB** con las 1.683 canciones (título, autor,
   subtítulo, url…). Se podría paginar en servidor o recortar campos; el
   subtítulo largo es la mayor parte del peso.
@@ -53,22 +48,16 @@ coloreado. No hecho todavía:
 
 ### Editor visual
 
-- **Undo/Redo.** Ahora mismo es lo que más se echa en falta: borrar o duplicar
-  líneas no tiene marcha atrás salvo cerrar sin guardar. Con un stack de
-  `editor.parsed` serializado (y un tope de ~50 estados) y `Ctrl+Z`/`Ctrl+Shift+Z`
-  bastaría; todas las operaciones ya pasan por `afterLineEdit()`, que es el
-  sitio natural para apilar el estado anterior.
-- **Editar la letra en línea, no con `prompt()`.** `editLyricLine()` abre un
-  `prompt` del navegador, que corta el flujo y no deja ver los acordes mientras
-  escribes. Un input inline como el de los arreglos (`ed-arr-input`) encajaría.
-- **Pegar varias líneas de texto de golpe** en el visual (hoy hay que ir al Raw
-  o crear las líneas una a una con «＋ Letra»).
-- **Selección no contigua real.** `selectedLineRange()` colapsa la selección a
-  min..max, así que marcar las líneas 1 y 5 actúa también sobre 2-4. Para borrar
-  o duplicar bloques salteados haría falta respetar el conjunto exacto
-  (`deleteSelectedLines` ya lo hace, pero duplicar/copiar/mover no).
-- **Arrastrar líneas para reordenar**, como en la vista de reordenar categorías.
-  Los botones ▲▼ y `Alt+↑/↓` funcionan, pero mover un bloque 10 líneas cansa.
+- **Pegar acordes desde el portapapeles del sistema** (Ctrl+V) en el visual, no
+  sólo desde el modal de «Pegar texto».
+- **Deshacer con granularidad de acorde.** Un arrastre de acorde es un paso de
+  undo, lo cual está bien, pero arrastrar el mismo acorde tres veces seguidas
+  deja tres pasos; se podrían agrupar por acorde y tiempo, como se hace ya con
+  las ráfagas de tecleo en los metadatos.
+- **Mover el bloque marcado con arrastre a otra canción** / entre pestañas. Hoy
+  el portapapeles de líneas vive sólo dentro de la canción abierta.
+- **Autoscroll al arrastrar** cerca del borde del documento: en canciones largas
+  hay que soltar, hacer scroll y volver a agarrar.
 
 ### Raw
 
@@ -78,9 +67,10 @@ coloreado. No hecho todavía:
   tenerlo habría que cambiar el textarea por un `contenteditable`, lo que obliga
   a rehacer el manejo del caret, el pegado y el undo del navegador. Valorar si
   merece la pena.
-- **Números de línea** en la capa de resaltado, y resaltar la línea del cursor.
-- **Avisar de acordes que no se reconocen** (por ejemplo `[Xyz]`) pintándolos en
-  rojo: sería un chivato barato de erratas.
+- **Resaltar la línea del cursor** en la capa de resaltado. Los números de línea
+  ya están; esto es el complemento natural y encaja en la misma rejilla.
+- **Ir a la línea N** (y saltar desde el aviso de «corchetes que no parecen un
+  acorde» a la línea que lo tiene).
 
 ### Números
 
@@ -134,7 +124,6 @@ con la misma lógica de detección.
 - **Render con la fuente real del cantoral (Calibri)**: cargar Calibri
   via @font-face o web font equivalente (Carlito es métricamente compatible
   y libre). Mejoraría la fidelidad visual a Word.
-- **Undo/Redo** local en el editor visual (stack de estados).
 - **Atajo `+ acorde` directo con tecla**: hold de una tecla (`A`?) + click
   para añadir sin tener que activar el modo en la toolbar.
 - **Indicador de palabra/sílaba** durante el drag: mostrar visualmente
@@ -148,10 +137,8 @@ con la misma lógica de detección.
 
 - **Vista compacta por categoría**: poder ver una categoría como tabla
   estilo "índice" (número · título · key · capo · pendiente).
-- **Acción masiva**: seleccionar varias canciones del catálogo y
-  - mover de categoría
-  - aplicar/quitar TO DO en bloque
-  - exportar a un zip
+- **Exportar a un zip** las canciones seleccionadas del catálogo (mover de
+  categoría y el TO DO en bloque ya están).
 
 ## Importar del cantoral
 

@@ -651,39 +651,54 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 
 .editor-pane { flex: 1; padding: 16px; overflow: auto; }
 /* ─────── Raw con resaltado ───────
-   El <pre> y el <textarea> se solapan pixel a pixel. TODA propiedad que afecte
-   a la maquetación del texto tiene que ser idéntica en los dos (fuente, tamaño,
-   interlineado, padding, borde, y el modo de salto de línea). Por eso el
-   resaltado sólo cambia color y grosor, nunca font-size. */
+   El <pre> y el <textarea> se solapan pixel a pixel. TODA propiedad que afecte a
+   la maquetación del texto tiene que ser idéntica en los dos (fuente, tamaño,
+   interlineado y modo de salto de línea). Por eso el resaltado sólo cambia color
+   y grosor, nunca font-size.
+
+   El <pre> es una rejilla de 2 columnas (nº de línea + código) y el textarea se
+   coloca encima SÓLO de la segunda columna. Los números viven dentro de la misma
+   fila que su línea, así que cuando una línea larga hace wrap la fila crece y el
+   número sigue cuadrado — con una columna aparte se iría desplazando.
+   El borde va en el contenedor: si lo llevara cada capa, el ancho de contenido
+   no coincidiría y el texto bailaría. */
 .editor-pane.raw { display: flex; flex-direction: column; min-height: 0; }
-.raw-wrap { position: relative; flex: 1; min-height: 320px; }
-/* `.editor-pane pre` (más específico que `.raw-highlight` a secas) le colaba un
-   font-family: monospace genérico y la capa dejaba de cuadrar con el textarea
-   en cuanto la fuente real tenía otras métricas. De ahí el selector largo. */
+.raw-wrap {
+  position: relative; flex: 1; min-height: 320px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--bg-2);
+}
+.raw-wrap:focus-within { border-color: var(--accent); }
+
 .editor-pane.raw textarea,
 .editor-pane.raw pre.raw-highlight {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%; margin: 0; resize: none;
+  position: absolute; top: 0; bottom: 0; margin: 0; border: 0; background: transparent;
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 13px; line-height: 1.6;
-  border: 1px solid transparent; border-radius: 4px; padding: 12px;
   white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
-  tab-size: 4;
+  tab-size: 4; overflow: auto;
 }
 .editor-pane.raw pre.raw-highlight {
-  border-color: var(--border); background: var(--bg-2);
-  overflow: auto; pointer-events: none; color: var(--fg);
-}
-.editor-pane.raw pre.raw-highlight code {
-  font: inherit; background: none; padding: 0; white-space: inherit;
+  left: 0; right: 0; padding: 12px 0;
+  display: grid; grid-template-columns: var(--raw-gutter) 1fr; align-items: start;
+  pointer-events: none; color: var(--fg);
 }
 .editor-pane.raw textarea {
-  /* Texto invisible: lo que se lee es el <pre> de debajo. El caret sí se pinta. */
+  /* Empieza donde empieza la columna de código; el texto es invisible porque lo
+     que se lee es el <pre> de debajo. El caret sí se pinta. */
+  left: var(--raw-gutter); right: 0; width: auto;
+  padding: 12px 12px 12px 0; resize: none;
   color: transparent; background: transparent; caret-color: var(--accent);
-  overflow: auto; z-index: 1;
+  z-index: 1;
 }
 .editor-pane.raw textarea::selection { background: rgba(37, 99, 235, 0.28); }
-.editor-pane.raw textarea:focus { outline: none; border-color: var(--accent); }
+.editor-pane.raw textarea:focus { outline: none; }
+
+.raw-wrap { --raw-gutter: 3.4em; }
+.editor-pane.raw pre.raw-highlight .raw-num {
+  padding-right: 10px; text-align: right; color: var(--fg-3); opacity: 0.6;
+  user-select: none; white-space: pre;
+}
+.editor-pane.raw pre.raw-highlight .raw-code { padding-right: 12px; white-space: pre-wrap; }
 
 /* Colores del resaltado */
 .hl-directive { color: var(--fg-3); }
@@ -695,6 +710,13 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .theme-dark .hl-chord { color: #7dd3fc; }
 .theme-dark .hl-chorus { color: #fcd34d; }
 .theme-dark .hl-comment { color: #fdba74; }
+/* Corchete que no parece un acorde: subrayado ondulado rojo, estilo corrector.
+   No se pinta todo en rojo para que no grite más que el propio contenido. */
+.hl-chord-bad {
+  color: var(--danger); text-decoration: underline wavy var(--danger);
+  text-decoration-skip-ink: none;
+}
+.theme-dark .hl-chord-bad { color: #fca5a5; text-decoration-color: #fca5a5; }
 
 .raw-legend {
   display: flex; gap: 14px; flex-wrap: wrap; padding: 6px 4px 0;
@@ -862,6 +884,25 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
   border-bottom: 1px dotted transparent;
 }
 .ed-char.ed-end { color: var(--fg-3); margin-left: 4px; font-size: 0.7em; }
+
+/* Arrastrar líneas: la que viaja se atenúa y el destino marca dónde caerá
+   (debajo de esa línea). */
+.ed-line.dragging-line { opacity: 0.4; }
+.ed-line.drop-target { box-shadow: inset 0 -2px 0 0 var(--accent); }
+.visual-doc .line-gutter { cursor: grab; }
+.ed-line.dragging-line .line-gutter { cursor: grabbing; }
+
+/* Input de edición de letra: mismas métricas que .ed-lyric-row para que la línea
+   no dé un salto al entrar y salir de edición, y para que los acordes de encima
+   sigan cayendo donde toca. */
+.ed-lyric-input {
+  width: calc(100% - 28px); margin-left: 28px;
+  font-family: inherit; font-size: 15px; line-height: 1.25;
+  padding: 0 2px; border: 1px solid var(--accent); border-radius: 3px;
+  background: var(--bg); color: var(--fg);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+.ed-lyric-input:focus { outline: none; }
 .ed-line.ed-blank { height: 8px; }
 .ed-line .line-gutter {
   position: absolute; left: 0; top: 0; width: 28px; height: 100%;

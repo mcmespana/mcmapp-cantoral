@@ -43,6 +43,10 @@ let _doceFilterMemo = null;
 // petición cada vez que el ratón vuelve a pasar por la misma fila.
 const _docePrefetched = new Set();
 
+// Tope del historial de deshacer. Guardamos el .cho entero por paso, así que
+// 60 pasos de una canción normal son unos pocos cientos de KB.
+const UNDO_LIMIT = 60;
+
 function app() {
   return {
     // ─────────── State ───────────
@@ -61,6 +65,8 @@ function app() {
     mediaFilter: '',        // '' | 'no_youtube' | 'no_audio' | 'no_media' | 'any_media'
     onlyInRepoFilter: false,
     selectedCatalogPaths: new Set(),
+    bulkMoveCategory: '',         // categoría destino para mover en bloque
+    bulkMoving: false,
 
     // Quick add link modal
     quickLink: { open: false, path: '', songTitle: '', type: '', label: '', url: '',
@@ -152,6 +158,10 @@ function app() {
     visualLastClickedLine: null,
     visualChordClipboard: null,   // [{lyric, chords}]  patrón copiado
     visualLineClipboard: null,    // bloque de líneas completas copiado (letra + acordes)
+    pasteLines: { open: false, text: '', asChorus: false },  // modal de pegar texto
+    lineDrag: null,               // {moving:[idx], over, startY, moved} al arrastrar líneas
+    undoStack: [],                // contenidos anteriores del .cho
+    redoStack: [],
     clipboardInfo: '',            // texto persistente cuando hay acordes copiados
     showHelp: false,
     // Cola de revisión: tras importar varias, abre el editor en secuencia
@@ -188,11 +198,28 @@ function app() {
       this.$watch('editor.dirty', (v) => {
         if (v) this.setSaveIndicator('dirty', '● Sin guardar — pulsa 💾');
       });
-      // Atajo global: Ctrl/Cmd+S
+      // Atajos globales del editor: Ctrl/Cmd+S guardar, Ctrl/Cmd+Z deshacer,
+      // Ctrl/Cmd+Shift+Z o Ctrl+Y rehacer.
       window.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 's' && this.editor.path) {
+        if (!this.editor.path) return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const k = e.key.toLowerCase();
+        if (k === 's') {
           e.preventDefault();
           this.saveSong();
+          return;
+        }
+        // Dentro de un campo de texto manda el undo del navegador: si lo
+        // secuestrásemos, no se podría deshacer lo que se está escribiendo.
+        const el = e.target;
+        const tag = (el && el.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || (el && el.isContentEditable)) return;
+        if (k === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) this.redoEdit(); else this.undoEdit();
+        } else if (k === 'y') {
+          e.preventDefault();
+          this.redoEdit();
         }
       });
       await this.loadCatalog();
@@ -268,18 +295,61 @@ function app() {
       }
     },
 
-    async loadCatalog() {
-      this.loading = true;
+    // `quiet`: recarga sin encender el spinner, para reconciliar en segundo plano
+    // después de haber parcheado el catálogo a mano.
+    async loadCatalog(quiet = false) {
+      if (!quiet) this.loading = true;
       this.error = null;
       try {
         const r = await fetch('/api/catalog');
         if (!r.ok) throw new Error('HTTP ' + r.status);
         this.data = await r.json();
       } catch (e) {
-        this.error = 'No pude cargar el catálogo: ' + e.message;
+        if (!quiet) this.error = 'No pude cargar el catálogo: ' + e.message;
       } finally {
-        this.loading = false;
+        if (!quiet) this.loading = false;
       }
+    },
+    // Tras importar, mete las canciones nuevas en el catálogo que ya está en
+    // pantalla y sigue. Antes se esperaba al /api/catalog completo (que recalcula
+    // el emparejado de TODO el repo) sólo para añadir una fila, y hasta que no
+    // volvía no se abría el editor. Los contadores que dependen de estas listas
+    // se recalculan aquí; del resto se encarga la reconciliación de after.
+    async patchCatalogWith(paths) {
+      const list = (paths || []).filter(Boolean);
+      if (!list.length || !this.data) return;
+      try {
+        const r = await fetch('/api/catalog/rows?paths=' + encodeURIComponent(list.join('|')));
+        if (!r.ok) return;
+        const { rows } = await r.json();
+        if (!rows || !rows.length) return;
+        const byPath = new Map(this.data.repo_songs.map(s => [s.path, s]));
+        rows.forEach(row => byPath.set(row.path, row));
+        const merged = [...byPath.values()];
+        // Las que acaban de entrar ya no "faltan del cantoral".
+        const docxIds = new Set(rows.map(x => x.docx_id).filter(v => v != null));
+        const missing = (this.data.missing_from_repo || [])
+          .filter(m => !docxIds.has(m.docx_id));
+        this.data = {
+          ...this.data,
+          repo_songs: merged,
+          missing_from_repo: missing,
+          stats: {
+            ...this.data.stats,
+            repo_total: merged.length,
+            missing_from_repo: missing.length,
+            todo_count: merged.filter(s => s.has_todo).length,
+            chord_review_count: merged.filter(s => s.has_chord_review).length,
+            only_in_repo: merged.filter(s => !s.in_docx).length,
+          },
+        };
+      } catch (e) { /* si falla, la recarga de fondo lo arregla */ }
+    },
+    // Parcheo inmediato + reconciliación completa en segundo plano (sin await:
+    // el editor se abre ya, y los contadores exactos llegan un instante después).
+    async refreshCatalogAfterImport(paths) {
+      await this.patchCatalogWith(paths);
+      this.loadCatalog(true);
     },
 
     // ─────────── Helpers ───────────
@@ -400,9 +470,9 @@ function app() {
         const json = await r.json();
         this.importResults = json.results || [];
         this.selectedImports = new Set();
-        await this.loadCatalog();
-        // Abrir editor de las importadas con éxito, en cola
         const paths = this.importResults.filter(r => r.ok && r.path).map(r => r.path);
+        await this.refreshCatalogAfterImport(paths);
+        // Abrir editor de las importadas con éxito, en cola
         this.enqueueAndOpen(paths, 'del cantoral');
       } catch (e) {
         alert('Error importando: ' + e.message);
@@ -568,8 +638,9 @@ function app() {
         const newResults = json.results || [];
         this.latexResults = [...this.latexResults, ...newResults];
         this.selectedLatex = new Set();
-        await Promise.all([this.loadCatalog(), this.loadLatex(true)]);
         const paths = newResults.filter(r => r.ok && r.path).map(r => r.path);
+        await this.refreshCatalogAfterImport(paths);
+        this.loadLatex(true);
         this.enqueueAndOpen(paths, 'de LaTeX');
       } catch (e) {
         alert('Error importando LaTeX: ' + e.message);
@@ -904,9 +975,11 @@ function app() {
         const newResults = json.results || [];
         this.doceResults = [...newResults, ...this.doceResults].slice(0, 30);
         if (this.doceBatchProgress) this.doceBatchProgress.done = newResults.length;
-        // En paralelo: son dos lecturas independientes y en serie se notaba.
-        await Promise.all([this.loadDoce(true), this.loadCatalog()]);
         const paths = newResults.filter(x => x.ok && x.path).map(x => x.path);
+        // Parchea el catálogo con las nuevas y recarga en segundo plano, así el
+        // editor se abre al momento en vez de esperar al catálogo completo.
+        await this.refreshCatalogAfterImport(paths);
+        this.loadDoce(true);
         this.enqueueAndOpen(paths, 'de doceacordes');
       } catch (e) {
         alert('Error importando: ' + e.message);
@@ -1263,6 +1336,7 @@ function app() {
         };
         this.visualSelectedLines = new Set();
         this.visualSelectedChord = null;
+        this.resetUndo();
         this.setSaveIndicator('saved', '✓ Cargada');
         // Pre-parsear porque visual es el tab por defecto
         this.editor.parsed = parseCho(this.editor.content);
@@ -1282,6 +1356,7 @@ function app() {
       };
       this.visualSelectedLines = new Set();
       this.visualSelectedChord = null;
+      this.resetUndo();
       this.setSaveIndicator('saved', 'Sin cambios');
       // Si hay cola pendiente, avanzar a la siguiente
       this.advanceEditorQueue();
@@ -1332,10 +1407,18 @@ function app() {
         this.editor.content = serializeCho(this.editor.parsed);
         this.refreshMetaFromRaw();
       }
+      // Al salir del Raw dejamos UN paso de undo con lo que había al entrar. Lo
+      // que se teclea dentro del textarea lo deshace el navegador (Ctrl+Z nativo);
+      // apilar cada pulsación aquí llenaría el historial de ruido.
+      if (this.editor.tab === 'raw' && t !== 'raw') {
+        this.recordUndo(this._rawEnterContent);
+        this._rawEnterContent = null;
+      }
       this.editor.tab = t;
       if (toMeta && !fromMeta) {
         this.loadMediaForm();
       }
+      if (t === 'raw') this._rawEnterContent = this.editor.content;
       if (t === 'visual') {
         this.editor.parsed = parseCho(this.editor.content);
         this.markChorusFlags();
@@ -1565,9 +1648,70 @@ function app() {
     },
 
     // ─────────── Helpers de actualización ───────────
-    commitParsed() {
+    // ─────────── Undo / Redo ───────────
+    // El historial guarda CONTENIDOS (el .cho serializado), no diffs: es lo más
+    // simple de razonar y una canción son unos pocos KB. El enganche está en
+    // commitParsed(), por donde pasan TODAS las mutaciones del visual (mover un
+    // acorde, editar letra, borrar líneas, transponer…), así que no hay que
+    // acordarse de apilar nada en cada operación nueva.
+    resetUndo() {
+      this.undoStack = [];
+      this.redoStack = [];
+      this._lastUndoKey = null;
+      this._lastUndoAt = 0;
+    },
+    // `coalesceKey` agrupa ráfagas del mismo tipo (escribir en el campo Título
+    // no debe dejar 20 pasos de undo, sino uno).
+    recordUndo(prevContent, coalesceKey) {
+      if (typeof prevContent !== 'string') return;
+      const now = performance.now();
+      if (coalesceKey && this._lastUndoKey === coalesceKey && now - this._lastUndoAt < 900) {
+        this._lastUndoAt = now;
+        return;
+      }
+      if (this.undoStack[this.undoStack.length - 1] !== prevContent) {
+        this.undoStack.push(prevContent);
+        if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
+        // Al editar tras deshacer se abre rama nueva: el redo deja de valer.
+        this.redoStack = [];
+      }
+      this._lastUndoKey = coalesceKey || null;
+      this._lastUndoAt = now;
+    },
+    applyEditorContent(content) {
+      this.editor.content = content;
+      this.editor.parsed = parseCho(content);
+      this.markChorusFlags();
       this.editor.dirty = true;
-      this.editor.content = serializeCho(this.editor.parsed);
+      this.refreshMetaFromRaw();
+      // La selección apuntaba a índices del estado anterior: ya no valen.
+      this.clearLineSelection();
+      this.visualSelectedChord = null;
+      this._lastUndoKey = null;
+      this.$nextTick(() => this.layoutChords());
+    },
+    undoEdit() {
+      if (!this.undoStack.length) return;
+      const prev = this.undoStack.pop();
+      this.redoStack.push(this.editor.content);
+      this.applyEditorContent(prev);
+      this.announce(`↶ Deshecho · quedan ${this.undoStack.length} pasos atrás`);
+    },
+    redoEdit() {
+      if (!this.redoStack.length) return;
+      const next = this.redoStack.pop();
+      this.undoStack.push(this.editor.content);
+      this.applyEditorContent(next);
+      this.announce(`↷ Rehecho · quedan ${this.redoStack.length} pasos adelante`);
+    },
+
+    commitParsed() {
+      const next = serializeCho(this.editor.parsed);
+      if (next !== this.editor.content) {
+        this.recordUndo(this.editor.content);
+        this.editor.content = next;
+      }
+      this.editor.dirty = true;
       this.refreshMetaFromRaw();
     },
 
@@ -1575,6 +1719,8 @@ function app() {
       const cls = ['ed-line', 'ed-' + ln.type];
       if (this.visualSelectedLines.has(idx)) cls.push('selected');
       if (ln._inChorus) cls.push('in-chorus');
+      const drag = this.lineDragClass(idx);
+      if (drag) cls.push(drag);
       return cls.join(' ');
     },
 
@@ -1605,11 +1751,26 @@ function app() {
       this.visualSelectedLines = new Set();
       this.visualLastClickedLine = null;
     },
+    // OJO: esto COLAPSA la selección a min..max. Sólo debe usarse donde el
+    // rango contiguo es lo correcto por definición (envolver en {soc}/{eoc}) o
+    // como simple ancla de inserción. Para operar sobre las líneas marcadas usa
+    // `selectedIdxAsc()`, que respeta el conjunto exacto.
     selectedLineRange() {
-      const arr = [...this.visualSelectedLines].sort((a, b) => a - b);
+      const arr = this.selectedIdxAsc();
       if (arr.length === 0) return null;
-      // Tomamos el rango entre min y max (contiguo)
       return { start: arr[0], end: arr[arr.length - 1] };
+    },
+    selectedIdxAsc() {
+      return [...this.visualSelectedLines].sort((a, b) => a - b);
+    },
+    selectionIsContiguous() {
+      const a = this.selectedIdxAsc();
+      return a.length > 0 && a[a.length - 1] - a[0] === a.length - 1;
+    },
+    // Ancla para insertar "debajo de la selección": la última línea marcada.
+    insertAnchor() {
+      const a = this.selectedIdxAsc();
+      return a.length ? a[a.length - 1] + 1 : this.editor.parsed.length;
     },
 
     toggleVisualDense() {
@@ -1691,14 +1852,16 @@ function app() {
     // Duplica la selección (letra + acordes) justo debajo. Para repetir un
     // estribillo o una estrofa sin pasar por el raw.
     duplicateSelectedLines() {
-      const r = this.selectedLineRange();
-      if (!r) return;
-      const clone = JSON.parse(JSON.stringify(this.editor.parsed.slice(r.start, r.end + 1)));
+      const idx = this.selectedIdxAsc();
+      if (!idx.length) return;
+      // Copia sólo las líneas marcadas (en orden) y las suelta tras la última.
+      const clone = JSON.parse(JSON.stringify(idx.map(i => this.editor.parsed[i])));
       clone.forEach(ln => { delete ln._editing; });
-      this.editor.parsed.splice(r.end + 1, 0, ...clone);
+      const at = idx[idx.length - 1] + 1;
+      this.editor.parsed.splice(at, 0, ...clone);
       // Deja seleccionada la copia, que es lo que se va a retocar.
       const sel = new Set();
-      for (let i = 0; i < clone.length; i++) sel.add(r.end + 1 + i);
+      for (let i = 0; i < clone.length; i++) sel.add(at + i);
       this.afterLineEdit(sel);
       this.announce(`⧉ ${clone.length} línea(s) duplicadas debajo · pulsa 💾`);
     },
@@ -1706,12 +1869,12 @@ function app() {
     // Distinto de copyChordPattern(), que copia sólo el patrón de acordes para
     // aplicarlo a OTRA letra.
     copySelectedLines() {
-      const r = this.selectedLineRange();
-      if (!r) {
+      const idx = this.selectedIdxAsc();
+      if (!idx.length) {
         alert('Marca primero las líneas con el círculo ○ del margen izquierdo.');
         return;
       }
-      const block = JSON.parse(JSON.stringify(this.editor.parsed.slice(r.start, r.end + 1)));
+      const block = JSON.parse(JSON.stringify(idx.map(i => this.editor.parsed[i])));
       block.forEach(ln => { delete ln._editing; });
       this.visualLineClipboard = block;
       const lyrics = block.filter(l => l.type === 'lyric').length;
@@ -1725,8 +1888,7 @@ function app() {
         return;
       }
       const clone = JSON.parse(JSON.stringify(block));
-      const r = this.selectedLineRange();
-      const at = r ? r.end + 1 : this.editor.parsed.length;
+      const at = this.insertAnchor();
       this.editor.parsed.splice(at, 0, ...clone);
       const sel = new Set();
       for (let i = 0; i < clone.length; i++) sel.add(at + i);
@@ -1740,37 +1902,138 @@ function app() {
     // Línea en blanco debajo de la selección (o al final). Para separar bloques
     // sin tener que bajar al raw.
     insertBlankLine() {
-      const r = this.selectedLineRange();
-      const at = r ? r.end + 1 : this.editor.parsed.length;
-      this.editor.parsed.splice(at, 0, { type: 'blank', raw: '' });
+      this.editor.parsed.splice(this.insertAnchor(), 0, { type: 'blank', raw: '' });
       this.afterLineEdit();
     },
     // Línea de letra nueva y vacía, lista para escribir con el editor de letra.
     insertLyricLine() {
-      const r = this.selectedLineRange();
-      const at = r ? r.end + 1 : this.editor.parsed.length;
+      const at = this.insertAnchor();
       this.editor.parsed.splice(at, 0, { type: 'lyric', lyric: '', chords: [], raw: '' });
       this.afterLineEdit();
-      this.$nextTick(() => this.editLyricLine(at));
+      this.$nextTick(() => this.startLyricEdit(at));
     },
-    moveSelectedLines(dir) {
-      const r = this.selectedLineRange();
-      if (!r) return;
+    // Mueve cada línea marcada un puesto, procesando en el orden que evita
+    // que se pisen entre ellas. Así funciona igual con selección salteada.
+    // ─────────── Arrastrar líneas para reordenar ───────────
+    // El asa es el gutter (○). Se arrastra la línea, o todo el bloque marcado si
+    // la línea que agarras forma parte de la selección.
+    startLineDrag(idx, ev) {
+      if (ev.button !== 0) return;
+      const moving = this.visualSelectedLines.has(idx)
+        ? this.selectedIdxAsc()
+        : [idx];
+      this.lineDrag = { moving, over: idx, startY: ev.clientY, moved: false };
+
+      const onMove = (e) => {
+        if (!this.lineDrag) return;
+        if (!this.lineDrag.moved && Math.abs(e.clientY - this.lineDrag.startY) < 4) return;
+        this.lineDrag.moved = true;
+        const target = this.lineIdxAtPoint(e.clientY);
+        if (target != null && target !== this.lineDrag.over) {
+          this.lineDrag = { ...this.lineDrag, over: target };
+        }
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        const d = this.lineDrag;
+        this.lineDrag = null;
+        if (d && d.moved) this.dropLines(d.moving, d.over);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    // Índice de la línea que está bajo esa coordenada vertical.
+    lineIdxAtPoint(clientY) {
+      const els = document.querySelectorAll('.visual-doc .ed-line');
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (clientY >= r.top && clientY <= r.bottom) {
+          const i = parseInt(el.dataset.lineIdx, 10);
+          return Number.isNaN(i) ? null : i;
+        }
+      }
+      return null;
+    },
+    // Reinserta el bloque arrastrado justo DEBAJO de la línea destino.
+    dropLines(moving, target) {
+      if (!moving || !moving.length || target == null) return;
+      if (moving.includes(target)) return;   // soltar dentro de sí mismo: nada
       const arr = this.editor.parsed;
-      if (dir < 0 && r.start === 0) return;
-      if (dir > 0 && r.end === arr.length - 1) return;
-      const block = arr.splice(r.start, r.end - r.start + 1);
-      const at = r.start + dir;
-      arr.splice(at, 0, ...block);
+      const block = moving.map(i => arr[i]);
+      // Cuántas de las que se mueven estaban por encima del destino: al sacarlas
+      // el índice del destino baja justo esa cantidad.
+      const removedBefore = moving.filter(i => i < target).length;
+      const kept = arr.filter((_, i) => !moving.includes(i));
+      const at = target - removedBefore + 1;
+      kept.splice(at, 0, ...block);
+      this.editor.parsed = kept;
       const sel = new Set();
       for (let i = 0; i < block.length; i++) sel.add(at + i);
       this.afterLineEdit(sel);
+      this.announce(`↕ ${block.length} línea(s) movidas · pulsa 💾`);
+    },
+    lineDragClass(idx) {
+      const d = this.lineDrag;
+      if (!d || !d.moved) return '';
+      if (d.moving.includes(idx)) return 'dragging-line';
+      if (d.over === idx) return 'drop-target';
+      return '';
+    },
+
+    // ─────────── Pegar un bloque de texto como líneas de letra ───────────
+    openPasteLines() {
+      this.pasteLines = { open: true, text: '', asChorus: false };
+    },
+    // Cada línea del texto pegado se convierte en una línea del documento. Si
+    // trae [acordes] se parsean también, así que vale para pegar ChordPro suelto.
+    applyPasteLines() {
+      const raw = (this.pasteLines.text || '').replace(/\r\n?/g, '\n');
+      if (!raw.trim()) { this.pasteLines.open = false; return; }
+      const lines = raw.split('\n').map(t => {
+        if (t.trim() === '') return { type: 'blank', raw: '' };
+        const { lyric, chords } = parseChordLineToModel(t);
+        return { type: 'lyric', lyric, chords, raw: t };
+      });
+      const block = this.pasteLines.asChorus
+        ? [{ type: 'soc', raw: '{soc}' }, ...lines, { type: 'eoc', raw: '{eoc}' }]
+        : lines;
+      const at = this.insertAnchor();
+      this.editor.parsed.splice(at, 0, ...block);
+      const sel = new Set();
+      for (let i = 0; i < block.length; i++) sel.add(at + i);
+      this.afterLineEdit(sel);
+      this.pasteLines = { open: false, text: '', asChorus: false };
+      this.announce(`📋 ${lines.length} línea(s) pegadas como letra · pulsa 💾`);
+    },
+    moveSelectedLines(dir) {
+      const arr = this.editor.parsed;
+      const idx = this.selectedIdxAsc();
+      if (!idx.length) return;
+      if (dir < 0 && idx[0] === 0) return;
+      if (dir > 0 && idx[idx.length - 1] === arr.length - 1) return;
+      // Subiendo se recorre de arriba abajo y bajando al revés: así cada
+      // intercambio ocurre sobre un hueco ya libre y vale igual para bloques
+      // contiguos que para líneas salteadas.
+      const order = dir < 0 ? idx : [...idx].reverse();
+      for (const i of order) {
+        const j = i + dir;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      this.afterLineEdit(new Set(idx.map(i => i + dir)));
     },
 
     // ─────────── Estribillo: marcar / desmarcar / insertar ───────────
     markSelectionAsChorus() {
       const r = this.selectedLineRange();
       if (!r) return;
+      // Un estribillo es un bloque entre {soc} y {eoc}: no puede tener agujeros.
+      // Si la selección está salteada avisamos de que se marcará todo el tramo.
+      if (!this.selectionIsContiguous() &&
+          !confirm('Has marcado líneas salteadas. El estribillo tiene que ser un bloque ' +
+                   `seguido, así que se marcará todo el tramo de la ${r.start + 1} a la ${r.end + 1}.\n\n¿Sigo?`)) {
+        return;
+      }
       // Insertar {eoc} después de r.end y {soc} antes de r.start
       // Pero antes: eliminar cualquier {soc}/{eoc} dentro del rango
       const newParsed = [...this.editor.parsed];
@@ -2099,26 +2362,58 @@ function app() {
     },
 
     // ─────────── Editar texto de la letra ───────────
-    editLyricLine(idx) {
+    // ─────────── Edición de letra en línea ───────────
+    // Antes esto era un prompt() del navegador: te tapaba la canción y no dejaba
+    // ver los acordes mientras escribías. Ahora es un input colocado en el sitio
+    // de la letra, con la misma fuente, y los acordes siguen encima a la vista.
+    startLyricEdit(idx) {
       const ln = this.editor.parsed[idx];
       if (!ln || ln.type !== 'lyric') return;
-      const next = prompt('Edita el texto de esta línea (los acordes intentan mantenerse pegados a su palabra):', ln.lyric);
-      if (next == null || next === ln.lyric) return;
-      // Mapear posiciones de acordes al nuevo texto por word-index
-      const oldStarts = wordStarts(ln.lyric);
-      const newStarts = wordStarts(next);
-      ln.chords = ln.chords.map(ch => {
-        // Encontrar a qué palabra pertenecía
-        let wordIdx = 0;
-        for (let k = 0; k < oldStarts.length; k++) {
-          if (oldStarts[k] <= ch.pos) wordIdx = k; else break;
-        }
-        const newPos = newStarts[Math.min(wordIdx, newStarts.length - 1)] || Math.min(ch.pos, next.length);
-        return { text: ch.text, pos: newPos };
+      // Sólo una línea en edición a la vez.
+      this.editor.parsed.forEach((l, i) => {
+        if (l._editing && i !== idx && l.type === 'lyric') this.commitLyricEdit(i);
       });
-      ln.lyric = next;
-      this.commitParsed();
+      ln._draft = ln.lyric;
+      ln._editing = true;
+      this.editor.parsed = [...this.editor.parsed];
+    },
+    cancelLyricEdit(idx) {
+      const ln = this.editor.parsed[idx];
+      if (!ln) return;
+      ln._editing = false;
+      delete ln._draft;
+      this.editor.parsed = [...this.editor.parsed];
       this.$nextTick(() => this.layoutChords());
+    },
+    // `advance`: con Tab salta a editar la siguiente línea de letra, para poder
+    // repasar una estrofa entera sin volver a coger el ratón.
+    commitLyricEdit(idx, advance) {
+      const ln = this.editor.parsed[idx];
+      if (!ln || ln.type !== 'lyric' || !ln._editing) return;
+      const draft = ln._draft != null ? ln._draft : ln.lyric;
+      ln._editing = false;
+      delete ln._draft;
+      // Si escribes corchetes se toman como acordes de verdad. Si no lo hiciéramos
+      // se guardarían como texto literal en el .cho y al recargar se volverían
+      // acordes de todas formas, pero pegados donde no toca.
+      const parsed = parseChordLineToModel(draft);
+      const typedChords = parsed.chords.length > 0;
+      const nextLyric = typedChords ? parsed.lyric : draft;
+      if (nextLyric !== ln.lyric || typedChords) {
+        ln.chords = typedChords
+          ? parsed.chords
+          : remapChordsToNewLyric(ln.chords, ln.lyric, nextLyric);
+        ln.lyric = nextLyric;
+        this.editor.parsed = [...this.editor.parsed];
+        this.commitParsed();
+      } else {
+        this.editor.parsed = [...this.editor.parsed];
+      }
+      this.$nextTick(() => this.layoutChords());
+      if (advance) {
+        const nextIdx = this.editor.parsed.findIndex((l, i) => i > idx && l.type === 'lyric');
+        if (nextIdx >= 0) this.$nextTick(() => this.startLyricEdit(nextIdx));
+      }
     },
 
     // ─────────── Resaltado del editor raw ───────────
@@ -2127,18 +2422,34 @@ function app() {
     // OJO: sólo se cambian colores/peso, nunca el tamaño de letra ni el
     // espaciado — el textarea de encima no puede estilar partes de su texto, así
     // que cualquier cambio de métrica descuadraría el cursor de la letra.
+    // Cada línea se emite como DOS celdas de una rejilla: número + contenido.
+    // Así el número queda pegado arriba de su línea aunque ésta ocupe varias
+    // visuales al hacer wrap — con una columna aparte se descuadraría.
     highlightCho(text) {
-      if (!text) return '\n';
+      const lines = String(text == null ? '' : text).split('\n');
+      let out = '';
+      for (let i = 0; i < lines.length; i++) {
+        out += '<span class="raw-num">' + (i + 1) + '</span>';
+        // Espacio de ancho cero en las vacías: sin contenido la celda mediría 0
+        // de alto y dejaría de cuadrar con la línea del textarea.
+        out += '<span class="raw-code">' + (this.highlightChoLine(lines[i]) || '&#8203;') + '</span>';
+      }
+      return out;
+    },
+    highlightChoLine(line) {
       const esc = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
       const re = /\{[^}\n]*\}|\[[^\]\n]*\]/g;
       let out = '';
       let last = 0;
       let m;
-      while ((m = re.exec(text)) !== null) {
-        out += esc(text.slice(last, m.index));
+      while ((m = re.exec(line)) !== null) {
+        out += esc(line.slice(last, m.index));
         const tok = m[0];
         if (tok[0] === '[') {
-          out += '<span class="hl-chord">' + esc(tok) + '</span>';
+          // Los que no parecen un acorde se marcan: chivato barato de erratas.
+          const cls = isKnownChord(tok.slice(1, -1)) ? 'hl-chord' : 'hl-chord hl-chord-bad';
+          const title = cls.endsWith('bad') ? ' title="No parece un acorde"' : '';
+          out += '<span class="' + cls + '"' + title + '>' + esc(tok) + '</span>';
         } else {
           const inner = tok.slice(1, -1).trim().toLowerCase();
           let cls = 'hl-directive';
@@ -2149,10 +2460,13 @@ function app() {
         }
         last = m.index + tok.length;
       }
-      out += esc(text.slice(last));
-      // Newline final: si no, la última línea del <pre> mide menos que la del
-      // textarea y el resaltado se desplaza al llegar abajo.
-      return out + '\n';
+      out += esc(line.slice(last));
+      return out;
+    },
+    // Cuántos [corchetes] del contenido actual no parecen un acorde.
+    unknownChordCount() {
+      const toks = String(this.editor.content || '').match(/\[[^\]\n]*\]/g) || [];
+      return toks.filter(t => !isKnownChord(t.slice(1, -1))).length;
     },
     syncRawScroll(ev) {
       const pre = this.$refs.rawHighlight;
@@ -2195,6 +2509,7 @@ function app() {
         next = lines.join('\n');
       }
       if (next !== c) {
+        this.recordUndo(c, 'meta:' + key);
         this.editor.content = next;
         this.editor.dirty = true;
         // Y el modelo del visual también, o se pierde el cambio: cualquier
@@ -2360,6 +2675,41 @@ function app() {
         await this.loadCatalog();
       } catch (e) {
         alert('Error: ' + e.message);
+      }
+    },
+
+    // Mueve todas las seleccionadas a una categoría. Los números los reparte el
+    // backend sobre la marcha para que no choquen entre ellas.
+    async bulkMoveToCategory() {
+      const paths = [...this.selectedCatalogPaths];
+      const cat = this.bulkMoveCategory;
+      if (!paths.length || !cat) return;
+      const catName = (this.data?.categories || []).find(c => c.letter === cat);
+      const label = catName ? catName.title : cat;
+      if (!confirm(`¿Mover ${paths.length} canción(es) a "${label}"?\n\n` +
+                   'Se renumeran en el destino y se hace backup de cada una antes de moverla.')) return;
+      this.bulkMoving = true;
+      try {
+        const r = await fetch('/api/songs/bulk-move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths, category_letter: cat }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const { results } = await r.json();
+        const okN = results.filter(x => x.ok).length;
+        const failed = results.filter(x => !x.ok);
+        this.selectedCatalogPaths = new Set();
+        this.bulkMoveCategory = '';
+        await this.loadCatalog();
+        if (failed.length) {
+          alert(`Movidas ${okN} de ${results.length}.\n\nNo se pudieron mover:\n` +
+                failed.map(f => `· ${f.path} — ${f.error}`).join('\n'));
+        }
+      } catch (e) {
+        alert('Error moviendo: ' + e.message);
+      } finally {
+        this.bulkMoving = false;
       }
     },
 
@@ -2644,6 +2994,43 @@ function serializeCho(parsed) {
     if (ln.type === 'lyric') return serializeChordLine({ lyric: ln.lyric, chords: ln.chords });
     return ln.raw;
   }).join('\n');
+}
+
+// ¿Esto parece un acorde? Deliberadamente PERMISIVO: preferimos no marcar un
+// acorde raro pero válido antes que pintar de rojo media canción. Se exige nota
+// raíz A-G (con # o b opcional) y, si hay bajo tras la barra, que también lo sea.
+// Notas españolas que se colarían por la puerta de atrás: 'Do' es D + 'o' y 'Fa'
+// es F + 'a', así que pasarían el filtro de abajo. Justo son las que quedan sin
+// traducir en un import, o sea las que más interesa cazar. Se rechazan sólo con
+// sufijo de menor/número para no pisar acordes legítimos como Faug o Fadd9.
+const ES_NOTE_LEAK_RE = /^(Do|Fa)[#b]?m?[0-9]*$/;
+
+function isKnownChord(tok) {
+  const t = String(tok || '').trim();
+  if (!t) return false;
+  if (ES_NOTE_LEAK_RE.test(t)) return false;
+  const parts = t.split('/');
+  if (parts.length > 2) return false;
+  if (!/^[A-G][#b]?[A-Za-z0-9°ºø+\-#b().,]*$/.test(parts[0])) return false;
+  if (parts.length === 2 && !/^[A-G][#b]?[A-Za-z0-9#b]*$/.test(parts[1])) return false;
+  return true;
+}
+
+// Reubica los acordes al cambiar el texto de una línea: cada acorde se queda
+// pegado a la MISMA palabra (por índice) del texto nuevo. Si el texto nuevo tiene
+// menos palabras, los que sobran caen en la última.
+function remapChordsToNewLyric(chords, oldLyric, newLyric) {
+  const oldStarts = wordStarts(oldLyric);
+  const newStarts = wordStarts(newLyric);
+  return (chords || []).map(ch => {
+    let wordIdx = 0;
+    for (let k = 0; k < oldStarts.length; k++) {
+      if (oldStarts[k] <= ch.pos) wordIdx = k; else break;
+    }
+    const mapped = newStarts[Math.min(wordIdx, newStarts.length - 1)];
+    const pos = mapped != null ? mapped : Math.min(ch.pos, newLyric.length);
+    return { text: ch.text, pos };
+  });
 }
 
 function snapToWordStart(idx, lyric) {

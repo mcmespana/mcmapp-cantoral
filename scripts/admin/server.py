@@ -570,16 +570,15 @@ def backup_file(path: Path) -> Path:
 # ─────────── API: Catálogo ─────────── #
 
 
-@app.route("/api/catalog")
-def api_catalog():
-    repo_songs = list_repo_songs()
-    docx_songs = load_docx_songs()
-    latex_items = load_latex_items()
+def build_catalog_indexes():
+    """Índices por título de docx y LaTeX, más las conversiones del docx.
 
-    # Cachear conversiones (caras): solo para usar el title aquí
+    Se comparten entre /api/catalog y /api/catalog/rows para que el enriquecido
+    de una fila sea EXACTAMENTE el mismo por los dos caminos.
+    """
     docx_convs: Dict[int, dict] = {}
     docx_index: Dict[str, dict] = {}
-    for s in docx_songs:
+    for s in load_docx_songs():
         conv = convert_docx_song(s)
         docx_convs[s["id"]] = conv
         for k in title_keys(conv["title"]):
@@ -588,35 +587,72 @@ def api_catalog():
                 "title": conv["title"],
                 "section_letter": s["section_letter"],
             })
-
-    # Índice latex por título (para detectar duplicados desde el repo / docx)
     latex_index: Dict[str, dict] = {}
-    for lt in latex_items:
+    for lt in load_latex_items():
         for k in title_keys(lt["title"]):
             latex_index.setdefault(k, lt)
+    return docx_convs, docx_index, latex_index
 
-    # Marcar repo_songs con si está en docx y/o en LaTeX
+
+def enrich_repo_song(r: dict, docx_index: Dict[str, dict],
+                     latex_index: Dict[str, dict]) -> dict:
+    """Añade a una fila del repo si está en docx / LaTeX / doceacordes."""
+    keys = title_keys(r["title"])
+    match = best_match(keys, docx_index)
+    r["in_docx"] = bool(match)
+    r["docx_id"] = match["id"] if match else None
+    lmatch = best_match(keys, latex_index)
+    r["in_latex"] = bool(lmatch)
+    r["latex_id"] = lmatch["id"] if lmatch else None
+    if lmatch:
+        r["latex_title"] = lmatch["title"]
+    doce_id = da.find_best_id(r["title"], r.get("artist", ""))
+    r["in_doce"] = bool(doce_id)
+    r["doce_id"] = doce_id
+    return r
+
+
+@app.route("/api/catalog/rows")
+def api_catalog_rows():
+    """Filas del catálogo ya enriquecidas para unos paths concretos.
+
+    Sirve para que, tras importar, el front pinte al momento las canciones
+    nuevas sin esperar al /api/catalog completo (que recalcula el emparejado de
+    todo el repo). La recarga completa se sigue haciendo después, en segundo
+    plano, para cuadrar contadores y la lista de "faltan del cantoral".
+    """
+    wanted = [p for p in (request.args.get("paths") or "").split("|") if p.strip()]
+    if not wanted:
+        return jsonify({"rows": []})
+    _, docx_index, latex_index = build_catalog_indexes()
+    by_path = {r["path"]: r for r in list_repo_songs()}
+    rows = []
+    for path_str in wanted:
+        r = by_path.get(path_str.strip())
+        if r:
+            rows.append(enrich_repo_song(r, docx_index, latex_index))
+    return jsonify({"rows": rows})
+
+
+@app.route("/api/catalog")
+def api_catalog():
+    repo_songs = list_repo_songs()
+    docx_songs = load_docx_songs()
+    latex_items = load_latex_items()
+    docx_convs, docx_index, latex_index = build_catalog_indexes()
+
+    # Marcar repo_songs con si está en docx / LaTeX / doceacordes
     matched_docx_ids: set = set()
     matched_latex_ids: set = set()
     matched_doce_ids: set = set()
     for r in repo_songs:
-        match = best_match(title_keys(r["title"]), docx_index)
-        if match:
-            r["in_docx"] = True
-            r["docx_id"] = match["id"]
-            matched_docx_ids.add(match["id"])
-        else:
-            r["in_docx"] = False
-            r["docx_id"] = None
-        lmatch = best_match(title_keys(r["title"]), latex_index)
-        if lmatch:
-            r["in_latex"] = True
-            r["latex_id"] = lmatch["id"]
-            r["latex_title"] = lmatch["title"]
-            matched_latex_ids.add(lmatch["id"])
-        else:
-            r["in_latex"] = False
-            r["latex_id"] = None
+        enrich_repo_song(r, docx_index, latex_index)
+        if r["docx_id"] is not None:
+            matched_docx_ids.add(r["docx_id"])
+        if r["latex_id"] is not None:
+            matched_latex_ids.add(r["latex_id"])
+        if r["doce_id"]:
+            matched_doce_ids.add(r["doce_id"])
         # doceacordes (sólo el mejor match, alto score)
         doce_id = da.find_best_id(r["title"], r.get("artist", ""))
         if doce_id:
@@ -965,6 +1001,63 @@ def api_song_move():
         "number": num,
         "category_letter": cat_letter,
     })
+
+
+@app.route("/api/songs/bulk-move", methods=["POST"])
+def api_songs_bulk_move():
+    """Mueve varias canciones a una categoría de golpe.
+
+    Body: {paths: [...], category_letter}
+
+    Los números se reparten sobre la marcha: cada canción coge el siguiente
+    hueco libre teniendo en cuenta las que acaban de entrar en esta misma
+    tanda, así que no se pisan entre ellas. Se saltan los números apalabrados
+    por canciones del docx pendientes de importar.
+    """
+    body = request.get_json(silent=True) or {}
+    paths = body.get("paths") or []
+    cat_letter = (body.get("category_letter") or "").upper().strip()
+    if not isinstance(paths, list) or not paths:
+        abort(400, "Falta 'paths'")
+    cat = next((c for c in list_categories() if c["letter"] == cat_letter), None)
+    if not cat:
+        abort(404, f"Categoría {cat_letter} no encontrada")
+    folder = SONGS_DIR / cat["folder"]
+    folder.mkdir(exist_ok=True)
+
+    taken = set(used_numbers(folder))
+    reserved = set(reserved_numbers_for(cat_letter))
+    results = []
+    for path_str in paths:
+        try:
+            src = safe_relpath(path_str)
+            if not src.exists():
+                raise FileNotFoundError("no existe")
+            slug_part = re.sub(r"^\d+\.", "", src.name)
+            # Si ya está en la categoría destino no la tocamos: mover una canción
+            # "a donde ya está" sólo le cambiaría el número sin motivo.
+            if src.parent.resolve() == folder.resolve():
+                results.append({"path": path_str, "ok": True, "unchanged": True,
+                                "new_path": path_str})
+                m = re.match(r"(\d+)\.", src.name)
+                if m:
+                    taken.add(int(m.group(1)))
+                continue
+            num = 1
+            while num in taken or num in reserved:
+                num += 1
+            fname = f"{num:02d}.{slug_part}"
+            dest = folder / fname
+            if dest.exists():
+                raise FileExistsError(f"ya existe {fname}")
+            backup_file(src)
+            src.rename(dest)
+            taken.add(num)
+            results.append({"path": path_str, "ok": True, "number": num,
+                            "new_path": str(dest.relative_to(REPO_DIR))})
+        except Exception as e:
+            results.append({"path": path_str, "ok": False, "error": str(e)})
+    return jsonify({"ok": True, "category": cat_letter, "results": results})
 
 
 # ─────────── API: docx ─────────── #
