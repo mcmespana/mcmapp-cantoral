@@ -1645,13 +1645,13 @@
                              @mousedown.stop @click.stop @dblclick.stop
                              placeholder="letra de la línea…">
                     </template>
+                    <!-- OJO con el formato: la fila usa `white-space: pre`, así que los saltos
+                         de línea del propio HTML entre estas etiquetas contarían como
+                         saltos DE VERDAD y cada línea de letra se comía tres líneas
+                         visuales. Por eso van todas pegadas sin espacios ni saltos. -->
                     <div class="ed-lyric-row" x-show="!ln._editing"
-                         @dblclick.stop="startLyricEdit(idx)">
-                      <template x-for="(ch, i) in ln.lyric" :key="i">
-                        <span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span>
-                      </template>
-                      <span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span>
-                    </div>
+                         @dblclick.stop="startLyricEdit(idx)"
+                    ><template x-for="(ch, i) in ln.lyric" :key="i"><span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span></template><span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span></div>
                   </div>
                 </template>
               </div>

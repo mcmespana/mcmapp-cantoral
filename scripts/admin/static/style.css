@@ -755,11 +755,15 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 
 /* Vista compacta del documento visual: quita aire sin tocar la métrica de la
    fuente (los acordes se recolocan midiendo el DOM tras el toggle). */
-.visual-doc.dense { padding: 10px; }
-.visual-doc.dense .ed-line.ed-lyric { padding-top: 15px; padding-bottom: 0; }
-.visual-doc.dense .ed-lyric-row { line-height: 1.12; }
-.visual-doc.dense .ed-line.ed-blank { height: 5px; }
-.visual-doc.dense .ed-marker { margin: 2px 0 1px 28px; padding-top: 0; padding-bottom: 0; }
+.visual-doc.dense {
+  --ed-chord-h: 13px;
+  --ed-lyric-lh: 1.06;
+  --ed-blank-h: 4px;
+  --ed-gap: 0px;
+  padding: 8px 10px;
+}
+.visual-doc.dense .ed-chord { line-height: 13px; font-size: 11px; padding: 0 4px; }
+.visual-doc.dense .ed-marker { margin: 1px 0 0 28px; padding-top: 0; padding-bottom: 0; }
 .visual-doc.dense .ed-line.ed-directive .ed-meta-line,
 .visual-doc.dense .ed-line.ed-comment .ed-meta-line { padding: 0 0 0 28px; }
 
@@ -795,7 +799,16 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .chuleta-key.chuleta-on { background: var(--accent); color: white; border-color: var(--accent); }
 
 .visual-doc {
-  outline: none; padding: 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+  /* Métricas del documento en un único sitio. El alto reservado para la fila de
+     acordes y el padding superior de la línea de letra TIENEN que ser el mismo
+     valor: la capa de acordes se coloca justo encima del texto con un offset
+     negativo, así que si el padding fuera menor los acordes se comerían la línea
+     de arriba. Por eso van los dos de la misma variable. */
+  --ed-chord-h: 18px;
+  --ed-lyric-lh: 1.4;
+  --ed-blank-h: 11px;
+  --ed-gap: 3px;
+  outline: none; padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
   /* Carlito = clon métrico de Calibri (mismas anchuras de caracteres).
      Por eso los acordes calculados con Calibri caen pixel-fiel en pantalla. */
   font-family: "Carlito", "Calibri", "Segoe UI", sans-serif;
@@ -803,12 +816,12 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 }
 .visual-doc:focus { box-shadow: 0 0 0 2px var(--accent); }
 .ed-line { margin: 0; position: relative; }
-.ed-line.ed-blank { height: 14px; }
+.ed-line.ed-blank { height: var(--ed-blank-h); }
 .ed-line.ed-directive .ed-meta-line,
 .ed-line.ed-comment .ed-meta-line {
   font-family: monospace; font-size: 12px; color: var(--fg-3);
-  padding: 2px 6px; background: var(--bg-3); border-radius: 3px;
-  display: inline-block; margin: 4px 0;
+  padding: 1px 6px; background: var(--bg-3); border-radius: 3px;
+  display: inline-block; margin: var(--ed-gap) 0;
 }
 .ed-line.ed-comment .ed-meta-line { color: var(--todo); }
 .ed-comment-line { display: block; margin: 6px 0; }
@@ -867,18 +880,21 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .ed-line .line-add-arr:hover { opacity: 1; background: rgba(225, 92, 98, 0.22); }
 .theme-dark .ed-line .line-add-arr { color: #FF8A80; border-color: rgba(255, 138, 128, 0.4); }
 .ed-marker {
-  font-size: 11px; color: var(--warn); padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10px; color: var(--warn); padding: 1px 8px; text-transform: uppercase; letter-spacing: 0.05em;
   background: rgba(202, 138, 4, 0.1); display: inline-flex; align-items: center; gap: 6px;
-  border-radius: 3px; margin: 6px 0 2px 28px;
+  border-radius: 3px; margin: 3px 0 1px 28px; line-height: 1.5;
 }
 .ed-marker.chorus-end { color: var(--warn); }
 .ed-marker .link-mini { background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; opacity: 0.6; }
 .ed-marker .link-mini:hover { opacity: 1; color: var(--danger); }
 
-.ed-line.ed-lyric { padding-top: 18px; padding-bottom: 2px; }
-.ed-line-row { position: relative; margin: 0; min-height: 1.4em; padding-left: 28px; }
-.ed-chords-layer { position: absolute; top: -1.05em; left: 28px; right: 0; height: 1.1em; pointer-events: none; }
-.ed-lyric-row { white-space: pre; font-size: 15px; line-height: 1.25; }
+.ed-line.ed-lyric { padding-top: var(--ed-chord-h); padding-bottom: var(--ed-gap); }
+.ed-line-row { position: relative; margin: 0; padding-left: 28px; }
+.ed-chords-layer {
+  position: absolute; top: calc(-1 * var(--ed-chord-h)); left: 28px; right: 0;
+  height: var(--ed-chord-h); pointer-events: none;
+}
+.ed-lyric-row { white-space: pre; font-size: 15px; line-height: var(--ed-lyric-lh); }
 .ed-char {
   display: inline-block; min-width: 0.25em; line-height: 1.15;
   border-bottom: 1px dotted transparent;
@@ -903,7 +919,7 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
 }
 .ed-lyric-input:focus { outline: none; }
-.ed-line.ed-blank { height: 8px; }
+
 .ed-line .line-gutter {
   position: absolute; left: 0; top: 0; width: 28px; height: 100%;
   display: flex; align-items: center; justify-content: center;
@@ -920,10 +936,15 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
-.ed-line.ed-soc + .ed-line.ed-lyric,
-.ed-line.ed-lyric + .ed-line.ed-lyric {
-  padding-top: 10px;
-}
+/* OJO: no reintroducir aquí un padding-top fijo para versos consecutivos.
+   La capa de acordes (.ed-chords-layer) se posiciona con
+   top: -var(--ed-chord-h) relativo a esta misma línea; si el padding-top de
+   la línea fuera menor que esa variable, la capa se saldría por ARRIBA del
+   propio .ed-line y pisaría la línea anterior — los acordes quedaban tocando
+   la letra de arriba aunque abajo (que sólo depende de --ed-gap) se veía
+   bien. Antes había aquí una regla que fijaba 10px para estrechar el hueco
+   entre versos, y al subir --ed-chord-h a 18px (vista cómoda) quedó por
+   debajo de la variable y provocó justo ese solape. */
 .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(202, 138, 4, 0.06), transparent 30%); }
 .theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(234, 179, 8, 0.12), transparent 30%); }
 
@@ -934,7 +955,7 @@ body.adding .ed-char:hover { background: rgba(37, 99, 235, 0.15); cursor: pointe
 .ed-chord {
   position: absolute; top: 0;
   background: rgba(37, 99, 235, 0.92); color: white;
-  padding: 1px 5px; border-radius: 3px;
+  padding: 0 5px; border-radius: 3px; line-height: 14px;
   font-family: 'SF Mono', Menlo, monospace; font-size: 12px; font-weight: 700;
   cursor: grab; pointer-events: auto;
   /* Sin translate: el acorde se ancla LEFT-aligned al inicio del carácter target.
