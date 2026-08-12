@@ -936,10 +936,15 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
-.ed-line.ed-soc + .ed-line.ed-lyric,
-.ed-line.ed-lyric + .ed-line.ed-lyric {
-  padding-top: 10px;
-}
+/* OJO: no reintroducir aquí un padding-top fijo para versos consecutivos.
+   La capa de acordes (.ed-chords-layer) se posiciona con
+   top: -var(--ed-chord-h) relativo a esta misma línea; si el padding-top de
+   la línea fuera menor que esa variable, la capa se saldría por ARRIBA del
+   propio .ed-line y pisaría la línea anterior — los acordes quedaban tocando
+   la letra de arriba aunque abajo (que sólo depende de --ed-gap) se veía
+   bien. Antes había aquí una regla que fijaba 10px para estrechar el hueco
+   entre versos, y al subir --ed-chord-h a 18px (vista cómoda) quedó por
+   debajo de la variable y provocó justo ese solape. */
 .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(202, 138, 4, 0.06), transparent 30%); }
 .theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: linear-gradient(to right, rgba(234, 179, 8, 0.12), transparent 30%); }
 
