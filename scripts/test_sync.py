@@ -153,6 +153,101 @@ def test_conflict_ignores_only_whitespace_and_media():
     assert sync.content_conflict({"contentOld": old, "contentNew": "x"}, CHO) is False
 
 
+# ── chordpro: etiquetas ─────────────────────────────────────────────────────────
+def test_slugify_tag():
+    assert cp.slugify_tag("Domingo de Ramos") == "domingo-de-ramos"
+    assert cp.slugify_tag("  Animación  ") == "animacion"
+    assert cp.slugify_tag("Taizé") == "taize"
+    assert cp.slugify_tag("Niños") == "ninos"
+    assert cp.slugify_tag("--envío / salida--") == "envio-salida"
+    assert cp.slugify_tag("!!!") == ""
+
+def test_pretty_tag_label():
+    assert cp.pretty_tag_label("domingo-de-ramos") == "Domingo de ramos"
+    assert cp.pretty_tag_label("") == ""
+
+def test_normalize_tags():
+    # lista, string con comas y mezcla; dedup y orden de aparición
+    assert cp.normalize_tags(["Viejunas", "envio", "viejunas"]) == ["viejunas", "envio"]
+    assert cp.normalize_tags("viejunas, Envío") == ["viejunas", "envio"]
+    assert cp.normalize_tags(["a, b", "c"]) == ["a", "b", "c"]
+    assert cp.normalize_tags(None) == []
+    # alias colapsan sin tocar el .cho
+    assert cp.normalize_tags(["viejuna", "viejunas"], {"viejuna": "viejunas"}) == ["viejunas"]
+
+def test_format_tags():
+    assert cp.format_tags(["Grandes Clásicos", ""]) == "grandes-clasicos"
+    assert cp.format_tags([]) == ""
+
+def test_parse_media_tags():
+    text = "{title: X}\n{tags: Viejunas, envio}\n{ritmo: 4x4}\nletra\n"
+    media = cp.parse_media(text)
+    assert media["tags"] == ["viejunas", "envio"]
+    # la directiva sale del cuerpo, como el resto de multimedia
+    assert cp.strip_media(text) == "{title: X}\nletra\n"
+
+def test_parse_media_tags_repetible():
+    text = "{tags: a, b}\n{tags: b, c}\n"
+    assert cp.parse_media(text)["tags"] == ["a", "b", "c"]
+
+def test_tag_catalog_roundtrip(tmp=None):
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        cp.save_tag_catalog(d, {
+            "viejunas": {"label": "Viejunas", "emoji": "🕰️", "alias": ["viejuna"],
+                         "destacada": False, "orden": None},
+            "envio": {"label": "Envío"},
+        })
+        loaded = cp.load_tag_catalog(d)
+        assert loaded["viejunas"] == {"label": "Viejunas", "emoji": "🕰️", "alias": ["viejuna"]}
+        assert cp.catalog_aliases(loaded) == {"viejuna": "viejunas"}
+        # un catálogo que no existe es un estado válido
+        import os
+        os.remove(cp.tag_catalog_path(d))
+        assert cp.load_tag_catalog(d) == {}
+
+def test_resolve_tag_catalog():
+    songs = {
+        "entrada": {"songs": [{"tags": ["viejunas", "envio"]}, {"tags": ["Viejunas"]}]},
+        "maria": {"songs": [{"tags": ["viejuna"]}, {}]},
+    }
+    catalog = {"viejunas": {"label": "Viejunas", "emoji": "🕰️", "alias": ["viejuna"]},
+               "sinusar": {"label": "Sin usar"}}
+    resolved = cp.resolve_tag_catalog(songs, catalog)
+    # alias colapsado y recuento real
+    assert resolved["viejunas"]["count"] == 3
+    assert resolved["viejunas"]["emoji"] == "🕰️"
+    # descubierta sin declarar: label capitalizado
+    assert resolved["envio"] == {"label": "Envio", "count": 1}
+    # declarada pero sin usar: no sale
+    assert "sinusar" not in resolved
+    # de más a menos usada
+    assert list(resolved) == ["viejunas", "envio"]
+
+
+# ── sync: etiquetas ─────────────────────────────────────────────────────────────
+def test_resolve_media_tags():
+    original = "{title: X}\n{tags: viejunas}\nletra\n"
+    # sin tagsNew se conserva lo que había
+    assert sync.resolve_media({}, original)["tags"] == ["viejunas"]
+    # con tagsNew manda la edición
+    assert sync.resolve_media({"tagsNew": ["Infantiles", "envio"]}, original)["tags"] == [
+        "infantiles", "envio"]
+    # vacío borra
+    assert sync.resolve_media({"tagsNew": []}, original)["tags"] == []
+
+def test_build_media_lines_tags():
+    lines = sync.build_media_lines({"tags": ["viejunas", "Envío"], "comment": "hola"})
+    assert "{tags: viejunas, envio}" in lines
+    # el comentario sigue yendo el último
+    assert lines[-1] == "{comentario: hola}"
+
+def test_media_changed_tags():
+    assert sync.media_changed({"tagsOld": ["a"], "tagsNew": ["a", "b"]}) is True
+    assert sync.media_changed({"tagsOld": ["a"], "tagsNew": ["a"]}) is False
+
+
+
 # ── runner sin pytest ───────────────────────────────────────────────────────────
 def _run():
     tests = [v for k, v in sorted(globals().items())

@@ -1,0 +1,12 @@
+{
+  "grandes-clasicos": {
+    "label": "Grandes clásicos",
+    "emoji": "⭐",
+    "destacada": true,
+    "orden": 1,
+    "alias": [
+      "clasicos",
+      "grandes-clasicas"
+    ]
+  }
+}

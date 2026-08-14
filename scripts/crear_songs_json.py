@@ -56,6 +56,13 @@ def main():
     new_path = os.path.join(songs_dir, new_fname)
     print(f"🚀 Generando nueva versión: {new_fname}")
 
+    # Catálogo de etiquetas (opcional). Solo se usa para avisar de las que
+    # aparecen en los .cho sin estar declaradas: las etiquetas son LIBRES y
+    # funcionan igual sin catálogo.
+    tag_catalog = cp.load_tag_catalog(songs_dir)
+    tag_aliases = cp.catalog_aliases(tag_catalog)
+    tag_counts = {}
+
     result = {}  # Diccionario final que se volcará a JSON
 
     # Mapea carpetas como "A"->"A. Entrada"
@@ -116,6 +123,11 @@ def main():
             if extra['youtubeLinks']:   entry['youtubeLinks'] = extra['youtubeLinks']
             if extra['audioLinks']:     entry['audioLinks'] = extra['audioLinks']
             if extra['comment']:        entry['comment'] = extra['comment']
+            tags = cp.normalize_tags(extra['tags'], tag_aliases)
+            if tags:
+                entry['tags'] = tags
+                for slug in tags:
+                    tag_counts[slug] = tag_counts.get(slug, 0) + 1
             print(f"   🎵 {fname} -> {entry['title']} (Key={entry['key']}, Capo={entry['capo']})")
             songs.append(entry)
 
@@ -128,6 +140,25 @@ def main():
     # Escribe el JSON final
     with open(new_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
+
+    # Aviso de higiene del vocabulario: el momento barato de cazar un typo es
+    # cuando la etiqueta aparece por primera vez, antes de que se consolide.
+    if tag_counts:
+        total = sum(tag_counts.values())
+        print(f"\n🏷  {len(tag_counts)} etiquetas en {total} usos:")
+        for slug, count in sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            mark = '  ' if slug in tag_catalog else '🆕'
+            label = (tag_catalog.get(slug) or {}).get('label') or cp.pretty_tag_label(slug)
+            print(f"   {mark} {slug:<24} {count:>3}  {label}")
+        nuevas = [s for s in tag_counts if s not in tag_catalog]
+        if nuevas:
+            print(f"   → Sin declarar en songs/{cp.TAG_CATALOG_FILENAME} "
+                  f"({len(nuevas)}): {', '.join(sorted(nuevas))}")
+            print("     Funcionan igual; decláralas cuando se consoliden "
+                  "(o desde el admin, pestaña 🏷 Etiquetas).")
+        huerfanas = [s for s in tag_catalog if s not in tag_counts]
+        if huerfanas:
+            print(f"   ⚠️  Declaradas pero sin usar: {', '.join(sorted(huerfanas))}")
 
     print(f"✅ ¡Hecho! {new_path} creado.")
 

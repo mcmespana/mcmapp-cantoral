@@ -1,8 +1,13 @@
+import json
 import os
+import sys
 import urllib.request
 import urllib.error
 import time
 import re
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import chordpro as cp  # catálogo de etiquetas + resolución
 
 
 def find_latest_version(songs_dir):
@@ -29,7 +34,8 @@ def main():
     json_path = os.path.join(songs_dir, latest_file)
 
     with open(json_path, 'r', encoding='utf-8') as f:
-        data = f.read().encode('utf-8')
+        raw = f.read()
+    data = raw.encode('utf-8')
 
     def request(url, body):
         req = urllib.request.Request(url, data=body, method='PUT', headers={'Content-Type': 'application/json'})
@@ -45,6 +51,21 @@ def main():
     timestamp = str(int(time.time()))
     url_time = f"{firebase_url}/songs/updatedAt.json?auth={token}"
     request(url_time, timestamp.encode('utf-8'))
+
+    # ── Catálogo de etiquetas → songs/tags ────────────────────────────────
+    # Nodo hermano de songs/data, con el mismo formato {data, updatedAt} que
+    # lee `useFirebaseData` en la app. Es OPCIONAL: si no hay ninguna canción
+    # etiquetada se publica un objeto vacío y la app sigue sin enseñar el
+    # botón de etiquetas. Se sube SIEMPRE (aunque esté vacío) para que quitar
+    # la última etiqueta también se propague.
+    songs_json = json.loads(raw)
+    catalog = cp.load_tag_catalog(songs_dir)
+    resolved = cp.resolve_tag_catalog(songs_json, catalog)
+    payload = json.dumps(resolved, ensure_ascii=False).encode('utf-8')
+    request(f"{firebase_url}/songs/tags/data.json?auth={token}", payload)
+    request(f"{firebase_url}/songs/tags/updatedAt.json?auth={token}",
+            timestamp.encode('utf-8'))
+    print(f"🏷  {len(resolved)} etiquetas publicadas en songs/tags")
 
 
 if __name__ == '__main__':

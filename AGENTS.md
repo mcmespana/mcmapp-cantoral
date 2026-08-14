@@ -10,7 +10,7 @@
 ## Build, Test, and Development Commands
 - Create virtualenv: `python3 -m venv .venv && source .venv/bin/activate`.
 - Install deps: `pip install -r scripts/requirements.txt`.
-- Generate songs JSON: `python scripts/crear_songs_json.py` (reads `songs/indice.json`, scans `songs/*/*.cho`, writes next `songs-vX[.Y].json`).
+- Generate songs JSON: `python scripts/crear_songs_json.py` (reads `songs/indice.json`, scans `songs/*/*.cho`, writes next `songs-vX[.Y].json`, and prints a tag report flagging tags not declared in `songs/tags.json`).
 - Convert tabs → ChordPro: `python scripts/tab2chordpro.py <input.txt> > <output.cho>`.
 - Sync Firebase (receive/push changes): `python scripts/sincronizaCambiosDeFirebase.py` or `python scripts/update_firebase.py` as needed.
 - macOS/Windows helpers: double-click the `*.command` or `*.bat` wrappers in `scripts/`.
@@ -20,11 +20,13 @@
 - Indentation: 4 spaces; keep functions small and single-purpose.
 - File naming: snake_case for Python (`crear_songs_json.py`), kebab/space names only for user launchers.
 - ChordPro files: numeric prefix when available (e.g., `01 Titulo.cho`). Metadata via `{title:}`, `{artist:}`, `{author:}`, `{key:}`, `{capo:}`.
+- Song tags: `{tags: a, b, c}` in the header (free-form, comma-separated, slugified). Optional catalog in `songs/tags.json`; published to Firebase `songs/tags`. See `docs/CAMPOS_CANCIONES.md` §6 and the admin's 🏷 tab.
 - Formatting/linting: run `ruff` and `black` if installed; otherwise keep PEP 8 style.
 
 ## Testing Guidelines
 - Smoke-test generators: run `python scripts/crear_songs_json.py`; ensure a new `songs-v*.json` is created and valid JSON.
 - Validate parsing: open random entries to confirm `title`, `author`, `key`, and `capo` populated.
+- Shared ChordPro/sync logic has tests: `python scripts/test_sync.py` (no deps needed; also works under pytest). Extend it when touching `scripts/chordpro.py`.
 - Optional: add minimal unit tests under `scripts/` with `pytest` if present; name tests `test_*.py`.
 
 ## Commit & Pull Request Guidelines
