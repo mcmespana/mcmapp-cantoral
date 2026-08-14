@@ -35,6 +35,95 @@ function toYoutubeWatch(url) {
   return 'https://www.youtube.com/watch?v=' + id + (s ? '&t=' + s : '');
 }
 
+// ─────────── Etiquetas: slug y picker reutilizable ───────────
+// Espejo de `slugify_tag` en scripts/chordpro.py. Si cambia el criterio en un
+// lado hay que cambiarlo en el otro (igual que con los helpers de YouTube).
+function slugifyTag(raw) {
+  return String(raw || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+function prettyTagLabel(slug) {
+  const w = String(slug || '').replace(/-/g, ' ').trim();
+  return w ? w.charAt(0).toUpperCase() + w.slice(1) : '';
+}
+
+/**
+ * Picker de etiquetas: chips + input con autocompletado. Se usa en el editor de
+ * una canción, en la barra de acciones masivas y al importar.
+ *
+ * No guarda la lista: la lee y la escribe con los callbacks que le pasa quien
+ * lo monta (`get`/`set`), así el estado sigue viviendo donde tenga sentido.
+ * `all` devuelve el catálogo global para autocompletar — que es lo único que
+ * frena de verdad la degeneración del vocabulario (viejunas/viejuna/antiguas).
+ */
+function tagPicker(opts) {
+  return {
+    q: '',
+    open: false,
+    hi: 0,
+    tpGet: opts.get,
+    tpSet: opts.set,
+    tpAll: opts.all || (() => []),
+    allowCreate: opts.allowCreate !== false,
+    get tags() { return this.tpGet() || []; },
+    get matches() {
+      const mine = new Set(this.tags);
+      const q = slugifyTag(this.q);
+      let list = (this.tpAll() || []).filter((t) => !mine.has(t.slug));
+      if (q) {
+        list = list.filter((t) => t.slug.includes(q)
+          || slugifyTag(t.label).includes(q)
+          || (t.alias || []).some((a) => a.includes(q)));
+      }
+      return list.slice(0, 8);
+    },
+    // Solo se ofrece crear si de verdad no existe: si ya existe, el
+    // autocompletado la propone y no se duplica el vocabulario.
+    get canCreate() {
+      const s = slugifyTag(this.q);
+      if (!s || !this.allowCreate) return false;
+      if (this.tags.includes(s)) return false;
+      return !(this.tpAll() || []).some((t) => t.slug === s);
+    },
+    get rowCount() { return this.matches.length + (this.canCreate ? 1 : 0); },
+    add(slug) {
+      const s = slugifyTag(slug);
+      if (!s || this.tags.includes(s)) { this.q = ''; return; }
+      this.tpSet([...this.tags, s]);
+      this.q = '';
+      this.hi = 0;
+      this.open = false;
+    },
+    remove(slug) { this.tpSet(this.tags.filter((t) => t !== slug)); },
+    onFocus() { this.open = true; this.hi = 0; },
+    onInput() { this.open = true; this.hi = 0; },
+    pickHighlighted() {
+      const m = this.matches;
+      if (this.hi < m.length) { this.add(m[this.hi].slug); return; }
+      if (this.canCreate) this.add(this.q);
+    },
+    onKey(e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); this.open = true; this.hi = Math.min(this.hi + 1, Math.max(this.rowCount - 1, 0)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); this.hi = Math.max(this.hi - 1, 0); return; }
+      if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+        if (!this.q.trim() && e.key !== 'Enter') return;
+        if (!this.q.trim()) return;
+        e.preventDefault();
+        this.pickHighlighted();
+        return;
+      }
+      if (e.key === 'Escape') { this.open = false; return; }
+      // Retroceso con el input vacío quita la última: lo que uno espera.
+      if (e.key === 'Backspace' && !this.q && this.tags.length) {
+        this.remove(this.tags[this.tags.length - 1]);
+      }
+    },
+  };
+}
+
 // Memo del filtro de doceacordes. Vive fuera del objeto Alpine a propósito: si
 // fuese estado reactivo, escribirlo desde filteredDoce() (que se llama durante
 // el render) dispararía otro render y entraríamos en bucle.
@@ -63,6 +152,7 @@ function app() {
     search: '',
     statusFilter: '',       // '' | 'revisar' | 'revisar_acordes' | 'any' | 'none'
     mediaFilter: '',        // '' | 'no_youtube' | 'no_audio' | 'no_media' | 'any_media'
+    tagFilter: '',          // '' | '__none__' | '__any__' | <slug>
     onlyInRepoFilter: false,
     selectedCatalogPaths: new Set(),
     bulkMoveCategory: '',         // categoría destino para mover en bloque
@@ -71,9 +161,28 @@ function app() {
     // Quick add link modal
     quickLink: { open: false, path: '', songTitle: '', type: '', label: '', url: '',
                  existing: [], saving: false },
+    // ── Etiquetas ──
+    // Catálogo global (declaradas + descubiertas en los .cho, con su recuento).
+    // Se carga una vez y se refresca solo cuando algo lo cambia.
+    allTags: [],
+    tagsLoading: false,
+    tagSearch: '',
+    tagOnlyUndeclared: false,
+    tagEdit: null,            // slug en edición en la pestaña 🏷
+    tagForm: { label: '', emoji: '', destacada: false, orden: '', alias: [] },
+    tagSaving: false,
+    tagSongs: [],             // canciones de la etiqueta seleccionada
+    tagMerge: { into: '', mode: 'alias' },
+    bulkTagsAdd: [],          // etiquetas a poner en bloque desde el catálogo
+    bulkTagsRemove: [],
+    bulkTagging: false,
+    importCommonTags: [],     // etiquetas a aplicar a todo lo que se importe
+    importTagsById: {},       // docx_id → etiquetas elegidas para esa canción
+    importSuggestions: {},    // docx_id → sugerencias del backend
+
     // Editor multimedia tab
     mediaForm: { rhythm: '', album: '', liturgicalTime: '', source: '', videoEmbed: '',
-                 comment: '', youtubeLinks: [], audioLinks: [] },
+                 comment: '', youtubeLinks: [], audioLinks: [], tags: [] },
     mediaOriginal: '',
     mediaDirty: false,
     mediaSaving: false,
@@ -223,6 +332,9 @@ function app() {
         }
       });
       await this.loadCatalog();
+      // El catálogo de etiquetas se carga a la vez: lo usan el autocompletado
+      // del editor, la barra de acciones masivas y las sugerencias de import.
+      this.loadTags();
       // Estado de git: al arrancar (con fetch) y luego cada 90s.
       this.loadGitStatus(true);
       setInterval(() => this.loadGitStatus(true), 90000);
@@ -384,11 +496,23 @@ function app() {
       } else if (this.mediaFilter === 'any_media') {
         list = list.filter(r => (r.youtube_count || 0) > 0 || r.has_video || (r.audio_count || 0) > 0);
       }
+      if (this.tagFilter === '__none__') {
+        list = list.filter(r => !(r.tags || []).length);
+      } else if (this.tagFilter === '__any__') {
+        list = list.filter(r => (r.tags || []).length > 0);
+      } else if (this.tagFilter) {
+        list = list.filter(r => (r.tags || []).includes(this.tagFilter));
+      }
       if (this.search) {
         const q = this.normalizeSearch(this.search);
+        // El buscador también mira las etiquetas: escribir "ramos" saca las
+        // etiquetadas aunque no lleven la palabra en el título (igual que en
+        // la app).
         list = list.filter(r =>
           this.normalizeSearch(r.title).includes(q) ||
-          this.normalizeSearch(r.artist).includes(q)
+          this.normalizeSearch(r.artist).includes(q) ||
+          (r.tags || []).some(t => this.normalizeSearch(this.tagLabelOf(t)).includes(q)
+                                || t.includes(q))
         );
       }
       return list;
@@ -465,11 +589,20 @@ function app() {
         const r = await fetch('/api/docx/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: [...this.selectedImports] }),
+          body: JSON.stringify({
+            ids: [...this.selectedImports],
+            // Las de la barra van a todas; las de cada fila, solo a la suya.
+            tags: this.importCommonTags,
+            tags_by_id: Object.fromEntries(
+              [...this.selectedImports].map(id => [String(id), this.tagsForImport(id)])
+                .filter(([, tags]) => tags.length > 0)),
+          }),
         });
         const json = await r.json();
         this.importResults = json.results || [];
         this.selectedImports = new Set();
+        this.importTagsById = {};
+        await this.loadTags();
         const paths = this.importResults.filter(r => r.ok && r.path).map(r => r.path);
         await this.refreshCatalogAfterImport(paths);
         // Abrir editor de las importadas con éxito, en cola
@@ -1154,6 +1287,7 @@ function app() {
         comment: m.comment || '',
         youtubeLinks: (m.youtubeLinks || []).map(l => ({ ...l, url: toYoutubeWatch(l.url) })),
         audioLinks: (m.audioLinks || []).map(l => ({ ...l })),
+        tags: [...(m.tags || [])],
       };
       this.mediaOriginal = JSON.stringify(this.mediaForm);
       this.mediaDirty = false;
@@ -1213,6 +1347,7 @@ function app() {
         this.editor.meta = sj.meta;
         this.loadMediaForm();
         await this.loadCatalog();
+        await this.loadTags();
       } catch (e) {
         alert('Error guardando metadatos: ' + e.message);
       } finally {
@@ -2643,6 +2778,243 @@ function app() {
       this.editor.dirty = true;
       this.editor.meta.has_todo = status === 'revisar';
       this.editor.meta.has_chord_review = status === 'revisar_acordes';
+    },
+
+    // ─────────── Etiquetas ───────────
+    async loadTags() {
+      this.tagsLoading = true;
+      try {
+        const r = await fetch('/api/tags');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.allTags = (await r.json()).tags || [];
+      } catch (e) {
+        console.warn('No se han podido cargar las etiquetas:', e);
+      } finally {
+        this.tagsLoading = false;
+      }
+    },
+    tagBySlug(slug) {
+      return this.allTags.find(t => t.slug === slug) || null;
+    },
+    tagLabelOf(slug) {
+      const t = this.tagBySlug(slug);
+      return t ? t.label : prettyTagLabel(slug);
+    },
+    tagEmojiOf(slug) {
+      const t = this.tagBySlug(slug);
+      return t ? (t.emoji || '') : '';
+    },
+    tagIsUndeclared(slug) {
+      const t = this.tagBySlug(slug);
+      return !!t && !t.declared;
+    },
+    get maxTagCount() {
+      return this.allTags.reduce((m, t) => Math.max(m, t.count), 0) || 1;
+    },
+    filteredTags() {
+      const q = this.tagSearch.trim().toLowerCase();
+      return this.allTags.filter(t => {
+        if (this.tagOnlyUndeclared && t.declared) return false;
+        if (!q) return true;
+        return t.slug.includes(q) || t.label.toLowerCase().includes(q)
+            || (t.alias || []).some(a => a.includes(q));
+      });
+    },
+
+    // Ir a la pestaña de etiquetas y abrir una concreta.
+    goTags(slug) {
+      this.view = 'tags';
+      this.loadTags().then(() => { if (slug) this.openTagEditor(slug); });
+    },
+    async openTagEditor(slug) {
+      const t = this.tagBySlug(slug);
+      this.tagEdit = slug;
+      this.tagForm = {
+        label: t ? t.label : prettyTagLabel(slug),
+        emoji: t ? (t.emoji || '') : '',
+        destacada: !!(t && t.destacada),
+        orden: t && t.orden !== null && t.orden !== undefined ? String(t.orden) : '',
+        alias: t ? [...(t.alias || [])] : [],
+      };
+      this.tagMerge = { into: '', mode: 'alias' };
+      this.tagSongs = [];
+      try {
+        const r = await fetch('/api/tags/songs?slug=' + encodeURIComponent(slug));
+        if (r.ok) this.tagSongs = (await r.json()).songs || [];
+      } catch (e) { /* la lista es un extra, no bloquea la edición */ }
+    },
+    closeTagEditor() { this.tagEdit = null; this.tagSongs = []; },
+
+    async saveTag() {
+      if (!this.tagEdit) return;
+      this.tagSaving = true;
+      try {
+        const body = {
+          label: this.tagForm.label,
+          emoji: this.tagForm.emoji,
+          destacada: this.tagForm.destacada,
+          alias: this.tagForm.alias,
+        };
+        if (String(this.tagForm.orden).trim() !== '') body.orden = this.tagForm.orden;
+        const r = await fetch('/api/tags/' + encodeURIComponent(this.tagEdit), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.allTags = (await r.json()).tags || [];
+      } catch (e) {
+        alert('Error guardando la etiqueta: ' + e.message);
+      } finally {
+        this.tagSaving = false;
+      }
+    },
+
+    // Renombrar el SLUG reescribe los .cho. Cambiar solo el nombre visible NO
+    // necesita esto: para eso está el label, que no toca ni un fichero.
+    async renameTagSlug() {
+      if (!this.tagEdit) return;
+      const proposed = prompt(
+        'Nuevo identificador (slug) de la etiqueta.\n\n' +
+        'Esto REESCRIBE la directiva {tags:} de todas las canciones que la usan.\n' +
+        'Si solo quieres cambiar cómo se ve, edita el nombre de arriba.',
+        this.tagEdit);
+      if (proposed === null) return;
+      const next = slugifyTag(proposed);
+      if (!next || next === this.tagEdit) return;
+      this.tagSaving = true;
+      try {
+        const r = await fetch('/api/tags/rename', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: this.tagEdit, new_slug: next }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        this.allTags = j.tags || [];
+        await this.loadCatalog();
+        this.openTagEditor(next);
+        alert(`Renombrada a "${next}" en ${j.changed} canción(es).`);
+      } catch (e) {
+        alert('Error renombrando: ' + e.message);
+      } finally {
+        this.tagSaving = false;
+      }
+    },
+
+    async mergeTag() {
+      const into = slugifyTag(this.tagMerge.into);
+      if (!this.tagEdit || !into || into === this.tagEdit) return;
+      const mode = this.tagMerge.mode;
+      const msg = mode === 'alias'
+        ? `Se declarará "${this.tagEdit}" como alias de "${into}".\n\n` +
+          'No se toca ningún fichero: las canciones siguen igual y la app las ' +
+          'muestra bajo la etiqueta buena. Es reversible.'
+        : `Se reescribirá "${this.tagEdit}" como "${into}" en TODAS sus canciones.\n\n` +
+          'Esto sí toca los .cho (con backup de cada uno). Es definitivo.';
+      if (!confirm(msg)) return;
+      this.tagSaving = true;
+      try {
+        const r = await fetch('/api/tags/merge', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: [this.tagEdit], into, mode }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        this.allTags = j.tags || [];
+        await this.loadCatalog();
+        this.openTagEditor(into);
+      } catch (e) {
+        alert('Error fundiendo: ' + e.message);
+      } finally {
+        this.tagSaving = false;
+      }
+    },
+
+    async deleteTag(purge) {
+      if (!this.tagEdit) return;
+      const t = this.tagBySlug(this.tagEdit);
+      const n = t ? t.count : 0;
+      const msg = purge
+        ? `¿Quitar "${this.tagEdit}" de las ${n} canciones que la llevan?\n\n` +
+          'Se reescriben los .cho (con backup de cada uno).'
+        : `¿Quitar "${this.tagEdit}" del catálogo?\n\n` +
+          `Las ${n} canciones la conservan y sigue funcionando: solo pierde el ` +
+          'nombre bonito, el emoji y los alias.';
+      if (!confirm(msg)) return;
+      this.tagSaving = true;
+      try {
+        const r = await fetch('/api/tags/' + encodeURIComponent(this.tagEdit)
+                              + (purge ? '?purge=1' : ''), { method: 'DELETE' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.allTags = (await r.json()).tags || [];
+        this.closeTagEditor();
+        if (purge) await this.loadCatalog();
+      } catch (e) {
+        alert('Error borrando: ' + e.message);
+      } finally {
+        this.tagSaving = false;
+      }
+    },
+
+    // ── Etiquetado en bloque desde el catálogo ──
+    async applyBulkTags() {
+      const paths = [...this.selectedCatalogPaths];
+      if (!paths.length) return;
+      if (!this.bulkTagsAdd.length && !this.bulkTagsRemove.length) return;
+      const parts = [];
+      if (this.bulkTagsAdd.length) parts.push('poner ' + this.bulkTagsAdd.join(', '));
+      if (this.bulkTagsRemove.length) parts.push('quitar ' + this.bulkTagsRemove.join(', '));
+      if (!confirm(`¿En ${paths.length} canción(es): ${parts.join(' y ')}?`)) return;
+      this.bulkTagging = true;
+      try {
+        const r = await fetch('/api/songs/bulk-tags', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths, add: this.bulkTagsAdd, remove: this.bulkTagsRemove }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        this.allTags = j.tags || [];
+        const failed = (j.results || []).filter(x => !x.ok);
+        this.bulkTagsAdd = [];
+        this.bulkTagsRemove = [];
+        await this.loadCatalog();
+        if (failed.length) {
+          alert('No se pudieron etiquetar:\n' +
+                failed.map(f => `· ${f.path} — ${f.error}`).join('\n'));
+        }
+      } catch (e) {
+        alert('Error etiquetando: ' + e.message);
+      } finally {
+        this.bulkTagging = false;
+      }
+    },
+
+    // ── Sugerencias al importar ──
+    // El backend solo propone etiquetas que YA existen: inventar vocabulario
+    // solo, sin que nadie lo mire, es lo que degenera un sistema de etiquetas
+    // libres. Aquí se aceptan con un toque o se ignoran.
+    tagsForImport(id) { return this.importTagsById[id] || []; },
+    setTagsForImport(id, tags) {
+      this.importTagsById = { ...this.importTagsById, [id]: tags };
+    },
+    async suggestImportTags(m) {
+      if (!this.allTags.length) return;
+      if (this.importSuggestions[m.docx_id]) return;
+      try {
+        const qs = new URLSearchParams({
+          title: m.title || '', category: m.section_letter || '', limit: '4',
+        });
+        const r = await fetch('/api/tags/suggest?' + qs.toString());
+        if (!r.ok) return;
+        const j = await r.json();
+        this.importSuggestions = {
+          ...this.importSuggestions, [m.docx_id]: j.suggestions || [],
+        };
+      } catch (e) { /* las sugerencias son un extra */ }
+    },
+    // Pide sugerencias para todo lo que se ve, de una tacada.
+    async suggestAllVisibleImports() {
+      const rows = this.filteredMissing().slice(0, 60);
+      for (const m of rows) await this.suggestImportTags(m);
     },
 
     // ─────────── Selección bulk en catálogo ───────────

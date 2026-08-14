@@ -125,6 +125,7 @@ def parse_cho_metadata(content: str) -> Dict[str, object]:
         "youtubeLinks": extra["youtubeLinks"],
         "audioLinks": extra["audioLinks"],
         "comment": extra["comment"],
+        "tags": extra["tags"],
     }
 
 
@@ -242,6 +243,7 @@ def list_repo_songs(category_letter: Optional[str] = None) -> List[dict]:
                 "audio_count": meta.get("audio_count", 0),
                 "rhythm": meta.get("rhythm", ""),
                 "album": meta.get("album", ""),
+                "tags": meta.get("tags", []),
                 "error": meta_err,
             })
     return out
@@ -779,6 +781,9 @@ def _sanitize_link_label(s: str) -> str:
 def _render_meta_directive_lines(meta: Dict[str, object]) -> List[str]:
     """Genera las líneas de custom directives a partir de un dict de meta."""
     lines: List[str] = []
+    tags = cp.format_tags(meta.get("tags") or [])
+    if tags:
+        lines.append(f"{{tags: {tags}}}")
     if meta.get("rhythm"):
         lines.append(f"{{ritmo: {_sanitize_directive_value(meta['rhythm'])}}}")
     if meta.get("album"):
@@ -843,8 +848,11 @@ def api_song_meta_put():
     if not p.exists():
         abort(404, "No existe")
     body = request.get_json(silent=True) or {}
-    new_lines = _render_meta_directive_lines(body)
     original = p.read_text(encoding="utf-8")
+    # Un cliente que no sepa de etiquetas no debe borrarlas por omisión.
+    if "tags" not in body:
+        body["tags"] = parse_cho_metadata(original).get("tags") or []
+    new_lines = _render_meta_directive_lines(body)
     new_content = _replace_meta_block(original, new_lines)
     if new_content == original:
         return jsonify({"ok": True, "path": str(p.relative_to(REPO_DIR)),
@@ -1093,6 +1101,10 @@ def api_docx_import():
     ids = body.get("ids") or []
     if not isinstance(ids, list):
         abort(400, "ids debe ser lista")
+    # Etiquetas: `tags` se aplica a TODAS las importadas; `tags_by_id` permite
+    # aceptar la sugerencia concreta de cada fila.
+    common_tags = cp.normalize_tags(body.get("tags") or [])
+    tags_by_id = body.get("tags_by_id") or {}
     songs = load_docx_songs()
     repo_songs = list_repo_songs()
     repo_titles = {normalize_title_for_match(r["title"]) for r in repo_songs}
@@ -1127,10 +1139,15 @@ def api_docx_import():
             results.append({"id": i, "ok": False, "error": "el archivo ya existe", "path": str(fpath.relative_to(REPO_DIR))})
             continue
         fpath.write_text(render_cho_with_todo(conv), encoding="utf-8")
+        song_tags = cp.normalize_tags(
+            list(tags_by_id.get(str(i)) or tags_by_id.get(i) or []) + common_tags)
+        if song_tags:
+            _write_song_tags(fpath, song_tags)
         repo_titles.add(normalize_title_for_match(conv["title"]))
         results.append({
             "id": i,
             "ok": True,
+            "tags": song_tags,
             "path": str(fpath.relative_to(REPO_DIR)),
             "title": conv["title"],
             "warnings": conv.get("warnings", []),
@@ -1249,6 +1266,11 @@ def api_latex_import():
                 final_path = fpath
                 action = "created"
 
+            song_tags = cp.normalize_tags(
+                list(it.get("tags") or []) + (body.get("tags") or []))
+            if song_tags:
+                _write_song_tags(final_path, song_tags)
+
             moved_to = None
             if move_processed:
                 moved = lx.move_to_processed(tex_path)
@@ -1317,6 +1339,321 @@ def api_songs_bulk_status():
         except Exception as e:
             results.append({"path": path_str, "ok": False, "error": str(e)})
     return jsonify({"ok": True, "results": results})
+
+
+# ─────────── API: etiquetas del cantoral ─────────── #
+#
+# Las etiquetas viven en los .cho como `{tags: a, b, c}` — esa es la fuente de
+# verdad. `songs/tags.json` es SOLO el catálogo de metadatos (label bonito,
+# emoji, alias) y es opcional: una etiqueta sin declarar funciona igual.
+#
+# Por eso todo lo de aquí distingue dos operaciones que parecen la misma:
+#   · tocar el CATÁLOGO  → escribe `songs/tags.json` (barato, reversible)
+#   · tocar las CANCIONES → reescribe .cho (con backup de cada uno)
+
+
+def _write_song_tags(path: Path, tags: List[str]) -> bool:
+    """Reescribe la directiva {tags:} de un .cho. Devuelve si hubo cambio."""
+    content = path.read_text(encoding="utf-8")
+    meta = parse_cho_metadata(content)
+    meta["tags"] = cp.normalize_tags(tags)
+    new_content = _replace_meta_block(content, _render_meta_directive_lines(meta))
+    if new_content == content:
+        return False
+    backup_file(path)
+    path.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def _tag_usage() -> Dict[str, List[dict]]:
+    """slug → canciones que lo llevan (ya con los alias del catálogo aplicados)."""
+    catalog = cp.load_tag_catalog(SONGS_DIR)
+    aliases = cp.catalog_aliases(catalog)
+    usage: Dict[str, List[dict]] = {}
+    for song in list_repo_songs():
+        for slug in cp.normalize_tags(song.get("tags") or [], aliases):
+            usage.setdefault(slug, []).append(song)
+    return usage
+
+
+def _tag_rows() -> List[dict]:
+    """Etiquetas para la pestaña 🏷: declaradas + descubiertas, por uso."""
+    catalog = cp.load_tag_catalog(SONGS_DIR)
+    usage = _tag_usage()
+    slugs = set(catalog) | set(usage)
+    rows = []
+    for slug in slugs:
+        entry = catalog.get(slug) or {}
+        songs = usage.get(slug, [])
+        rows.append({
+            "slug": slug,
+            "label": entry.get("label") or cp.pretty_tag_label(slug),
+            "emoji": entry.get("emoji", ""),
+            "destacada": bool(entry.get("destacada")),
+            "orden": entry.get("orden"),
+            "alias": entry.get("alias", []),
+            "declared": slug in catalog,
+            "count": len(songs),
+            "categories": sorted({s["category_letter"] for s in songs}),
+        })
+    rows.sort(key=lambda r: (-r["count"], r["label"].lower()))
+    return rows
+
+
+@app.route("/api/tags")
+def api_tags_list():
+    return jsonify({"tags": _tag_rows()})
+
+
+@app.route("/api/tags/songs")
+def api_tags_songs():
+    """Canciones de una etiqueta (para la vista de detalle de la pestaña 🏷)."""
+    slug = cp.slugify_tag(request.args.get("slug", ""))
+    if not slug:
+        abort(400, "Falta 'slug'")
+    songs = _tag_usage().get(slug, [])
+    return jsonify({"slug": slug, "songs": [
+        {"path": s["path"], "title": s["title"], "artist": s["artist"],
+         "category_letter": s["category_letter"], "tags": s.get("tags") or []}
+        for s in songs
+    ]})
+
+
+@app.route("/api/tags/<path:slug_raw>", methods=["PUT"])
+def api_tag_put(slug_raw: str):
+    """Crea o actualiza la entrada de catálogo de una etiqueta."""
+    slug = cp.slugify_tag(slug_raw)
+    if not slug:
+        abort(400, "Slug inválido")
+    body = request.get_json(silent=True) or {}
+    catalog = cp.load_tag_catalog(SONGS_DIR)
+    entry = dict(catalog.get(slug) or {})
+
+    if "label" in body:
+        entry["label"] = _sanitize_directive_value(body.get("label") or "")
+    if "emoji" in body:
+        entry["emoji"] = _sanitize_directive_value(body.get("emoji") or "")
+    if "destacada" in body:
+        entry["destacada"] = bool(body.get("destacada"))
+    if "orden" in body:
+        try:
+            entry["orden"] = int(body["orden"])
+        except (TypeError, ValueError):
+            entry.pop("orden", None)
+    if "alias" in body:
+        entry["alias"] = [a for a in cp.normalize_tags(body.get("alias") or [])
+                          if a != slug]
+
+    catalog[slug] = entry
+    cp.save_tag_catalog(SONGS_DIR, catalog)
+    return jsonify({"ok": True, "tags": _tag_rows()})
+
+
+@app.route("/api/tags/<path:slug_raw>", methods=["DELETE"])
+def api_tag_delete(slug_raw: str):
+    """Borra una etiqueta. Sin `?purge=1` solo la quita del catálogo (sigue
+    funcionando, con el slug capitalizado); con purge la quita de los .cho."""
+    slug = cp.slugify_tag(slug_raw)
+    if not slug:
+        abort(400, "Slug inválido")
+    purge = request.args.get("purge") in ("1", "true", "yes")
+
+    catalog = cp.load_tag_catalog(SONGS_DIR)
+    if slug in catalog:
+        catalog.pop(slug)
+        cp.save_tag_catalog(SONGS_DIR, catalog)
+
+    changed = 0
+    if purge:
+        for song in _tag_usage().get(slug, []):
+            rest = [t for t in cp.normalize_tags(song.get("tags") or []) if t != slug]
+            if _write_song_tags(safe_relpath(song["path"]), rest):
+                changed += 1
+    return jsonify({"ok": True, "purged": changed, "tags": _tag_rows()})
+
+
+@app.route("/api/tags/rename", methods=["POST"])
+def api_tag_rename():
+    """Cambia el SLUG de una etiqueta reescribiendo los .cho que la usan.
+
+    Renombrar solo el nombre visible NO necesita esto: para eso está el
+    `label` del catálogo, que no toca ni un fichero.
+    """
+    body = request.get_json(silent=True) or {}
+    old = cp.slugify_tag(body.get("slug") or "")
+    new = cp.slugify_tag(body.get("new_slug") or "")
+    if not old or not new:
+        abort(400, "Faltan 'slug' y 'new_slug'")
+    if old == new:
+        return jsonify({"ok": True, "changed": 0, "tags": _tag_rows()})
+
+    changed = 0
+    for song in _tag_usage().get(old, []):
+        tags = [new if t == old else t for t in cp.normalize_tags(song.get("tags") or [])]
+        if _write_song_tags(safe_relpath(song["path"]), tags):
+            changed += 1
+
+    catalog = cp.load_tag_catalog(SONGS_DIR)
+    entry = catalog.pop(old, None)
+    if entry is not None:
+        catalog[new] = {**catalog.get(new, {}), **entry}
+        cp.save_tag_catalog(SONGS_DIR, catalog)
+    return jsonify({"ok": True, "changed": changed, "tags": _tag_rows()})
+
+
+@app.route("/api/tags/merge", methods=["POST"])
+def api_tag_merge():
+    """Funde varias etiquetas en una.
+
+    - `mode: 'alias'`   → NO toca ficheros: declara las otras como alias en el
+      catálogo. Reversible y es lo que hace falta el 90 % de las veces.
+    - `mode: 'rewrite'` → reescribe los .cho. Definitivo pero deja el
+      vocabulario limpio de verdad.
+    """
+    body = request.get_json(silent=True) or {}
+    into = cp.slugify_tag(body.get("into") or "")
+    sources = [s for s in cp.normalize_tags(body.get("from") or []) if s and s != into]
+    mode = (body.get("mode") or "alias").lower()
+    if not into or not sources:
+        abort(400, "Faltan 'into' y 'from'")
+    if mode not in ("alias", "rewrite"):
+        abort(400, "mode debe ser 'alias' o 'rewrite'")
+
+    catalog = cp.load_tag_catalog(SONGS_DIR)
+    changed = 0
+    if mode == "rewrite":
+        usage = _tag_usage()
+        # Una canción puede llevar varias de las fundidas: se toca una sola vez.
+        by_path: Dict[str, dict] = {}
+        for src in sources:
+            for song in usage.get(src, []):
+                by_path[song["path"]] = song
+        for path_str, song in by_path.items():
+            tags = [into if t in sources else t
+                    for t in cp.normalize_tags(song.get("tags") or [])]
+            if _write_song_tags(safe_relpath(path_str), cp.normalize_tags(tags)):
+                changed += 1
+        for src in sources:
+            catalog.pop(src, None)
+    else:
+        entry = dict(catalog.get(into) or {})
+        alias = set(entry.get("alias") or []) | set(sources)
+        entry["alias"] = sorted(a for a in alias if a != into)
+        entry.setdefault("label", cp.pretty_tag_label(into))
+        catalog[into] = entry
+        for src in sources:
+            catalog.pop(src, None)
+
+    cp.save_tag_catalog(SONGS_DIR, catalog)
+    return jsonify({"ok": True, "changed": changed, "mode": mode, "tags": _tag_rows()})
+
+
+@app.route("/api/songs/bulk-tags", methods=["POST"])
+def api_songs_bulk_tags():
+    """Añade y/o quita etiquetas en varias canciones de golpe.
+
+    Body: {paths: [...], add: [...], remove: [...], replace?: bool}
+    `replace` deja EXACTAMENTE las de `add` (para "reetiquetar" un bloque).
+    """
+    body = request.get_json(silent=True) or {}
+    paths = body.get("paths") or []
+    add = cp.normalize_tags(body.get("add") or [])
+    remove = set(cp.normalize_tags(body.get("remove") or []))
+    replace = bool(body.get("replace"))
+    if not paths or (not add and not remove and not replace):
+        abort(400, "Faltan 'paths' y algo que hacer ('add' / 'remove' / 'replace')")
+
+    results = []
+    for path_str in paths:
+        try:
+            p = safe_relpath(path_str)
+            if replace:
+                tags = list(add)
+            else:
+                current = parse_cho_metadata(p.read_text(encoding="utf-8")).get("tags") or []
+                tags = [t for t in current if t not in remove]
+                tags += [t for t in add if t not in tags]
+            changed = _write_song_tags(p, tags)
+            results.append({"path": path_str, "ok": True, "changed": changed, "tags": tags})
+        except Exception as e:  # noqa: BLE001 — se reporta por fila
+            results.append({"path": path_str, "ok": False, "error": str(e)})
+    return jsonify({"ok": True, "results": results, "tags": _tag_rows()})
+
+
+# Palabras que no dicen nada al emparejar un título con una etiqueta.
+_TAG_STOPWORDS = {
+    "de", "del", "la", "el", "los", "las", "un", "una", "y", "o", "a", "al",
+    "en", "con", "por", "para", "que", "es", "mi", "tu", "su", "se", "no",
+    "señor", "dios", "canto", "cancion",
+}
+
+
+def _tag_words(text: str) -> set:
+    return {w for w in re.split(r"[^a-z0-9]+", cp.slugify_tag(text).replace("-", " "))
+            if len(w) > 2 and w not in _TAG_STOPWORDS}
+
+
+@app.route("/api/tags/suggest")
+def api_tags_suggest():
+    """Sugiere etiquetas para una canción que se está importando.
+
+    Tres señales, de más a menos fiable:
+      1. el nombre (o un alias) de una etiqueta aparece en el título
+      2. la etiqueta es habitual en la categoría de destino
+      3. el nombre de la etiqueta aparece en la letra
+
+    Nunca inventa etiquetas nuevas: solo propone las que YA existen. Inventar
+    vocabulario automáticamente es justo lo que degenera un sistema de
+    etiquetas libres.
+    """
+    title = request.args.get("title", "")
+    category = (request.args.get("category") or "").upper()[:1]
+    content = request.args.get("content", "")[:4000]
+    limit = min(int(request.args.get("limit") or 6), 20)
+
+    rows = _tag_rows()
+    if not rows:
+        return jsonify({"suggestions": []})
+
+    usage = _tag_usage()
+    title_words = _tag_words(title)
+    content_words = _tag_words(content) if content else set()
+
+    suggestions = []
+    for row in rows:
+        if row["count"] == 0:
+            continue
+        names = [row["slug"], row["label"]] + list(row["alias"])
+        name_words = set()
+        for n in names:
+            name_words |= _tag_words(n)
+        if not name_words:
+            continue
+
+        score, reasons = 0.0, []
+        if name_words & title_words:
+            score += 10
+            reasons.append("aparece en el título")
+        if category:
+            in_cat = sum(1 for s in usage.get(row["slug"], [])
+                         if s["category_letter"] == category)
+            if in_cat:
+                # Cuánto de esta etiqueta vive en esta categoría (0..1).
+                score += 4 * (in_cat / max(row["count"], 1)) + min(in_cat, 5) * 0.4
+                reasons.append(f"habitual en {category} ({in_cat})")
+        if content_words and (name_words & content_words):
+            score += 2
+            reasons.append("aparece en la letra")
+        if score <= 0:
+            continue
+        suggestions.append({
+            "slug": row["slug"], "label": row["label"], "emoji": row["emoji"],
+            "count": row["count"], "score": round(score, 2),
+            "reason": " · ".join(reasons),
+        })
+
+    suggestions.sort(key=lambda x: (-x["score"], -x["count"], x["label"].lower()))
+    return jsonify({"suggestions": suggestions[:limit]})
 
 
 # ─────────── API: doceacordes.es ─────────── #
@@ -1543,9 +1880,14 @@ def api_doce_import():
             if fpath.exists():
                 raise FileExistsError(f"Ya existe {fname}")
             fpath.write_text(content, encoding="utf-8")
+            song_tags = cp.normalize_tags(
+                list(it.get("tags") or []) + (body.get("tags") or []))
+            if song_tags:
+                _write_song_tags(fpath, song_tags)
             results.append({
                 "doce_id": doce_id,
                 "ok": True,
+                "tags": song_tags,
                 "path": str(fpath.relative_to(REPO_DIR)),
                 "title": title,
             })

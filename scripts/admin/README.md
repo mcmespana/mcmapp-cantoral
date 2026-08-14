@@ -177,6 +177,67 @@ caer sobre la letra que se está escribiendo. Detalles que importan:
 Render limpio sin botones — como se verá en la app móvil. Los acordes salen
 en color sobre la letra, **sin corchetes**.
 
+### Etiquetas (🏷)
+
+Etiquetas **libres y transversales** de las canciones: "viejunas", "domingo de
+ramos", "infantiles"… Cruzan las categorías a propósito.
+
+La **fuente de verdad son los `.cho`**, con `{tags: a, b, c}` en la cabecera.
+`songs/tags.json` es solo el **catálogo** de presentación (nombre bonito, emoji,
+alias) y es **opcional**: una etiqueta sin declarar funciona exactamente igual,
+se ve con el slug capitalizado. Se declara el día que se consolida, no antes.
+
+De ahí que todo el admin distinga dos operaciones que parecen la misma:
+
+| | Qué toca | Reversible |
+| --- | --- | --- |
+| Editar nombre / emoji / alias / destacada | `songs/tags.json` | sí, trivial |
+| Renombrar el **slug**, fundir «reescribiendo», borrar de todas | los `.cho` (con backup de cada uno) | por backup |
+
+**Dónde se etiqueta** — en los cuatro sitios donde uno está de todas formas:
+
+1. **Editor de canción → pestaña ➕ Datos extra**, arriba del todo. Chips + input
+   con autocompletado sobre las etiquetas que ya existen; `Enter` acepta la
+   resaltada, `↑`/`↓` navegan, `Retroceso` con el input vacío quita la última.
+   Solo ofrece **crear** si de verdad no existe ninguna igual — que es lo que
+   frena la degeneración del vocabulario (`viejunas`/`viejuna`/`antiguas`).
+2. **Catálogo, en bloque**: marca varias canciones y usa la barra de acciones
+   masivas — un picker para *poner* y otro para *quitar*, y **Aplicar
+   etiquetas**. También hay filtro por etiqueta (incluidos «sin etiquetas» y
+   «con alguna»), y el buscador del catálogo mira también las etiquetas.
+3. **Al importar** (📥 Importar del cantoral): una fila de etiquetas **para todo
+   lo que se importe**, y por canción un botón **✨ etiquetas** que propone
+   etiquetas *ya existentes* según el título, la sección de destino y la letra.
+   `✨ Sugerir etiquetas para las visibles` las pide todas de golpe. Nunca
+   inventa vocabulario nuevo: propone y tú aceptas con un toque.
+   Etiquetar mientras importas es la única forma de que las etiquetas se pongan
+   de verdad — en una sesión aparte, en un editor de texto, no pasa nunca.
+4. **Pestaña 🏷 Etiquetas**: la gestión del vocabulario.
+
+**La pestaña 🏷** lista todas las etiquetas (declaradas y descubiertas) con su
+uso, en qué categorías vive cada una y si está declarada. Al abrir una:
+
+- **Nombre visible y emoji** — cambiarlos NO toca ningún `.cho`.
+- **Destacada** y **orden**, para la fila de destacadas de la app.
+- **Alias** — otros slugs que se colapsan sobre esta. Es la forma barata de
+  arreglar un duplicado sin reescribir nada.
+- **✏️ Slug…** — renombra el identificador reescribiendo los `.cho` que la usan.
+  Solo hace falta si el slug está mal de verdad; para cambiar cómo se ve está el
+  nombre.
+- **Fundir con otra** — *como alias* (no toca ficheros, reversible) o
+  *reescribiendo los `.cho`* (definitivo, deja el vocabulario limpio).
+- **Zona peligrosa** — *quitar del catálogo* (la etiqueta sigue en las
+  canciones, solo pierde nombre bonito y emoji) o *borrar de todas* (la quita de
+  los `.cho`).
+- La lista de sus canciones, con enlace directo al editor de cada una.
+
+Al hacer push a `main`, el CI regenera `songs-vX.json` con el campo `tags` de
+cada canción y publica el catálogo resuelto en `songs/tags` de Firebase. Si no
+hay ninguna canción etiquetada, **la app ni siquiera enseña el botón de
+etiquetas**: no aparece una puerta que no lleva a ningún sitio.
+
+Contrato completo en `docs/CAMPOS_CANCIONES.md` §6.
+
 ### Importar del cantoral (📥)
 Lista las canciones del `.docx` que aún no están en el repo. Checkboxes para
 seleccionar, batch import añade `{comment: TO DO: PENDIENTE REVISIÓN ACORDES}`

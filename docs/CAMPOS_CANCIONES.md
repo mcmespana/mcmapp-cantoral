@@ -42,6 +42,7 @@ Pensado para que un agente de IA del repo de la app sepa exactamente:
 |------|---------------|--------------|
 | `songs/data` | CI (`update_firebase.py`) | El JSON completo del cantoral. **Es lo que lee la app.** |
 | `songs/updatedAt` | CI | Timestamp Unix de la última publicación. |
+| `songs/tags` | CI (`update_firebase.py`) | Catálogo de etiquetas resuelto (`{data, updatedAt}`). Ver §6. |
 | `songs/ediciones/<pushId>` | **La app móvil** | Ediciones pendientes de sincronizar al repo. |
 
 La **fuente de verdad** son los `.cho`. La app **lee** de `songs/data` y
@@ -71,6 +72,7 @@ y su clave en `songs/ediciones`.
 | Enlaces YouTube | `{youtube: label \| url}` | `youtubeLinks` | `youtubeLinksNew` / `youtubeLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
 | Enlaces de audio | `{audio: label \| url}` | `audioLinks` | `audioLinksNew` / `audioLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
 | Comentario (meta) | `{comentario: ...}` | `comment` | `commentNew` / `commentOld` | string | OJO: solo `{comentario:}` (español) se extrae a metadato. |
+| Etiquetas | `{tags: a, b, c}` | `tags` | `tagsNew` / `tagsOld` | array de string (slugs) | Libres y transversales. Ver §6. |
 
 ### Identificación / estructura
 
@@ -340,3 +342,98 @@ Reglas del sincronizador:
   los multimedia se envían como sus campos estructurados. Solo hace falta incluir
   los campos que cambian; los demás se conservan.
 ```
+
+---
+
+## 6. Etiquetas (`{tags:}`)
+
+Etiquetas **libres y transversales** para las canciones: "viejunas", "domingo
+de ramos", "infantiles", "animación"… Cruzan las categorías a propósito: una
+etiqueta no vive dentro de una categoría, la atraviesa.
+
+### 6.1 En el `.cho`
+
+```chordpro
+{title: Alma misionera}
+{artist: Cesáreo Gabaráin}
+{tags: viejunas, animacion, envio}
+```
+
+- Valores separados por comas, en la cabecera junto al resto de directivas
+  multimedia. La directiva se **quita** de `content` (como `{ritmo:}` y compañía).
+- Es repetible por comodidad: dos `{tags:}` se acumulan sin duplicar.
+- Todo se normaliza a **slug**: `Domingo de Ramos` → `domingo-de-ramos` (sin
+  acentos, minúsculas, guiones). Da igual cómo se escriba: la app **también**
+  renormaliza al leer, así que un `{tags: Domingo de Ramos}` funciona.
+
+### 6.2 El catálogo — `songs/tags.json` (opcional)
+
+Metadatos de presentación. Vive en el repo (versionado, revisable en un diff) y
+se edita a mano o desde el admin (pestaña **🏷 Etiquetas**).
+
+```jsonc
+{
+  "viejunas": {
+    "label": "Viejunas",          // nombre bonito con acentos y mayúsculas
+    "emoji": "🕰️",                // icono del chip (opcional)
+    "orden": 1,                    // orden entre destacadas
+    "destacada": true,             // sale en la portada del cantoral
+    "alias": ["viejuna", "antiguas"]  // slugs que se colapsan sobre esta
+  },
+  "domingo-de-ramos": { "label": "Domingo de Ramos", "emoji": "🌿" }
+}
+```
+
+> ⚠️ **El catálogo es opcional y esa es la pieza clave.** Una etiqueta que
+> aparece en un `.cho` y **no** está en `tags.json` funciona igual: la app la
+> muestra con el slug capitalizado y sin emoji. Se declara el día que la
+> etiqueta se consolide, no antes. Sin esto se pierde el requisito de
+> "etiquetas libres para ir añadiendo como me venga bien".
+
+**`alias` es la higiene del vocabulario**: absorbe los duplicados inevitables
+(`viejuna` / `viejunas` / `antiguas`) sin reescribir un solo fichero. Una
+etiqueta declarada por su cuenta nunca puede ser alias de otra.
+
+Renombrar una etiqueta = cambiar su `label`. El **slug** es el identificador
+estable y solo se toca si de verdad hace falta (el admin sabe reescribir los
+`.cho` en ese caso).
+
+### 6.3 Qué se publica en Firebase — `songs/tags`
+
+`update_firebase.py` publica el catálogo **resuelto** en el nodo hermano de
+`songs/data`, con el mismo formato `{data, updatedAt}` que espera
+`useFirebaseData` en la app:
+
+```json
+{
+  "updatedAt": "1755168000",
+  "data": {
+    "viejunas": { "label": "Viejunas", "emoji": "🕰️", "destacada": true, "count": 34 },
+    "envio":    { "label": "Envio", "count": 9 }
+  }
+}
+```
+
+- Junta las **declaradas** con las **descubiertas** en los `.cho`, cada una con
+  su `count`.
+- Solo salen las que tienen **al menos una canción**: una etiqueta declarada
+  pero sin usar no es descubrimiento, es ruido.
+- Se publica siempre, aunque esté vacío, para que quitar la última etiqueta
+  también se propague.
+
+### 6.4 Qué hace la app con esto
+
+Botón 🏷 en el header del cantoral (que **no aparece si no hay ninguna canción
+etiquetada**), hoja con la nube de etiquetas ordenada por uso, y una pantalla
+por etiqueta agrupada por categoría con refinamiento progresivo. El detalle
+completo está en `docs/funcionalidades/ETIQUETAS.md` del repo `mcmapp`.
+
+Ojo con los recuentos: la app descarta las canciones `pendiente`/`borrador`, así
+que **sus recuentos pueden ser menores** que el `count` que publica el
+generador. Los que se ven en la app se calculan en la app.
+
+### 6.5 Vuelta desde la app (`songs/ediciones`)
+
+`tagsNew` / `tagsOld` funcionan como el resto de campos multimedia: si la
+edición trae `tagsNew`, ese valor manda (un array vacío **borra** la
+directiva); si no lo trae, se conserva lo que hubiera en el `.cho`.
