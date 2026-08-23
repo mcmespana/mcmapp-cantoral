@@ -664,29 +664,37 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
    El borde va en el contenedor: si lo llevara cada capa, el ancho de contenido
    no coincidiría y el texto bailaría. */
 .editor-pane.raw { display: flex; flex-direction: column; min-height: 0; }
+/* El scroll lo lleva SÓLO .raw-wrap. Las dos capas de dentro crecen con el
+   contenido (nunca hacen scroll propio), así que no hay nada que sincronizar y
+   es imposible que se descuadren: antes cada capa scrolleaba por su cuenta y
+   al volver del Visual/Preview el textarea recuperaba su posición pero el <pre>
+   no, con lo que el click caía varias líneas más abajo de lo que se veía. */
 .raw-wrap {
-  position: relative; flex: 1; min-height: 320px; overflow: hidden;
+  position: relative; flex: 1; min-height: 320px; overflow: auto;
   border: 1px solid var(--border); border-radius: 4px; background: var(--bg-2);
 }
 .raw-wrap:focus-within { border-color: var(--accent); }
+/* La altura la marca el <pre>; el textarea se estira a esa misma altura. */
+.raw-layers { position: relative; min-height: 100%; }
 
 .editor-pane.raw textarea,
 .editor-pane.raw pre.raw-highlight {
-  position: absolute; top: 0; bottom: 0; margin: 0; border: 0; background: transparent;
+  margin: 0; border: 0; background: transparent;
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 13px; line-height: 1.6;
   white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
-  tab-size: 4; overflow: auto;
+  tab-size: 4; overflow: hidden;
 }
 .editor-pane.raw pre.raw-highlight {
-  left: 0; right: 0; padding: 12px 0;
+  padding: 12px 0;
   display: grid; grid-template-columns: var(--raw-gutter) 1fr; align-items: start;
-  pointer-events: none; color: var(--fg);
+  pointer-events: none; color: var(--fg); min-height: 100%; box-sizing: border-box;
 }
 .editor-pane.raw textarea {
   /* Empieza donde empieza la columna de código; el texto es invisible porque lo
      que se lee es el <pre> de debajo. El caret sí se pinta. */
-  left: var(--raw-gutter); right: 0; width: auto;
+  position: absolute; top: 0; bottom: 0; left: var(--raw-gutter); right: 0;
+  width: auto; height: 100%; box-sizing: border-box;
   padding: 12px 12px 12px 0; resize: none;
   color: transparent; background: transparent; caret-color: var(--accent);
   z-index: 1;

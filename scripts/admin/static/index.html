@@ -2007,12 +2007,13 @@
                interlineado, padding y modo de salto de línea; si se toca uno
                hay que tocar el otro o el cursor deja de cuadrar con la letra. -->
           <div class="raw-wrap">
-            <pre class="raw-highlight" aria-hidden="true" x-ref="rawHighlight"
-                 x-html="highlightCho(editor.content)"></pre>
-            <textarea x-model="editor.content"
-                      @input="editor.dirty = true; refreshMetaFromRaw()"
-                      @scroll="syncRawScroll($event)"
-                      spellcheck="false"></textarea>
+            <div class="raw-layers">
+              <pre class="raw-highlight" aria-hidden="true"
+                   x-html="highlightCho(editor.content)"></pre>
+              <textarea x-model="editor.content"
+                        @input="editor.dirty = true; refreshMetaFromRaw()"
+                        spellcheck="false"></textarea>
+            </div>
           </div>
           <div class="raw-legend">
             <span class="hl-directive">{directivas}</span>

@@ -2603,12 +2603,6 @@ function app() {
       const toks = String(this.editor.content || '').match(/\[[^\]\n]*\]/g) || [];
       return toks.filter(t => !isKnownChord(t.slice(1, -1))).length;
     },
-    syncRawScroll(ev) {
-      const pre = this.$refs.rawHighlight;
-      if (!pre) return;
-      pre.scrollTop = ev.target.scrollTop;
-      pre.scrollLeft = ev.target.scrollLeft;
-    },
 
     refreshMetaFromRaw() {
       const c = this.editor.content;
