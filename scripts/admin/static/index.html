@@ -1807,6 +1807,8 @@
             <span class="sep"></span>
             <span class="sel-info" x-show="visualSelectedLines.size > 0"
                   x-text="visualSelectedLines.size + ' línea(s)'"></span>
+            <button class="btn-mini sel-deselect" x-show="visualSelectedLines.size > 0" x-cloak
+                    @click="clearLineSelection()" title="Deseleccionar todas las líneas · Esc">✕</button>
 
             <!-- Líneas: sólo tiene sentido con selección, así que va agrupado -->
             <span class="tb-group" :class="{ 'tb-off': visualSelectedLines.size === 0 }">

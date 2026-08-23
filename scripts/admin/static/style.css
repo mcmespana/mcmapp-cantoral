@@ -945,6 +945,21 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .ed-line.selected .line-gutter { color: var(--accent); opacity: 1; font-weight: bold; }
 .ed-line.selected .ed-lyric-row { background: rgba(37, 99, 235, 0.08); }
 .theme-dark .ed-line.selected .ed-lyric-row { background: rgba(59, 130, 246, 0.18); }
+
+/* Parpadeo de "esto se ha insertado aquí" (p.ej. al repetir un estribillo).
+   Se pone/quita con JS puro sobre el DOM (igual que .selected via gutter):
+   no queremos dejar la línea marcada en visualSelectedLines, porque eso
+   estorba para seguir trabajando justo después de insertar. */
+.ed-line.flash-inserted { animation: flash-inserted 1.4s ease-out; border-radius: 4px; }
+@keyframes flash-inserted {
+  0%   { background: rgba(37, 99, 235, 0.22); }
+  100% { background: rgba(37, 99, 235, 0); }
+}
+.theme-dark .ed-line.flash-inserted { animation-name: flash-inserted-dark; }
+@keyframes flash-inserted-dark {
+  0%   { background: rgba(125, 211, 252, 0.28); }
+  100% { background: rgba(125, 211, 252, 0); }
+}
 /* OJO: no reintroducir aquí un padding-top fijo para versos consecutivos.
    La capa de acordes (.ed-chords-layer) se posiciona con
    top: -var(--ed-chord-h) relativo a esta misma línea; si el padding-top de

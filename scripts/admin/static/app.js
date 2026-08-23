@@ -2359,14 +2359,31 @@ function app() {
       // Añadir línea blanca de separación antes y después
       const toInsert = [{ type: 'blank', raw: '' }, ...clone, { type: 'blank', raw: '' }];
       this.editor.parsed.splice(insertAt, 0, ...toInsert);
-      // Deja seleccionado el estribillo recién pegado y avisa de DÓNDE ha caído:
-      // sin este mensaje parecía que el botón sólo sabía añadir al final.
-      const sel = new Set();
-      for (let i = 0; i < toInsert.length; i++) sel.add(insertAt + i);
-      this.afterLineEdit(sel);
+      // No dejamos seleccionado el bloque pegado: si tocas cualquier otro botón
+      // de "Líneas" justo después (borrar, mover...) actuaría sobre el
+      // estribillo sin querer, y para seguir trabajando había que acordarse de
+      // deseleccionar primero. En su lugar avisamos de DÓNDE ha caído con el
+      // mensaje y con un parpadeo breve sobre esas líneas (ver flashLines).
+      this.afterLineEdit();
+      this.flashLines(insertAt, insertAt + toInsert.length - 1);
       this.announce(r
         ? '🔁 Estribillo insertado debajo de la selección · pulsa 💾'
         : '🔁 Estribillo insertado al final (no había selección) · pulsa 💾');
+    },
+    // Parpadeo breve (clase CSS pura, ver .flash-inserted) sobre las líneas
+    // [from..to] para señalar "esto se acaba de insertar aquí" sin tocar
+    // visualSelectedLines. Se hace directo en el DOM porque es puramente
+    // decorativo y no necesita sobrevivir a un re-render de Alpine.
+    flashLines(from, to) {
+      this.$nextTick(() => {
+        const els = [];
+        for (let i = from; i <= to; i++) {
+          const el = document.querySelector(`.ed-line[data-line-idx="${i}"]`);
+          if (el) { el.classList.add('flash-inserted'); els.push(el); }
+        }
+        if (els[0]) els[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(() => els.forEach(el => el.classList.remove('flash-inserted')), 1400);
+      });
     },
 
     // ─────────── Copiar / pegar patrón de acordes ───────────
