@@ -75,14 +75,9 @@ chmod +x "$BASE_DIR/run-cantoral.sh"
 echo "== 4/4: Construyendo y arrancando el contenedor de la app =="
 sh "$BASE_DIR/run-cantoral.sh"
 
-echo "== Tunel de Cloudflare (Quick Tunnel, sin cuenta ni tocar tu dominio) =="
-sudo docker rm -f cantoral-tunnel 2>/dev/null || true
-sudo docker run -d --name cantoral-tunnel --restart=always --network host \
-  cloudflare/cloudflared:latest tunnel --url http://localhost:8765
-
 echo ""
 echo "Listo. La app escucha SOLO en 127.0.0.1:8765 del propio NAS (no expuesta"
-echo "a tu red ni a internet). Espera ~10 segundos y mira la URL publica con:"
-echo "  sudo docker logs cantoral-tunnel 2>&1 | grep trycloudflare.com"
-echo "Esa URL (tipo https://palabras-random.trycloudflare.com) es la que usas"
-echo "desde fuera. Cambia solo si reinicias el contenedor cantoral-tunnel."
+echo "a tu red ni a internet todavia)."
+echo ""
+echo "Para abrirla al exterior con una URL fija, ejecuta ahora:"
+echo "  tailscale-funnel.sh"
