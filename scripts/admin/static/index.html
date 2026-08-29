@@ -85,10 +85,11 @@
   <div class="cloud-banner warn" x-show="gitBlockedByLocal()" x-cloak>
     <div>
       <strong>⚠️ Hay novedades en la nube y tú tienes cambios sin subir.</strong>
-      Guarda y sube tus cambios primero (botón de la nube, abajo a la izquierda);
-      en cuanto lo hagas, las novedades se descargan solas.
-      Si algo falla, con <strong>⬇</strong> te bajas el .cho y no pierdes nada.
+      Sube los tuyos con el botón de la nube (abajo a la izquierda) y se juntan
+      solos con lo que haya llegado. O descarga ahora: tus cambios se apartan y
+      se vuelven a poner encima, no se pierde nada.
     </div>
+    <button class="btn" :disabled="git.pulling" @click="pullGit(false, true)">⬇ Descargar ahora</button>
   </div>
 
   <!-- El código ha cambiado: el admin sigue corriendo con el viejo. -->

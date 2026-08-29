@@ -381,12 +381,17 @@ function app() {
       return this.git.behind > 0 && !this.git.pulling
              && (this.git.dirty || this.git.ahead > 0 || this.editor.dirty);
     },
-    async pullGit(auto = false) {
+    // `force`: aparta los cambios locales, descarga y los vuelve a poner encima.
+    async pullGit(auto = false, force = false) {
       if (this.git.pulling) return;
       this.git.pulling = true;
       this.git.pullMsg = '';
       try {
-        const r = await fetch('/api/git/pull', { method: 'POST' });
+        const r = await fetch('/api/git/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force }),
+        });
         const j = await r.json();
         if (!j.ok) {
           if (!auto) alert('No se pudo descargar: ' + (j.error || 'error'));
@@ -444,6 +449,14 @@ function app() {
         const j = await r.json();
         if (!j.ok) throw new Error(j.error || 'Error en commit/push');
         m.result = 'ok';
+        // Si por el camino hubo que traerse novedades de otra persona, se avisa:
+        // el catálogo en pantalla ya no es el que había al abrir el modal.
+        if (j.merged) {
+          this.git.needsRestart = this.git.needsRestart || j.needs_restart;
+          this.git.pullMsg = `⬇ Se juntaron tus cambios con ${j.pulled_count} `
+                           + 'archivo(s) que había subido otra persona';
+          await this.loadCatalog(true);
+        }
         await this.loadGitStatus(true);
         // Cerrar tras un momento para que se vea el ✓
         setTimeout(() => { if (this.gitModal && this.gitModal.result === 'ok') this.gitModal = null; }, 1200);

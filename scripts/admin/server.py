@@ -2201,39 +2201,70 @@ def api_git_commit():
         has_upstream = _run_git(["rev-parse", "--abbrev-ref", "@{u}"]).returncode == 0
         push_args = ["push"] if has_upstream else ["push", "-u", "origin", branch]
         push = _run_git(push_args, timeout=60)
-        if not step("push", push):
-            detail = _git_detail(push)
-            # El caso habitual con diferencia: alguien subió antes que tú.
-            rejected = "rejected" in (push.stderr or "") or "fetch first" in (push.stderr or "")
-            error = ("Hay novedades en la nube que aún no te has descargado. "
-                     "Descárgalas primero y vuelve a intentarlo." if rejected
-                     else "Fallo en git push: " + detail)
-            return jsonify({"ok": False, "steps": steps, "error": error,
-                            "needs_pull": rejected}), 500
-        return jsonify({"ok": True, "steps": steps, "branch": branch})
+        if step("push", push):
+            return jsonify({"ok": True, "steps": steps, "branch": branch})
+
+        # El caso habitual con diferencia: alguien subió mientras tú editabas.
+        # No es un error que deba ver el usuario: se traen sus cambios, los
+        # nuestros se replantan encima y se reintenta. Sin esto el admin se
+        # queda bloqueado (no puedes subir porque falta descargar, y no puedes
+        # descargar porque tienes cambios sin subir).
+        stderr = push.stderr or ""
+        if not ("rejected" in stderr or "fetch first" in stderr):
+            return jsonify({"ok": False, "steps": steps,
+                            "error": "Fallo en git push: " + _git_detail(push)}), 500
+
+        before = _run_git(["rev-parse", "HEAD"]).stdout.strip()
+        pull = _run_git(["pull", "--rebase", "--autostash"], timeout=60)
+        if not step("pull", pull):
+            # Deja el repo como estaba: mejor pedir ayuda que dejarlo a medias.
+            _run_git(["rebase", "--abort"])
+            return jsonify({
+                "ok": False, "steps": steps,
+                "error": "Alguien ha tocado las mismas líneas que tú y no se "
+                         "puede juntar automáticamente. Bájate el .cho con ⬇ "
+                         "para no perder tu trabajo y avisa a David.",
+            }), 500
+        after = _run_git(["rev-parse", "HEAD"]).stdout.strip()
+        pulled = [f for f in _run_git(["diff", "--name-only", before, after]).stdout.split("\n")
+                  if f.strip()] if before != after else []
+
+        push2 = _run_git(push_args, timeout=60)
+        if not step("push2", push2):
+            return jsonify({"ok": False, "steps": steps,
+                            "error": "Fallo en git push: " + _git_detail(push2)}), 500
+        return jsonify({"ok": True, "steps": steps, "branch": branch,
+                        "merged": True, "pulled_count": len(pulled),
+                        "needs_restart": _needs_restart(pulled)})
     except Exception as e:
         return jsonify({"ok": False, "steps": steps, "error": str(e)}), 500
 
 
 @app.route("/api/git/pull", methods=["POST"])
 def api_git_pull():
-    """Descarga las novedades de la nube (fast-forward, nunca merge).
+    """Descarga las novedades de la nube.
 
-    Se niega si hay cambios locales sin guardar: primero se suben, luego se
-    descarga. Así nunca hay que resolver un merge desde el admin.
+    Con el árbol limpio es un fast-forward y ya. Si hay cambios locales no se
+    hace por las buenas (podría confundir a quien esté editando), pero con
+    `force` se apartan, se descarga y se vuelven a poner encima: así nadie se
+    queda atascado sin poder ni subir ni bajar.
     """
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get("force")) or request.args.get("force") == "1"
     try:
         dirty = bool(_run_git(["status", "--porcelain"]).stdout.strip())
-        if dirty:
+        if dirty and not force:
             return jsonify({
                 "ok": False,
                 "dirty": True,
-                "error": "Tienes cambios sin subir a la nube. Súbelos primero "
-                         "(botón de guardar en la nube) y vuelve a descargar.",
+                "can_force": True,
+                "error": "Tienes cambios sin subir a la nube.",
             }), 409
         before = _run_git(["rev-parse", "HEAD"]).stdout.strip()
-        pull = _run_git(["pull", "--ff-only"], timeout=60)
+        args = ["pull", "--rebase", "--autostash"] if dirty else ["pull", "--ff-only"]
+        pull = _run_git(args, timeout=60)
         if pull.returncode != 0:
+            _run_git(["rebase", "--abort"])
             return jsonify({"ok": False,
                             "error": "No se pudo descargar: " + _git_detail(pull)}), 500
         after = _run_git(["rev-parse", "HEAD"]).stdout.strip()
