@@ -14,10 +14,10 @@ mkdir -p "$REPO_DIR" "$SSH_DIR"
 
 echo "== 1/4: Generando clave de despliegue (deploy key) =="
 if [ ! -f "$SSH_DIR/$KEY_NAME" ]; then
-  docker run --rm --entrypoint ssh-keygen -v "$SSH_DIR":/root/.ssh \
+  sudo docker run --rm --entrypoint ssh-keygen -v "$SSH_DIR":/root/.ssh \
     alpine/git -t ed25519 -f "/root/.ssh/$KEY_NAME" -N ""
 fi
-docker run --rm --entrypoint sh -v "$SSH_DIR":/root/.ssh alpine/git -c \
+sudo docker run --rm --entrypoint sh -v "$SSH_DIR":/root/.ssh alpine/git -c \
   "grep -q github.com /root/.ssh/known_hosts 2>/dev/null || ssh-keyscan -t ed25519 github.com >> /root/.ssh/known_hosts"
 cat > "$SSH_DIR/config" <<EOF
 Host github.com
@@ -37,7 +37,7 @@ read _dummy
 
 echo "== 2/4: Clonando el repositorio =="
 if [ ! -d "$REPO_DIR/.git" ]; then
-  docker run --rm -v "$REPO_DIR":/repo -v "$SSH_DIR":/root/.ssh:ro \
+  sudo docker run --rm -v "$REPO_DIR":/repo -v "$SSH_DIR":/root/.ssh:ro \
     alpine/git clone "$REPO_URL" /repo
 fi
 
@@ -62,9 +62,9 @@ fi
 cat > "$BASE_DIR/run-cantoral.sh" <<EOF
 #!/bin/sh
 set -eu
-docker build -t cantoral-admin "$REPO_DIR"
-docker rm -f cantoral-admin 2>/dev/null || true
-docker run -d --name cantoral-admin --restart=always \\
+sudo docker build -t cantoral-admin "$REPO_DIR"
+sudo docker rm -f cantoral-admin 2>/dev/null || true
+sudo docker run -d --name cantoral-admin --restart=always \\
   -v "$REPO_DIR":/app \\
   -v "$SSH_DIR":/root/.ssh:ro \\
   --env-file "$ENV_FILE" \\
@@ -77,13 +77,13 @@ echo "== 4/4: Construyendo y arrancando el contenedor de la app =="
 sh "$BASE_DIR/run-cantoral.sh"
 
 echo "== Tunel de Cloudflare (Quick Tunnel, sin cuenta ni tocar tu dominio) =="
-docker rm -f cantoral-tunnel 2>/dev/null || true
-docker run -d --name cantoral-tunnel --restart=always --network host \
+sudo docker rm -f cantoral-tunnel 2>/dev/null || true
+sudo docker run -d --name cantoral-tunnel --restart=always --network host \
   cloudflare/cloudflared:latest tunnel --url http://localhost:8765
 
 echo ""
 echo "Listo. La app escucha SOLO en 127.0.0.1:8765 del propio NAS (no expuesta"
 echo "a tu red ni a internet). Espera ~10 segundos y mira la URL publica con:"
-echo "  docker logs cantoral-tunnel 2>&1 | grep trycloudflare.com"
+echo "  sudo docker logs cantoral-tunnel 2>&1 | grep trycloudflare.com"
 echo "Esa URL (tipo https://palabras-random.trycloudflare.com) es la que usas"
 echo "desde fuera. Cambia solo si reinicias el contenedor cantoral-tunnel."
