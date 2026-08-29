@@ -442,50 +442,6 @@
               x-text="importing ? 'Importando…' : `Importar ${selectedImports.size} seleccionadas`"></button>
     </div>
 
-    <!-- Etiquetas al importar: lo que se pone AQUÍ va a todas; cada fila puede
-         además aceptar las suyas. Etiquetar mientras se importa es la única
-         forma de que las etiquetas se pongan de verdad — en una sesión aparte,
-         en un editor de texto, no pasa nunca. -->
-    <div class="filter-bar" x-show="allTags.length" x-cloak>
-      <span class="muted" style="font-size:12px">🏷 A todas las que importe:</span>
-      <div class="tag-picker" style="min-width:260px"
-           x-data="tagPicker({
-             get: () => importCommonTags,
-             set: (v) => importCommonTags = v,
-             all: () => allTags,
-           })"
-           @click.outside="open = false">
-        <div class="tag-box" style="min-height:30px;padding:3px 6px" @click="$refs.impTagInput.focus()">
-          <template x-for="slug in tags" :key="slug">
-            <span class="tag-chip sm on">
-              <span class="tag-emoji" x-show="tagEmojiOf(slug)" x-text="tagEmojiOf(slug)"></span>
-              <span class="tag-name" x-text="tagLabelOf(slug)"></span>
-              <button type="button" class="tag-x" @click.stop="remove(slug)">✕</button>
-            </span>
-          </template>
-          <input type="text" x-ref="impTagInput" x-model="q" placeholder="ninguna"
-                 @focus="onFocus()" @input="onInput()" @keydown="onKey($event)" />
-        </div>
-        <div class="tag-ac" x-show="open && rowCount > 0" x-cloak>
-          <template x-for="(t, i) in matches" :key="t.slug">
-            <div class="tag-ac-item" :class="{ hi: hi === i }" @click="add(t.slug)" @mouseenter="hi = i">
-              <span x-show="t.emoji" x-text="t.emoji"></span>
-              <span x-text="t.label"></span>
-              <span class="ac-count" x-text="t.count"></span>
-            </div>
-          </template>
-          <div class="tag-ac-item tag-ac-new" x-show="canCreate" :class="{ hi: hi === matches.length }"
-               @click="add(q)" @mouseenter="hi = matches.length">
-            ＋ Crear «<span x-text="slugifyTag(q)"></span>»
-          </div>
-        </div>
-      </div>
-      <button class="btn-mini" @click="suggestAllVisibleImports()"
-              title="Propone etiquetas ya existentes según el título y la sección">
-        ✨ Sugerir etiquetas para las visibles
-      </button>
-    </div>
-
     <table class="songs">
       <thead>
         <tr><th></th><th>Sección</th><th>Título (en el docx)</th><th>Tono</th><th>Capo</th><th>Avisos</th><th></th></tr>
@@ -548,35 +504,6 @@
                     class="badge-latex-mini"
                     title="También en LaTeX"
                     @click.stop="view = 'latex'; loadLatex().then(() => filterLatexById(m.latex_id))">📐 LaTeX</span>
-              <div class="tag-suggest">
-                <template x-for="slug in tagsForImport(m.docx_id)" :key="slug">
-                  <span class="tag-chip sm on">
-                    <span class="tag-emoji" x-show="tagEmojiOf(slug)" x-text="tagEmojiOf(slug)"></span>
-                    <span class="tag-name" x-text="tagLabelOf(slug)"></span>
-                    <button type="button" class="tag-x"
-                            @click.stop="setTagsForImport(m.docx_id, tagsForImport(m.docx_id).filter(t => t !== slug))">✕</button>
-                  </span>
-                </template>
-                <template x-if="!importSuggestions[m.docx_id]">
-                  <button class="link-mini" @click.stop="suggestImportTags(m)"
-                          x-show="allTags.length">✨ etiquetas</button>
-                </template>
-                <template x-for="sg in (importSuggestions[m.docx_id] || [])" :key="sg.slug">
-                  <span class="tag-chip sm ghost clickable"
-                        x-show="!tagsForImport(m.docx_id).includes(sg.slug)"
-                        :title="sg.reason"
-                        @click.stop="setTagsForImport(m.docx_id, [...tagsForImport(m.docx_id), sg.slug])">
-                    ＋
-                    <span class="tag-emoji" x-show="sg.emoji" x-text="sg.emoji"></span>
-                    <span class="tag-name" x-text="sg.label"></span>
-                  </span>
-                </template>
-                <span class="suggest-label"
-                      x-show="importSuggestions[m.docx_id] && importSuggestions[m.docx_id].length === 0
-                              && !tagsForImport(m.docx_id).length">
-                  sin sugerencias
-                </span>
-              </div>
               <span x-show="!m.doce_available"
                     class="badge-doce-search"
                     title="El emparejado automático no ha encontrado nada — buscar a mano en doceacordes"
@@ -1073,6 +1000,99 @@
                     :disabled="!gitModal || !gitModal?.message.trim() || gitModal.saving"
                     @click="doGitCommit()"
                     x-text="gitModal && gitModal.saving ? 'Guardando…' : (gitModal && gitModal.result === 'ok' ? '✓ Guardado' : '📤 Guardar en la nube')"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </template>
+  </div>
+
+  <!-- ETIQUETAS AL IMPORTAR MODAL
+       Etiquetar es una decisión del momento de importar: si se deja para
+       "luego", en una sesión aparte, no se hace nunca. Por eso se pregunta
+       aquí, con las sugerencias ya cargadas, y no fila por fila en la lista. -->
+  <div class="editor-overlay" x-show="importModal" @click.self="importModal = null" x-cloak
+       @keydown.escape.window="importModal = null">
+    <template x-if="importModal">
+    <div class="editor-modal compact">
+      <div class="editor-header">
+        <h2>🏷 Etiquetas antes de importar</h2>
+        <button class="btn" @click="importModal = null">✕ Cerrar</button>
+      </div>
+      <div class="editor-body single">
+        <div class="editor-pane" style="overflow:auto">
+          <p class="muted small" style="margin:0 0 10px">
+            Vas a importar <strong x-text="importModal.ids.length"></strong> canción(es).
+            Puedes dejarlo en blanco y etiquetarlas más tarde.
+          </p>
+
+          <label class="muted small" style="display:block;margin-bottom:4px">A todas:</label>
+          <div class="tag-picker" style="margin-bottom:14px"
+               x-data="tagPicker({
+                 get: () => importCommonTags,
+                 set: (v) => importCommonTags = v,
+                 all: () => allTags,
+               })"
+               @click.outside="open = false">
+            <div class="tag-box" style="min-height:30px;padding:3px 6px" @click="$refs.impTagInput.focus()">
+              <template x-for="slug in tags" :key="slug">
+                <span class="tag-chip sm on">
+                  <span class="tag-emoji" x-show="tagEmojiOf(slug)" x-text="tagEmojiOf(slug)"></span>
+                  <span class="tag-name" x-text="tagLabelOf(slug)"></span>
+                  <button type="button" class="tag-x" @click.stop="remove(slug)">✕</button>
+                </span>
+              </template>
+              <input type="text" x-ref="impTagInput" x-model="q" placeholder="ninguna"
+                     @focus="onFocus()" @input="onInput()" @keydown="onKey($event)" />
+            </div>
+            <div class="tag-ac" x-show="open && rowCount > 0" x-cloak>
+              <template x-for="(t, i) in matches" :key="t.slug">
+                <div class="tag-ac-item" :class="{ hi: hi === i }" @click="add(t.slug)" @mouseenter="hi = i">
+                  <span x-show="t.emoji" x-text="t.emoji"></span>
+                  <span x-text="t.label"></span>
+                  <span class="ac-count" x-text="t.count"></span>
+                </div>
+              </template>
+              <div class="tag-ac-item tag-ac-new" x-show="canCreate" :class="{ hi: hi === matches.length }"
+                   @click="add(q)" @mouseenter="hi = matches.length">
+                ＋ Crear «<span x-text="slugifyTag(q)"></span>»
+              </div>
+            </div>
+          </div>
+
+          <template x-for="m in importModalSongs()" :key="m.docx_id">
+            <div class="import-tag-row">
+              <div class="import-tag-title" x-text="m.title"></div>
+              <div class="import-tag-chips">
+                <template x-for="slug in tagsForImport(m.docx_id)" :key="slug">
+                  <span class="tag-chip sm on">
+                    <span class="tag-emoji" x-show="tagEmojiOf(slug)" x-text="tagEmojiOf(slug)"></span>
+                    <span class="tag-name" x-text="tagLabelOf(slug)"></span>
+                    <button type="button" class="tag-x"
+                            @click="setTagsForImport(m.docx_id, tagsForImport(m.docx_id).filter(t => t !== slug))">✕</button>
+                  </span>
+                </template>
+                <template x-for="sg in (importSuggestions[m.docx_id] || [])" :key="sg.slug">
+                  <span class="tag-chip sm ghost clickable"
+                        x-show="!tagsForImport(m.docx_id).includes(sg.slug)"
+                        :title="sg.reason"
+                        @click="setTagsForImport(m.docx_id, [...tagsForImport(m.docx_id), sg.slug])">
+                    ＋
+                    <span class="tag-emoji" x-show="sg.emoji" x-text="sg.emoji"></span>
+                    <span class="tag-name" x-text="sg.label"></span>
+                  </span>
+                </template>
+                <span class="suggest-label"
+                      x-show="importSuggestions[m.docx_id] && importSuggestions[m.docx_id].length === 0
+                              && !tagsForImport(m.docx_id).length">sin sugerencias</span>
+              </div>
+            </div>
+          </template>
+
+          <div class="actions-row">
+            <button class="btn" @click="importModal = null">Cancelar</button>
+            <button class="btn primary" :disabled="importing" @click="runImport()"
+                    x-text="`📥 Importar ${importModal.ids.length}`"></button>
           </div>
         </div>
       </div>

@@ -177,6 +177,7 @@ function app() {
     bulkTagsAdd: [],          // etiquetas a poner en bloque desde el catálogo
     bulkTagsRemove: [],
     bulkTagging: false,
+    importModal: null,        // { ids } — paso de etiquetas antes de importar
     importCommonTags: [],     // etiquetas a aplicar a todo lo que se importe
     importTagsById: {},       // docx_id → etiquetas elegidas para esa canción
     importSuggestions: {},    // docx_id → sugerencias del backend
@@ -642,8 +643,24 @@ function app() {
         return this.onDoceCategoryChange(doceId);
       }
     },
+    // Etiquetar pertenece al momento de importar, no al de mirar la lista: se
+    // pregunta aquí, con las sugerencias ya cargadas, en vez de fila por fila.
     async doImport() {
       if (this.selectedImports.size === 0) return;
+      const ids = [...this.selectedImports];
+      // Sin catálogo de etiquetas no hay nada que elegir: directo.
+      if (!this.allTags.length) return this.runImport();
+      this.importModal = { ids };
+      for (const m of this.importModalSongs()) await this.suggestImportTags(m);
+    },
+    importModalSongs() {
+      if (!this.importModal || !this.data) return [];
+      const ids = new Set(this.importModal.ids);
+      return this.data.missing_from_repo.filter(m => ids.has(m.docx_id));
+    },
+    async runImport() {
+      if (this.selectedImports.size === 0) return;
+      this.importModal = null;
       this.importing = true;
       this.importResults = [];
       try {
@@ -652,7 +669,7 @@ function app() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ids: [...this.selectedImports],
-            // Las de la barra van a todas; las de cada fila, solo a la suya.
+            // Las comunes van a todas; las de cada canción, solo a la suya.
             tags: this.importCommonTags,
             tags_by_id: Object.fromEntries(
               [...this.selectedImports].map(id => [String(id), this.tagsForImport(id)])
@@ -663,6 +680,7 @@ function app() {
         this.importResults = json.results || [];
         this.selectedImports = new Set();
         this.importTagsById = {};
+        this.importCommonTags = [];
         await this.loadTags();
         const paths = this.importResults.filter(r => r.ok && r.path).map(r => r.path);
         await this.refreshCatalogAfterImport(paths);
@@ -3098,11 +3116,6 @@ function app() {
           ...this.importSuggestions, [m.docx_id]: j.suggestions || [],
         };
       } catch (e) { /* las sugerencias son un extra */ }
-    },
-    // Pide sugerencias para todo lo que se ve, de una tacada.
-    async suggestAllVisibleImports() {
-      const rows = this.filteredMissing().slice(0, 60);
-      for (const m of rows) await this.suggestImportTags(m);
     },
 
     // ─────────── Selección bulk en catálogo ───────────

@@ -1125,9 +1125,14 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .tag-ac-new { color: var(--accent); font-weight: 600; }
 .tag-hint { font-size: 11.5px; color: var(--fg-3); margin-top: 5px; }
 
-/* Fila de sugerencias (import) */
-.tag-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 4px; }
-.tag-suggest .suggest-label { font-size: 11px; color: var(--fg-3); }
+/* Etiquetas por canción en el paso previo a importar */
+.import-tag-row {
+  display: grid; grid-template-columns: minmax(140px, 34%) 1fr; gap: 10px;
+  align-items: start; padding: 7px 0; border-top: 1px solid var(--border);
+}
+.import-tag-title { font-size: 13px; line-height: 1.35; }
+.import-tag-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.suggest-label { font-size: 11px; color: var(--fg-3); }
 
 /* Celda de etiquetas del catálogo */
 .tag-cell { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
