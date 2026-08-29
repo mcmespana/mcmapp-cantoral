@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -37,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from flask import Flask, jsonify, request, send_from_directory, abort
+from flask import Flask, Response, jsonify, request, send_from_directory, abort
 from werkzeug.exceptions import HTTPException
 
 # Importar el conversor docx como módulo (mismo paquete scripts/)
@@ -70,6 +71,44 @@ CHORD_REVIEW_COMMENT_LINE = "{comment: ♩ REVISAR ACORDES}"
 CHORD_REVIEW_REGEX = re.compile(r"♩\s*REVISAR\s*ACORDES", re.IGNORECASE)
 
 app = Flask(__name__, static_folder=str(SCRIPT_DIR / "static"), static_url_path="")
+
+
+def _load_admin_users() -> Dict[str, str]:
+    """Usuarios válidos desde CANTORAL_ADMIN_USERS="user1:pass1,user2:pass2".
+
+    Si la variable no está definida, no se exige autenticación (uso local).
+    """
+    raw = (os.environ.get("CANTORAL_ADMIN_USERS") or "").strip()
+    users = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        user, _, pw = pair.partition(":")
+        if user and pw:
+            users[user] = pw
+    return users
+
+
+_ADMIN_USERS = _load_admin_users()
+
+
+@app.before_request
+def _require_auth():
+    if not _ADMIN_USERS or request.path == "/api/health":
+        return None
+    auth = request.authorization
+    valid = (
+        auth is not None
+        and auth.username in _ADMIN_USERS
+        and secrets.compare_digest(auth.password, _ADMIN_USERS[auth.username])
+    )
+    if not valid:
+        return Response(
+            "Autenticación requerida.", 401,
+            {"WWW-Authenticate": 'Basic realm="Cantoral Admin"'},
+        )
+    return None
 
 
 @app.errorhandler(HTTPException)
