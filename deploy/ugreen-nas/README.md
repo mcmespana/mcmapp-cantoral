@@ -1,18 +1,5 @@
 # Desplegar el admin del Cantoral en el UGREEN NASync DXP2800 (gratis)
 
-Nada de VPS ni de tocar el dominio: el NAS se queda cerrado a cal y canto
-(0 puertos abiertos en tu router) y **Cloudflare Quick Tunnel** abre un
-túnel saliente hacia Cloudflare, que da la cara en internet con una URL
-del tipo `https://palabras-random.trycloudflare.com`. Coste: 0 €. No hace
-falta cuenta de Cloudflare ni tocar el DNS de `movimientoconsolacion.com`
-(ese dominio se queda exactamente como está, con su correo intacto).
-
-La única pega: esa URL cambia si el contenedor del túnel se reinicia (por
-ejemplo, un reinicio del NAS). Si quieres una URL fija con vuestro propio
-dominio más adelante, ver la nota al final — pero eso sí requiere mover el
-dominio a Cloudflare, y ya dijiste que ni de coña, así que de momento nos
-quedamos con la URL random y, si quieres, le pones tú un redirect desde
-donde te sea más cómodo.
 
 ## Paso 1 — Activar SSH en el NAS
 
