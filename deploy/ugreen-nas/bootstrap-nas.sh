@@ -19,11 +19,10 @@ if [ ! -f "$SSH_DIR/$KEY_NAME" ]; then
 fi
 sudo docker run --rm --entrypoint sh -v "$SSH_DIR":/root/.ssh alpine/git -c \
   "grep -q github.com /root/.ssh/known_hosts 2>/dev/null || ssh-keyscan -t ed25519 github.com >> /root/.ssh/known_hosts"
-cat > "$SSH_DIR/config" <<EOF
-Host github.com
-  IdentityFile /root/.ssh/$KEY_NAME
-  IdentitiesOnly yes
-EOF
+printf 'Host github.com\n  IdentityFile /root/.ssh/%s\n  IdentitiesOnly yes\n' "$KEY_NAME" | \
+  sudo docker run --rm -i --entrypoint sh -v "$SSH_DIR":/root/.ssh alpine/git -c 'cat > /root/.ssh/config'
+sudo docker run --rm --entrypoint sh -v "$SSH_DIR":/root/.ssh alpine/git -c \
+  "chmod 600 /root/.ssh/$KEY_NAME && chmod 644 /root/.ssh/config /root/.ssh/known_hosts /root/.ssh/$KEY_NAME.pub"
 
 echo ""
 echo ">>> Copia esta clave publica y anadela en:"
@@ -37,7 +36,7 @@ read _dummy
 
 echo "== 2/4: Clonando el repositorio =="
 if [ ! -d "$REPO_DIR/.git" ]; then
-  sudo docker run --rm -v "$REPO_DIR":/repo -v "$SSH_DIR":/root/.ssh:ro \
+  sudo docker run --rm -v "$REPO_DIR":/repo -v "$SSH_DIR":/root/.ssh \
     alpine/git clone "$REPO_URL" /repo
 fi
 
@@ -66,7 +65,7 @@ sudo docker build -t cantoral-admin "$REPO_DIR"
 sudo docker rm -f cantoral-admin 2>/dev/null || true
 sudo docker run -d --name cantoral-admin --restart=always \\
   -v "$REPO_DIR":/app \\
-  -v "$SSH_DIR":/root/.ssh:ro \\
+  -v "$SSH_DIR":/root/.ssh \\
   --env-file "$ENV_FILE" \\
   -p 127.0.0.1:8765:8765 \\
   cantoral-admin
