@@ -1,6 +1,20 @@
 # Desplegar el admin del Cantoral en el UGREEN NASync DXP2800 (gratis)
 
 
+## URL pública: Tailscale Funnel (recomendado)
+
+El Quick Tunnel de Cloudflare que monta `bootstrap-nas.sh` es anónimo y
+desechable: no está asociado a ninguna cuenta, no se ve en ningún panel,
+y su URL puede cambiar si el contenedor se recrea. Para una URL fija y
+con panel de control, usa [`tailscale-funnel.sh`](./tailscale-funnel.sh):
+gratis, sin dominio propio y sin tocar el DNS de
+`movimientoconsolacion.com`.
+
+Por qué Tailscale y no un túnel «con nombre» de Cloudflare: para publicar
+un hostname, Cloudflare exige tener un dominio dado de alta en la cuenta,
+y mover `movimientoconsolacion.com` (que lleva el correo) está descartado.
+Tailscale da URL fija sin necesitar dominio alguno.
+
 ## Paso 1 — Activar SSH en el NAS
 
 Panel de UGOS Pro → **Control Panel → Terminal & SNMP → Enable SSH
