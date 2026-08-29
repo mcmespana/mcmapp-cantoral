@@ -25,12 +25,21 @@
     <a :class="{active: view === 'dashboard'}" @click.prevent="view = 'dashboard'" href="#">📊 Dashboard</a>
     <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
     <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
-    <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
     <a :class="{active: view === 'doce'}" @click.prevent="view = 'doce'; loadDoce()" href="#">🎸 Importar de doceacordes</a>
     <a :class="{active: view === 'tags'}" @click.prevent="goTags(null)" href="#">🏷 Etiquetas</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
-    <a :class="{active: view === 'peticiones'}" @click.prevent="goPeticiones()" href="#">🙋 Peticiones</a>
-    <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
+    <!-- Lo que casi nunca se usa, plegado al final para no llenar el menú -->
+    <a class="nav-group" :class="{active: ['latex','peticiones','backups'].includes(view)}"
+       @click.prevent="otrosOpen = !otrosOpen" href="#">
+      <span x-text="otrosOpen ? '▾' : '▸'"></span> Otros
+    </a>
+    <template x-if="otrosOpen">
+      <div class="nav-sub">
+        <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
+        <a :class="{active: view === 'peticiones'}" @click.prevent="goPeticiones()" href="#">🙋 Peticiones</a>
+        <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
+      </div>
+    </template>
   </nav>
 
   <div class="sidebar-section" x-show="data">
@@ -69,6 +78,32 @@
   <div class="topbar">
     <div class="save-indicator" :class="saveIndicator.cls" x-text="saveIndicator.text"></div>
     <button class="topbar-help" @click="showHelp = true" title="Ayuda y atajos">❓</button>
+  </div>
+
+  <!-- Novedades en la nube que no se pueden descargar solas: hay cambios
+       locales que se pisarían. Hay que subirlos primero. -->
+  <div class="cloud-banner warn" x-show="gitBlockedByLocal()" x-cloak>
+    <div>
+      <strong>⚠️ Hay novedades en la nube y tú tienes cambios sin subir.</strong>
+      Guarda y sube tus cambios primero (botón de la nube, abajo a la izquierda);
+      en cuanto lo hagas, las novedades se descargan solas.
+      Si algo falla, con <strong>⬇</strong> te bajas el .cho y no pierdes nada.
+    </div>
+  </div>
+
+  <!-- El código ha cambiado: el admin sigue corriendo con el viejo. -->
+  <div class="cloud-banner warn" x-show="git.needsRestart" x-cloak>
+    <div>
+      <strong>🔁 Se ha actualizado el código del admin.</strong>
+      Lo que ves sigue siendo la versión antigua hasta que se reinicie:
+      en el NAS, <code>sudo docker restart cantoral-admin</code>.
+    </div>
+    <button class="link-mini" @click="git.needsRestart = false">✕</button>
+  </div>
+
+  <div class="cloud-banner info" x-show="git.pulling || git.pullMsg" x-cloak>
+    <div x-text="git.pulling ? '⬇ Descargando novedades de la nube…' : git.pullMsg"></div>
+    <button class="link-mini" x-show="!git.pulling" @click="git.pullMsg = ''">✕</button>
   </div>
 
   <!-- LOADING -->
@@ -1704,6 +1739,8 @@
             <button class="link-mini" @click="cancelEditorQueue()" title="Salir de la cola">✕</button>
           </span>
           <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
+          <button class="btn" @click="downloadCho()"
+                  title="Bajarte el .cho tal y como está ahora, por si algo falla al guardar">⬇</button>
           <button class="btn" @click="closeEditor()">
             <span x-text="editorQueue.length > 0 && editorQueueIdx + 1 < editorQueue.length ? '✕ Cerrar y siguiente →' : '✕ Cerrar'"></span>
           </button>

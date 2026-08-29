@@ -140,6 +140,7 @@ function app() {
   return {
     // ─────────── State ───────────
     view: 'dashboard',
+    otrosOpen: false,   // submenú «Otros» del lateral
     theme: localStorage.theme || 'light',
     loading: false,
     error: null,
@@ -299,7 +300,10 @@ function app() {
 
     // Estado de git (indicador en la barra lateral)
     git: { branch: '', ahead: 0, behind: 0, dirty: false, changedCount: 0,
-           changedFiles: [], hasUpstream: true, loading: false, error: null },
+           changedFiles: [], hasUpstream: true, loading: false, error: null,
+           // Descarga de novedades: automática cuando no estorba, y aviso
+           // gordo cuando hace falta que alguien decida.
+           pulling: false, pullMsg: '', needsRestart: false },
     gitModal: null,  // { message, saving, result }
 
     // ─────────── Lifecycle ───────────
@@ -361,6 +365,50 @@ function app() {
         this.git.error = e.message;
       } finally {
         this.git.loading = false;
+      }
+      // Si hay novedades y nada que se pueda pisar, se descargan solas. Con
+      // cambios locales (en disco o en el editor abierto) no: primero hay que
+      // guardarlos, y de eso avisa el cartelón.
+      if (this.gitCanAutoPull()) await this.pullGit(true);
+    },
+    gitCanAutoPull() {
+      const g = this.git;
+      return g.behind > 0 && !g.dirty && g.ahead === 0
+             && !g.pulling && !this.editor.dirty;
+    },
+    // Aviso gordo: hay novedades pero no se pueden descargar solas.
+    gitBlockedByLocal() {
+      return this.git.behind > 0 && !this.git.pulling
+             && (this.git.dirty || this.git.ahead > 0 || this.editor.dirty);
+    },
+    async pullGit(auto = false) {
+      if (this.git.pulling) return;
+      this.git.pulling = true;
+      this.git.pullMsg = '';
+      try {
+        const r = await fetch('/api/git/pull', { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) {
+          if (!auto) alert('No se pudo descargar: ' + (j.error || 'error'));
+          this.git.pullMsg = j.error || '';
+          return;
+        }
+        if (j.changed) {
+          this.git.needsRestart = this.git.needsRestart || j.needs_restart;
+          this.git.pullMsg = `⬇ ${j.count} archivo(s) actualizado(s) desde la nube`;
+          await this.loadCatalog(true);
+          // Si la canción abierta viene en el lote, se recarga para no guardar
+          // encima de lo que acaba de bajar.
+          if (this.editor.path && !this.editor.dirty
+              && (j.files || []).includes(this.editor.path)) {
+            await this.openSongFromPath(this.editor.path);
+          }
+        }
+        await this.loadGitStatus(false);
+      } catch (e) {
+        if (!auto) alert('No se pudo descargar: ' + e.message);
+      } finally {
+        this.git.pulling = false;
       }
     },
     // ¿Hay algo que avisar? (cambios sin guardar, commits sin subir, o rama desfasada)
@@ -1481,6 +1529,17 @@ function app() {
         alert('Error abriendo: ' + e.message);
       }
     },
+    // Red de seguridad: si guardar en la nube falla (o falta descargar antes),
+    // te llevas el .cho tal cual está y luego lo vuelves a subir.
+    downloadCho() {
+      if (!this.editor.path) return;
+      const blob = new Blob([this.editor.content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = this.editor.filename || 'cancion.cho';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
     closeEditor() {
       if (this.editor.dirty && !confirm('Hay cambios sin guardar. ¿Descartar?')) return;
       this.editor = {
@@ -1925,6 +1984,11 @@ function app() {
     // Teclado del documento visual. Todo en un sitio para que Supr/Retroceso
     // puedan decidir entre borrar líneas o borrar el acorde seleccionado.
     onVisualKeydown(ev) {
+      // Los atajos son para el documento, no para los campos de texto: si se
+      // está editando una línea, Backspace y compañía son del input.
+      const t = ev.target;
+      const tag = (t && t.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || (t && t.isContentEditable)) return;
       const mod = ev.ctrlKey || ev.metaKey;
       const k = ev.key;
       if (k === 'Delete' || k === 'Backspace') {

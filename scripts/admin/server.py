@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -37,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from flask import Flask, jsonify, request, send_from_directory, abort
+from flask import Flask, Response, jsonify, request, send_from_directory, abort
 from werkzeug.exceptions import HTTPException
 
 # Importar el conversor docx como módulo (mismo paquete scripts/)
@@ -70,6 +71,44 @@ CHORD_REVIEW_COMMENT_LINE = "{comment: ♩ REVISAR ACORDES}"
 CHORD_REVIEW_REGEX = re.compile(r"♩\s*REVISAR\s*ACORDES", re.IGNORECASE)
 
 app = Flask(__name__, static_folder=str(SCRIPT_DIR / "static"), static_url_path="")
+
+
+def _load_admin_users() -> Dict[str, str]:
+    """Usuarios válidos desde CANTORAL_ADMIN_USERS="user1:pass1,user2:pass2".
+
+    Si la variable no está definida, no se exige autenticación (uso local).
+    """
+    raw = (os.environ.get("CANTORAL_ADMIN_USERS") or "").strip()
+    users = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        user, _, pw = pair.partition(":")
+        if user and pw:
+            users[user] = pw
+    return users
+
+
+_ADMIN_USERS = _load_admin_users()
+
+
+@app.before_request
+def _require_auth():
+    if not _ADMIN_USERS or request.path == "/api/health":
+        return None
+    auth = request.authorization
+    valid = (
+        auth is not None
+        and auth.username in _ADMIN_USERS
+        and secrets.compare_digest(auth.password, _ADMIN_USERS[auth.username])
+    )
+    if not valid:
+        return Response(
+            "Autenticación requerida.", 401,
+            {"WWW-Authenticate": 'Basic realm="Cantoral Admin"'},
+        )
+    return None
 
 
 @app.errorhandler(HTTPException)
@@ -2069,6 +2108,23 @@ def _run_git(args: List[str], timeout: int = 30) -> subprocess.CompletedProcess:
     )
 
 
+def _git_detail(proc: subprocess.CompletedProcess) -> str:
+    """Primera línea útil del error de git, para no tragarnos el motivo real."""
+    txt = (proc.stderr or "") + "\n" + (proc.stdout or "")
+    lines = [ln.strip() for ln in txt.split("\n")
+             if ln.strip() and not ln.strip().startswith("hint:")]
+    return lines[0] if lines else ""
+
+
+# Cambios aquí obligan a reiniciar el contenedor: el código ya está cargado en
+# memoria y un git pull no lo recarga solo.
+_CODE_PREFIXES = ("scripts/", "Dockerfile", "deploy/")
+
+
+def _needs_restart(files: List[str]) -> bool:
+    return any(f.startswith(_CODE_PREFIXES) for f in files)
+
+
 @app.route("/api/git/status")
 def api_git_status():
     """Estado de git para el indicador de la barra lateral.
@@ -2131,21 +2187,69 @@ def api_git_commit():
         return proc.returncode == 0
 
     try:
-        if not step("add", _run_git(["add", "-A"])):
-            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git add"}), 500
+        add = _run_git(["add", "-A"])
+        if not step("add", add):
+            return jsonify({"ok": False, "steps": steps,
+                            "error": "Fallo en git add: " + _git_detail(add)}), 500
         commit = _run_git(["commit", "-m", message])
         # "nothing to commit" no es un error fatal que debamos esconder
         step("commit", commit)
         if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr):
-            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git commit"}), 500
+            return jsonify({"ok": False, "steps": steps,
+                            "error": "Fallo en git commit: " + _git_detail(commit)}), 500
         branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
         has_upstream = _run_git(["rev-parse", "--abbrev-ref", "@{u}"]).returncode == 0
         push_args = ["push"] if has_upstream else ["push", "-u", "origin", branch]
-        if not step("push", _run_git(push_args, timeout=60)):
-            return jsonify({"ok": False, "steps": steps, "error": "Fallo en git push (¿conexión?)"}), 500
+        push = _run_git(push_args, timeout=60)
+        if not step("push", push):
+            detail = _git_detail(push)
+            # El caso habitual con diferencia: alguien subió antes que tú.
+            rejected = "rejected" in (push.stderr or "") or "fetch first" in (push.stderr or "")
+            error = ("Hay novedades en la nube que aún no te has descargado. "
+                     "Descárgalas primero y vuelve a intentarlo." if rejected
+                     else "Fallo en git push: " + detail)
+            return jsonify({"ok": False, "steps": steps, "error": error,
+                            "needs_pull": rejected}), 500
         return jsonify({"ok": True, "steps": steps, "branch": branch})
     except Exception as e:
         return jsonify({"ok": False, "steps": steps, "error": str(e)}), 500
+
+
+@app.route("/api/git/pull", methods=["POST"])
+def api_git_pull():
+    """Descarga las novedades de la nube (fast-forward, nunca merge).
+
+    Se niega si hay cambios locales sin guardar: primero se suben, luego se
+    descarga. Así nunca hay que resolver un merge desde el admin.
+    """
+    try:
+        dirty = bool(_run_git(["status", "--porcelain"]).stdout.strip())
+        if dirty:
+            return jsonify({
+                "ok": False,
+                "dirty": True,
+                "error": "Tienes cambios sin subir a la nube. Súbelos primero "
+                         "(botón de guardar en la nube) y vuelve a descargar.",
+            }), 409
+        before = _run_git(["rev-parse", "HEAD"]).stdout.strip()
+        pull = _run_git(["pull", "--ff-only"], timeout=60)
+        if pull.returncode != 0:
+            return jsonify({"ok": False,
+                            "error": "No se pudo descargar: " + _git_detail(pull)}), 500
+        after = _run_git(["rev-parse", "HEAD"]).stdout.strip()
+        files = []
+        if before != after:
+            diff = _run_git(["diff", "--name-only", before, after]).stdout
+            files = [f for f in diff.split("\n") if f.strip()]
+        return jsonify({
+            "ok": True,
+            "changed": before != after,
+            "files": files,
+            "count": len(files),
+            "needs_restart": _needs_restart(files),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ─────────── Static + fallback ─────────── #
