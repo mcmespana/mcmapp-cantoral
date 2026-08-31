@@ -184,7 +184,29 @@ function app() {
 
     // Editor multimedia tab
     mediaForm: { rhythm: '', album: '', liturgicalTime: '', source: '', videoEmbed: '',
-                 comment: '', youtubeLinks: [], audioLinks: [], tags: [] },
+                 comment: '', youtubeLinks: [], audioLinks: [],
+                 spotifyLinks: [], driveLinks: [], otherLinks: [], tags: [] },
+    // Metadatos de los 5 tipos de link (icono/título/placeholders), usados por
+    // el quick-add modal y por saveQuickAddLink/openQuickAddLink/removeQuickLink.
+    // Si se añade un tipo nuevo, con tocar esto y el chordpro.LIST_FIELDS del
+    // repo alcanza — el resto (addMediaLink, moveMediaLink…) ya es genérico.
+    QUICK_LINK_META: {
+      youtube: { key: 'youtubeLinks', title: '📺 Añadir YouTube',
+                 labelPh: 'Original, Alternativo, En vivo…',
+                 urlPh: 'https://www.youtube.com/watch?v=…' },
+      audio:   { key: 'audioLinks', title: '🎧 Añadir Audio',
+                 labelPh: 'Ensayo voces, Versión coro…',
+                 urlPh: 'https://drive.google.com/… o /audio.mp3' },
+      spotify: { key: 'spotifyLinks', title: '🎵 Añadir Spotify',
+                 labelPh: 'Álbum, Single, Versión…',
+                 urlPh: 'https://open.spotify.com/track/…' },
+      drive:   { key: 'driveLinks', title: '📁 Añadir documento (Drive)',
+                 labelPh: 'Partitura, Cancionero…',
+                 urlPh: 'https://drive.google.com/file/d/…/view?usp=drive_link' },
+      otro:    { key: 'otherLinks', title: '🔗 Añadir otro enlace',
+                 labelPh: 'Partitura (web externa)…',
+                 urlPh: 'https://…' },
+    },
     mediaOriginal: '',
     mediaDirty: false,
     mediaSaving: false,
@@ -1277,16 +1299,33 @@ function app() {
       if (n === 0) return 'Sin audio interno — click para añadir';
       return `${n} audio${n > 1 ? 's' : ''} interno${n > 1 ? 's' : ''} · click para añadir más`;
     },
+    mediaSpotifyTooltip(r) {
+      const n = r.spotify_count || 0;
+      if (n === 0) return 'Sin enlaces de Spotify — click para añadir';
+      return `${n} enlace${n > 1 ? 's' : ''} de Spotify (abre la app, fuera del cantoral) · click para añadir más`;
+    },
+    mediaDriveTooltip(r) {
+      const n = r.drive_count || 0;
+      if (n === 0) return 'Sin documento de Drive — click para añadir';
+      return `${n} documento${n > 1 ? 's' : ''} de Drive (partitura a pantalla completa) · click para añadir más`;
+    },
+    mediaOtroTooltip(r) {
+      const n = r.other_count || 0;
+      if (n === 0) return 'Sin otros enlaces — click para añadir';
+      return `${n} enlace${n > 1 ? 's' : ''} más (pantalla completa) · click para añadir más`;
+    },
+    quickLinkInfo() {
+      return this.QUICK_LINK_META[this.quickLink.type] || this.QUICK_LINK_META.audio;
+    },
     async openQuickAddLink(repoSong, type) {
       // Carga el .cho actual para listar los links existentes
+      const metaKey = this.QUICK_LINK_META[type].key;
       let existing = [];
       try {
         const r = await fetch('/api/song?path=' + encodeURIComponent(repoSong.path));
         if (r.ok) {
           const j = await r.json();
-          existing = type === 'youtube'
-            ? (j.meta.youtubeLinks || [])
-            : (j.meta.audioLinks || []);
+          existing = j.meta[metaKey] || [];
         }
       } catch (_) { /* silence */ }
       this.quickLink = {
@@ -1300,7 +1339,7 @@ function app() {
       try {
         const r = await fetch('/api/song?path=' + encodeURIComponent(this.quickLink.path));
         const j = await r.json();
-        const key = this.quickLink.type === 'youtube' ? 'youtubeLinks' : 'audioLinks';
+        const key = this.QUICK_LINK_META[this.quickLink.type].key;
         const list = (j.meta[key] || []).slice();
         list.splice(idx, 1);
         const meta = { ...j.meta, [key]: list };
@@ -1331,7 +1370,7 @@ function app() {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
         // Actualizar lista existente + refrescar catálogo
-        const key = this.quickLink.type === 'youtube' ? 'youtubeLinks' : 'audioLinks';
+        const key = this.QUICK_LINK_META[this.quickLink.type].key;
         this.quickLink.existing = j.meta[key] || [];
         this.quickLink.label = '';
         this.quickLink.url = '';
@@ -1366,6 +1405,9 @@ function app() {
         comment: m.comment || '',
         youtubeLinks: (m.youtubeLinks || []).map(l => ({ ...l, url: toYoutubeWatch(l.url) })),
         audioLinks: (m.audioLinks || []).map(l => ({ ...l })),
+        spotifyLinks: (m.spotifyLinks || []).map(l => ({ ...l })),
+        driveLinks: (m.driveLinks || []).map(l => ({ ...l })),
+        otherLinks: (m.otherLinks || []).map(l => ({ ...l })),
         tags: [...(m.tags || [])],
       };
       this.mediaOriginal = JSON.stringify(this.mediaForm);
@@ -1412,6 +1454,9 @@ function app() {
         const payload = { ...this.mediaForm,
           youtubeLinks: this.mediaForm.youtubeLinks.filter(l => l.url && l.url.trim()),
           audioLinks: this.mediaForm.audioLinks.filter(l => l.url && l.url.trim()),
+          spotifyLinks: this.mediaForm.spotifyLinks.filter(l => l.url && l.url.trim()),
+          driveLinks: this.mediaForm.driveLinks.filter(l => l.url && l.url.trim()),
+          otherLinks: this.mediaForm.otherLinks.filter(l => l.url && l.url.trim()),
         };
         const r = await fetch('/api/song/meta?path=' + encodeURIComponent(this.editor.path), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },

@@ -402,6 +402,24 @@
                 <span x-text="r.audio_count > 0 ? '🎧' : '➕🎧'"></span>
                 <span x-show="r.audio_count > 0" class="media-count" x-text="r.audio_count"></span>
               </button>
+              <button class="media-icon" :class="{ active: r.spotify_count > 0 }"
+                      :title="mediaSpotifyTooltip(r)"
+                      @click.stop="openQuickAddLink(r, 'spotify')">
+                <span x-text="r.spotify_count > 0 ? '🎵' : '➕🎵'"></span>
+                <span x-show="r.spotify_count > 0" class="media-count" x-text="r.spotify_count"></span>
+              </button>
+              <button class="media-icon" :class="{ active: r.drive_count > 0 }"
+                      :title="mediaDriveTooltip(r)"
+                      @click.stop="openQuickAddLink(r, 'drive')">
+                <span x-text="r.drive_count > 0 ? '📁' : '➕📁'"></span>
+                <span x-show="r.drive_count > 0" class="media-count" x-text="r.drive_count"></span>
+              </button>
+              <button class="media-icon" :class="{ active: r.other_count > 0 }"
+                      :title="mediaOtroTooltip(r)"
+                      @click.stop="openQuickAddLink(r, 'otro')">
+                <span x-text="r.other_count > 0 ? '🔗' : '➕🔗'"></span>
+                <span x-show="r.other_count > 0" class="media-count" x-text="r.other_count"></span>
+              </button>
             </td>
             <td>
               <span class="status-pill status-revisar" x-show="r.has_todo">📝 Revisar</span>
@@ -1774,8 +1792,8 @@
         <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
         <button :class="{active: editor.tab === 'media'}" @click="setEditorTab('media')">
           🎬 Audio / Vídeo
-          <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) > 0"
-                x-text="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0)"></span>
+          <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) + (editor.meta.spotify_count || 0) + (editor.meta.drive_count || 0) + (editor.meta.other_count || 0) > 0"
+                x-text="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) + (editor.meta.spotify_count || 0) + (editor.meta.drive_count || 0) + (editor.meta.other_count || 0)"></span>
         </button>
         <button :class="{active: editor.tab === 'extra'}" @click="setEditorTab('extra')">
           📋 Datos extra
@@ -2172,6 +2190,105 @@
                      style="font-size:12px;padding:6px">— Sin audios internos —</div>
               </div>
             </div>
+
+            <div class="media-section">
+              <h4>🎵 Spotify</h4>
+              <p class="muted" style="font-size:11px;margin-top:0">
+                A diferencia de YouTube/Audio, esto <strong>abre la app de Spotify</strong> (o
+                Spotify Web) fuera del cantoral — la persona tiene que volver a mano. No se
+                reproduce embebido dentro de la app.
+              </p>
+              <div class="link-list-editor">
+                <div class="link-list-header">
+                  <span>Links de Spotify (orden = prioridad)</span>
+                  <button class="btn-mini" @click="addMediaLink('spotifyLinks')">➕ Añadir</button>
+                </div>
+                <template x-for="(sp, i) in mediaForm.spotifyLinks" :key="'sp-'+i">
+                  <div class="link-row">
+                    <span class="link-num" x-text="i+1"></span>
+                    <input type="text" class="link-label-input" x-model="sp.label"
+                           @input="mediaDirty = true" placeholder="Álbum, Single, Versión…" />
+                    <input type="url" class="link-url-input" x-model="sp.url"
+                           @input="mediaDirty = true" placeholder="https://open.spotify.com/track/…" />
+                    <div class="link-actions">
+                      <button class="btn-mini" :disabled="i === 0"
+                              @click="moveMediaLink('spotifyLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.spotifyLinks.length - 1"
+                              @click="moveMediaLink('spotifyLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('spotifyLinks', i)">✕</button>
+                    </div>
+                  </div>
+                </template>
+                <div class="muted" x-show="mediaForm.spotifyLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Sin enlaces de Spotify —</div>
+              </div>
+            </div>
+
+            <div class="media-section">
+              <h4>📁 Documento (Drive)</h4>
+              <p class="muted" style="font-size:11px;margin-top:0">
+                Partitura, cancionero o PDF escaneado en Drive. Se muestra <strong>a pantalla
+                completa dentro de la app</strong> (visor de documento) — NO es audio. Enlace de
+                compartir tal cual (<code>drive.google.com/file/d/&lt;id&gt;/view?usp=drive_link</code>),
+                compartido como «cualquiera con el enlace».
+              </p>
+              <div class="link-list-editor">
+                <div class="link-list-header">
+                  <span>Documentos de Drive (orden = prioridad)</span>
+                  <button class="btn-mini" @click="addMediaLink('driveLinks')">➕ Añadir</button>
+                </div>
+                <template x-for="(dr, i) in mediaForm.driveLinks" :key="'dr-'+i">
+                  <div class="link-row">
+                    <span class="link-num" x-text="i+1"></span>
+                    <input type="text" class="link-label-input" x-model="dr.label"
+                           @input="mediaDirty = true" placeholder="Partitura, Cancionero…" />
+                    <input type="url" class="link-url-input" x-model="dr.url"
+                           @input="mediaDirty = true" placeholder="https://drive.google.com/file/d/…/view?usp=drive_link" />
+                    <div class="link-actions">
+                      <button class="btn-mini" :disabled="i === 0"
+                              @click="moveMediaLink('driveLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.driveLinks.length - 1"
+                              @click="moveMediaLink('driveLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('driveLinks', i)">✕</button>
+                    </div>
+                  </div>
+                </template>
+                <div class="muted" x-show="mediaForm.driveLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Sin documentos de Drive —</div>
+              </div>
+            </div>
+
+            <div class="media-section">
+              <h4>🔗 Otros enlaces</h4>
+              <p class="muted" style="font-size:11px;margin-top:0">
+                Cualquier otro recurso (p.ej. una partitura en una web externa que no es Drive).
+                Se abre <strong>a pantalla completa dentro de la app</strong>, tal cual la URL.
+              </p>
+              <div class="link-list-editor">
+                <div class="link-list-header">
+                  <span>Otros enlaces (orden = prioridad)</span>
+                  <button class="btn-mini" @click="addMediaLink('otherLinks')">➕ Añadir</button>
+                </div>
+                <template x-for="(ot, i) in mediaForm.otherLinks" :key="'ot-'+i">
+                  <div class="link-row">
+                    <span class="link-num" x-text="i+1"></span>
+                    <input type="text" class="link-label-input" x-model="ot.label"
+                           @input="mediaDirty = true" placeholder="Partitura (web externa)…" />
+                    <input type="url" class="link-url-input" x-model="ot.url"
+                           @input="mediaDirty = true" placeholder="https://…" />
+                    <div class="link-actions">
+                      <button class="btn-mini" :disabled="i === 0"
+                              @click="moveMediaLink('otherLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.otherLinks.length - 1"
+                              @click="moveMediaLink('otherLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('otherLinks', i)">✕</button>
+                    </div>
+                  </div>
+                </template>
+                <div class="muted" x-show="mediaForm.otherLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Sin otros enlaces —</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2262,7 +2379,7 @@
     <div class="editor-modal compact">
       <div class="editor-header">
         <h2>
-          <span x-text="quickLink.type === 'youtube' ? '📺 Añadir YouTube' : '🎧 Añadir Audio'"></span>
+          <span x-text="quickLinkInfo().title"></span>
           <span class="muted" style="font-size:13px;font-weight:normal"
                 x-text="quickLink.songTitle ? '— ' + quickLink.songTitle : ''"></span>
         </h2>
@@ -2287,10 +2404,10 @@
           <div class="form-grid">
             <label>Etiqueta</label>
             <input type="text" x-model="quickLink.label"
-                   :placeholder="quickLink.type === 'youtube' ? 'Original, Alternativo, En vivo…' : 'Ensayo voces, Versión coro…'" />
+                   :placeholder="quickLinkInfo().labelPh" />
             <label>URL</label>
             <input type="url" x-model="quickLink.url"
-                   :placeholder="quickLink.type === 'youtube' ? 'https://www.youtube.com/watch?v=…' : 'https://drive.google.com/… o /audio.mp3'" />
+                   :placeholder="quickLinkInfo().urlPh" />
           </div>
           <div class="actions-row">
             <button class="btn primary" :disabled="!quickLink.url || quickLink.saving"
