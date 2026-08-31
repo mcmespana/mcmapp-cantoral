@@ -156,6 +156,9 @@ def parse_cho_metadata(content: str) -> Dict[str, object]:
         "has_video": bool(extra["videoEmbed"]),
         "youtube_count": len(extra["youtubeLinks"]),
         "audio_count": len(extra["audioLinks"]),
+        "spotify_count": len(extra["spotifyLinks"]),
+        "drive_count": len(extra["driveLinks"]),
+        "other_count": len(extra["otherLinks"]),
         "rhythm": extra["rhythm"],
         "album": extra["album"],
         "liturgicalTime": extra["liturgicalTime"],
@@ -163,6 +166,9 @@ def parse_cho_metadata(content: str) -> Dict[str, object]:
         "videoEmbed": extra["videoEmbed"],
         "youtubeLinks": extra["youtubeLinks"],
         "audioLinks": extra["audioLinks"],
+        "spotifyLinks": extra["spotifyLinks"],
+        "driveLinks": extra["driveLinks"],
+        "otherLinks": extra["otherLinks"],
         "comment": extra["comment"],
         "tags": extra["tags"],
     }
@@ -843,12 +849,18 @@ def _render_meta_directive_lines(meta: Dict[str, object]) -> List[str]:
         if not url:
             continue
         lines.append(f"{{youtube: {label} | {url}}}" if label else f"{{youtube: {url}}}")
-    for au in (meta.get("audioLinks") or []):
-        label = _sanitize_link_label(au.get("label") or "")
-        url = _sanitize_directive_value(au.get("url") or "")
-        if not url:
+    # audio / spotify / drive / otro comparten la misma convención "label | url"
+    # (a diferencia de youtube, no se normaliza la url): se generan genéricamente
+    # a partir de cp.LIST_FIELDS para que un campo nuevo no requiera tocar esto.
+    for field, directive in cp.LIST_FIELDS.items():
+        if field == "youtubeLinks":
             continue
-        lines.append(f"{{audio: {label} | {url}}}" if label else f"{{audio: {url}}}")
+        for it in (meta.get(field) or []):
+            label = _sanitize_link_label(it.get("label") or "")
+            url = _sanitize_directive_value(it.get("url") or "")
+            if not url:
+                continue
+            lines.append(f"{{{directive}: {label} | {url}}}" if label else f"{{{directive}: {url}}}")
     if meta.get("comment"):
         lines.append(f"{{comentario: {_sanitize_directive_value(meta['comment'])}}}")
     return lines
@@ -902,25 +914,29 @@ def api_song_meta_put():
                     "meta": parse_cho_metadata(new_content)})
 
 
+_DIRECTIVE_TO_LIST_FIELD = {v: k for k, v in cp.LIST_FIELDS.items()}
+
+
 @app.route("/api/song/meta/quick-add", methods=["POST"])
 def api_song_meta_quick_add():
-    """Atajo: añade UN link (youtube o audio) sin tener que mandar todo el meta.
+    """Atajo: añade UN link sin tener que mandar todo el meta.
 
-    Body: {path, type: 'youtube'|'audio', label, url, prepend?: bool}
+    Body: {path, type: 'youtube'|'audio'|'spotify'|'drive'|'otro', label, url, prepend?: bool}
     """
     body = request.get_json(silent=True) or {}
     path_str = body.get("path", "")
     link_type = (body.get("type") or "").lower()
     label = (body.get("label") or "").strip()
     url = (body.get("url") or "").strip()
-    if not path_str or link_type not in ("youtube", "audio") or not url:
-        abort(400, "Faltan campos (path, type=youtube|audio, url)")
+    key = _DIRECTIVE_TO_LIST_FIELD.get(link_type)
+    if not path_str or key is None or not url:
+        abort(400, "Faltan campos (path, type=" +
+              "|".join(cp.LIST_FIELDS.values()) + ", url)")
     p = safe_relpath(path_str)
     if not p.exists():
         abort(404, "No existe")
     content = p.read_text(encoding="utf-8")
     meta = parse_cho_metadata(content)
-    key = "youtubeLinks" if link_type == "youtube" else "audioLinks"
     entry = {"label": label, "url": url}
     if body.get("prepend"):
         meta[key] = [entry] + list(meta.get(key) or [])

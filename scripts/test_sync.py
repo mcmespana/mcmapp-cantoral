@@ -70,6 +70,30 @@ def test_parse_media():
     assert m["youtubeLinks"] == [{"label": "Oficial", "url": "https://yt/abc"}]
     assert m["audioLinks"] == [{"label": "", "url": "https://a/x.mp3"}]
     assert m["album"] == "" and m["videoEmbed"] == ""
+    # sin spotify/drive/otro en el .cho -> listas vacías, no ausentes
+    assert m["spotifyLinks"] == [] and m["driveLinks"] == [] and m["otherLinks"] == []
+
+CHO_LINKS = (
+    "{title: Alma Misionera}\n"
+    "{spotify: Alborada | https://open.spotify.com/track/abc123}\n"
+    "{drive: Partitura | https://drive.google.com/file/d/DRIVEID/view?usp=drive_link}\n"
+    "{otro: https://ejemplo.com/partitura.pdf}\n"
+    "\n"
+    "{soc}\n[G]Letra\n{eoc}\n"
+)
+
+def test_parse_media_spotify_drive_otro():
+    m = cp.parse_media(CHO_LINKS)
+    assert m["spotifyLinks"] == [
+        {"label": "Alborada", "url": "https://open.spotify.com/track/abc123"}]
+    assert m["driveLinks"] == [
+        {"label": "Partitura", "url": "https://drive.google.com/file/d/DRIVEID/view?usp=drive_link"}]
+    assert m["otherLinks"] == [{"label": "", "url": "https://ejemplo.com/partitura.pdf"}]
+
+def test_strip_media_removes_spotify_drive_otro():
+    stripped = cp.strip_media(CHO_LINKS)
+    assert "{spotify:" not in stripped and "{drive:" not in stripped and "{otro:" not in stripped
+    assert "{soc}" in stripped and "[G]Letra" in stripped
 
 def test_strip_media_keeps_body():
     stripped = cp.strip_media(CHO)
@@ -95,10 +119,24 @@ def test_resolve_media_override_preserve_clear():
 def test_build_media_lines_order():
     media = {"rhythm": "4x4", "album": "X", "liturgicalTime": "T", "source": "S",
              "videoEmbed": "V", "youtubeLinks": [{"label": "A", "url": "u1"}],
-             "audioLinks": [{"label": "", "url": "a1"}], "comment": "c"}
+             "audioLinks": [{"label": "", "url": "a1"}],
+             "spotifyLinks": [{"label": "", "url": "s1"}],
+             "driveLinks": [{"label": "Partitura", "url": "d1"}],
+             "otherLinks": [{"label": "", "url": "o1"}],
+             "comment": "c"}
     lines = sync.build_media_lines(media)
     assert lines == ["{ritmo: 4x4}", "{album: X}", "{tiempo: T}", "{fuente: S}",
-                     "{video: V}", "{youtube: A | u1}", "{audio: a1}", "{comentario: c}"]
+                     "{video: V}", "{youtube: A | u1}", "{audio: a1}",
+                     "{spotify: s1}", "{drive: Partitura | d1}", "{otro: o1}",
+                     "{comentario: c}"]
+
+def test_resolve_media_spotify_drive_otro():
+    ed = {"spotifyLinksNew": [{"label": "Oficial", "url": "https://open.spotify.com/track/x"}]}
+    media = sync.resolve_media(ed, CHO_LINKS)
+    assert media["spotifyLinks"] == [{"label": "Oficial", "url": "https://open.spotify.com/track/x"}]
+    # driveLinks/otherLinks no vinieron en la edición -> se conservan
+    assert media["driveLinks"] == cp.parse_media(CHO_LINKS)["driveLinks"]
+    assert media["otherLinks"] == cp.parse_media(CHO_LINKS)["otherLinks"]
 
 def test_inject_strip_roundtrip_is_lossless_for_body():
     body = cp.strip_media(CHO)
