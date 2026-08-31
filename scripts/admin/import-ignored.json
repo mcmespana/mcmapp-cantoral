@@ -58,5 +58,53 @@
     "section": "D. Aleluya",
     "section_letter": "D",
     "archived_at": "2026-05-24T23:05:08"
+  },
+  "SANTO (Beatles) C/1": {
+    "title": "Santo (Beatles)",
+    "section": "F. Santos",
+    "section_letter": "F",
+    "archived_at": "2026-08-31T14:32:27"
+  },
+  "SANTO (Expresarte)": {
+    "title": "Santo (Expresarte)",
+    "section": "F. Santos",
+    "section_letter": "F",
+    "archived_at": "2026-08-31T14:32:34"
+  },
+  "SANTO (Prof M. Ángeles González)  C/3": {
+    "title": "Santo (Prof M. Ángeles González)",
+    "section": "F. Santos",
+    "section_letter": "F",
+    "archived_at": "2026-08-31T14:32:42"
+  },
+  "PADRE NUESTRO (Gallego)   C/2": {
+    "title": "Padre Nuestro (Gallego)",
+    "section": "G. Padrenuestro",
+    "section_letter": "G",
+    "archived_at": "2026-08-31T14:32:52"
+  },
+  "SOIS LA SAL (Luis Guitarra)": {
+    "title": "Sois la Sal (Luis Guitarra)",
+    "section": "N+1. Estribillos Cortos",
+    "section_letter": "N+1",
+    "archived_at": "2026-08-31T14:33:38"
+  },
+  "AL AMOR MAS SINCERO": {
+    "title": "Al Amor Mas Sincero",
+    "section": "N+1. Estribillos Cortos",
+    "section_letter": "N+1",
+    "archived_at": "2026-08-31T14:34:01"
+  },
+  "UN SI CONTESTA A OTRO SI (Virginia Barea, HNSC + María Garza)": {
+    "title": "Un si Contesta a Otro si (Virginia Barea, Hnsc + María Garza)",
+    "section": "I. Comunión",
+    "section_letter": "I",
+    "archived_at": "2026-08-31T14:34:12"
+  },
+  "NO TEMAS (NATI) C/1": {
+    "title": "No Temas (Nati)",
+    "section": "I. Comunión",
+    "section_letter": "I",
+    "archived_at": "2026-08-31T14:34:22"
   }
 }
