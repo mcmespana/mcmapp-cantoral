@@ -184,7 +184,7 @@
       <div class="stats-grid">
         <div class="stat" style="background: rgba(14, 165, 233, 0.10); cursor: pointer"
              @click="view='catalog'; mediaFilter='any_media'; categoryFilter=''"
-             title="Canciones con vídeo, YouTube o audio">
+             title="Canciones con algo puesto: vídeo, YouTube, audio, Spotify o partitura">
           <div class="stat-val">
             <span x-text="(data?.stats?.with_youtube || 0)"></span><span class="muted" style="font-size:13px"> / </span><span class="muted" style="font-size:13px" x-text="(data?.stats?.with_audio || 0)"></span>
           </div>
@@ -359,9 +359,9 @@
           <th>Autor</th>
           <th style="width:46px">Tono</th>
           <th style="width:90px">Categoría</th>
-          <th style="width:80px" title="Multimedia">🎬</th>
+          <th style="width:110px" title="Vídeos, audios y enlaces de la canción">🎬 Enlaces</th>
           <th style="width:130px">Estado revisión</th>
-          <th>Acciones</th>
+          <th class="acciones-col">Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -387,45 +387,25 @@
             <td style="color:var(--fg-2)" x-text="r.artist"></td>
             <td style="font-family:monospace;font-size:12px" x-text="r.key"></td>
             <td style="font-size:12px;color:var(--fg-3)" x-text="r.category_letter"></td>
+            <!-- Solo se pinta lo que la canción TIENE; el ➕ abre el panel para
+                 añadir cualquier tipo. Así una tabla de cientos de filas no se
+                 llena de iconos apagados. -->
             <td class="media-cell">
-              <button class="media-icon" :class="{ active: r.has_video || r.youtube_count > 0 }"
-                      :title="mediaYoutubeTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'youtube')">
-                <span x-text="(r.youtube_count > 0 || r.has_video) ? '📺' : '➕📺'"></span>
-                <span x-show="r.youtube_count + (r.has_video ? 1 : 0) > 0"
-                      class="media-count"
-                      x-text="r.youtube_count + (r.has_video ? 1 : 0)"></span>
-              </button>
-              <button class="media-icon" :class="{ active: r.audio_count > 0 }"
-                      :title="mediaAudioTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'audio')">
-                <span x-text="r.audio_count > 0 ? '🎧' : '➕🎧'"></span>
-                <span x-show="r.audio_count > 0" class="media-count" x-text="r.audio_count"></span>
-              </button>
-              <button class="media-icon" :class="{ active: r.spotify_count > 0 }"
-                      :title="mediaSpotifyTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'spotify')">
-                <span x-text="r.spotify_count > 0 ? '🎵' : '➕🎵'"></span>
-                <span x-show="r.spotify_count > 0" class="media-count" x-text="r.spotify_count"></span>
-              </button>
-              <button class="media-icon" :class="{ active: r.drive_count > 0 }"
-                      :title="mediaDriveTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'drive')">
-                <span x-text="r.drive_count > 0 ? '📁' : '➕📁'"></span>
-                <span x-show="r.drive_count > 0" class="media-count" x-text="r.drive_count"></span>
-              </button>
-              <button class="media-icon" :class="{ active: r.other_count > 0 }"
-                      :title="mediaOtroTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'otro')">
-                <span x-text="r.other_count > 0 ? '🔗' : '➕🔗'"></span>
-                <span x-show="r.other_count > 0" class="media-count" x-text="r.other_count"></span>
-              </button>
+              <template x-for="c in mediaChips(r)" :key="c.type">
+                <button class="media-icon active" :title="c.tooltip"
+                        @click.stop="openQuickAddLink(r, c.type)">
+                  <span x-text="c.icon"></span>
+                  <span class="media-count" x-text="c.count"></span>
+                </button>
+              </template>
+              <button class="media-icon add" @click.stop="openQuickAddLink(r, 'youtube')"
+                      title="Añadir enlace: YouTube, audio, Spotify, partitura…">➕</button>
             </td>
             <td>
               <span class="status-pill status-revisar" x-show="r.has_todo">📝 Revisar</span>
               <span class="status-pill status-acordes" x-show="r.has_chord_review">🎵 Acordes</span>
             </td>
-            <td>
+            <td class="acciones-col">
               <button class="btn-mini" @click="openEditor(r.path)">Editar</button>
               <button class="btn-mini" @click="openMoveModal(r)" title="Mover a otra categoría">↔ Mover</button>
               <button class="btn-mini danger" @click="deleteSong(r)">Borrar</button>
@@ -1777,7 +1757,10 @@
             <button class="link-mini" @click="skipEditorQueue()" title="Siguiente sin guardar">⏭</button>
             <button class="link-mini" @click="cancelEditorQueue()" title="Salir de la cola">✕</button>
           </span>
-          <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
+          <!-- Hay otro Guardar en las pestañas Audio/Vídeo y Datos extra: cada
+               uno dice QUÉ guarda, que si no nadie sabe cuál pulsar. -->
+          <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()"
+                  title="Guarda la letra, los acordes y los metadatos de aquí al lado · Ctrl+S">💾 Guardar canción</button>
           <button class="btn" @click="downloadCho()"
                   title="Bajarte el .cho tal y como está ahora, por si algo falla al guardar">⬇</button>
           <button class="btn" @click="closeEditor()">
@@ -1836,6 +1819,11 @@
           <div class="path-info">
             <small x-text="editor.path"></small>
           </div>
+          <!-- Chuletas del editor visual: solo estorban cuando estás en Raw,
+               Preview o rellenando enlaces/datos, así que solo salen en Visual.
+               La ayuda completa sigue en el ❓ de arriba. -->
+          <template x-if="editor.tab === 'visual'">
+          <div>
           <div class="meta-chuleta">
             <div class="chuleta-title">Copiar acordes entre estrofas (paso a paso)</div>
             <div class="chuleta-step"><span class="step-num">1</span> Click en el círculo <span class="chuleta-key">○</span> del margen izquierdo de cada línea con los acordes que quieres copiar (se pondrá <span class="chuleta-key chuleta-on">◉</span> azul).</div>
@@ -1864,6 +1852,8 @@
               Sin selección, <span class="chuleta-key">Supr</span> borra el acorde marcado.
             </div>
           </div>
+          </div>
+          </template>
         </div>
 
         <!-- VISUAL -->
@@ -2112,20 +2102,27 @@
           <div class="media-toolbar">
             <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
                     @click="saveMediaMeta()"
-                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar'"></button>
-            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar</button>
+                    title="Guarda solo los enlaces de esta pestaña"
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar enlaces'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()"
+                    title="Deja los enlaces como estaban antes de tocar nada">↩ Descartar</button>
             <span class="muted" style="margin-left:auto;font-size:11px">
               No aparecen en el chordpro del cantor — solo en la ficha.
             </span>
           </div>
 
+          <p class="pane-intro">
+            <strong>▶ Arriba</strong>: lo que suena o se ve <strong>dentro</strong> de la app.
+            <strong>↗ Abajo</strong>: lo que <strong>se abre aparte</strong> (Spotify, partituras…).
+            La etiqueta es opcional: es el texto del botón en la app.
+          </p>
+
           <div class="media-grid">
             <div class="media-section">
               <h4>📺 YouTube / Vídeo</h4>
               <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.4">
-                Pega el link de YouTube como te venga (<code>watch?v=</code>, <code>youtu.be</code>,
-                <code>shorts</code>…). Al guardar se convierte solo a formato <code>embed</code>,
-                que es el que reproduce la app; aquí siempre lo verás como link normal.
+                Pega el link como te venga (<code>watch?v=</code>, <code>youtu.be</code>,
+                <code>shorts</code>…): al guardar se convierte solo al formato que reproduce la app.
               </p>
               <label>Vídeo principal</label>
               <input type="url" x-model="mediaForm.videoEmbed" @input="mediaDirty = true"
@@ -2191,102 +2188,48 @@
               </div>
             </div>
 
+            <!-- Spotify + partitura de Drive + otros enlaces: una sola lista.
+                 Son idénticos de rellenar (etiqueta + URL) y lo único que
+                 cambia es el tipo, así que el tipo es un desplegable de la
+                 fila en vez de tres cajas separadas. -->
             <div class="media-section">
-              <h4>🎵 Spotify</h4>
+              <h4>↗ Se abre aparte <span class="h4-sub">Spotify · partituras · otras webs</span></h4>
               <p class="muted" style="font-size:11px;margin-top:0">
-                A diferencia de YouTube/Audio, esto <strong>abre la app de Spotify</strong> (o
-                Spotify Web) fuera del cantoral — la persona tiene que volver a mano. No se
-                reproduce embebido dentro de la app.
+                Estos no suenan dentro de la app: <strong>Spotify</strong> abre la app de Spotify
+                (hay que volver a mano) y <strong>partituras y otras webs</strong> se abren a
+                pantalla completa dentro del cantoral.
               </p>
               <div class="link-list-editor">
                 <div class="link-list-header">
-                  <span>Links de Spotify (orden = prioridad)</span>
-                  <button class="btn-mini" @click="addMediaLink('spotifyLinks')">➕ Añadir</button>
+                  <span>Enlaces (orden = prioridad dentro de cada tipo)</span>
+                  <button class="btn-mini" @click="addMediaLink('extraLinks', { type: 'spotify' })">➕ Añadir enlace</button>
                 </div>
-                <template x-for="(sp, i) in mediaForm.spotifyLinks" :key="'sp-'+i">
-                  <div class="link-row">
+                <template x-for="(lk, i) in mediaForm.extraLinks" :key="'ex-'+i">
+                  <div class="link-row with-type">
                     <span class="link-num" x-text="i+1"></span>
-                    <input type="text" class="link-label-input" x-model="sp.label"
-                           @input="mediaDirty = true" placeholder="Álbum, Single, Versión…" />
-                    <input type="url" class="link-url-input" x-model="sp.url"
-                           @input="mediaDirty = true" placeholder="https://open.spotify.com/track/…" />
+                    <select class="link-type-select" x-model="lk.type" @change="mediaDirty = true"
+                            :title="linkTypeInfo(lk.type).hint">
+                      <template x-for="t in extraLinkTypes()" :key="t.type">
+                        <option :value="t.type" x-text="t.icon + ' ' + t.word"></option>
+                      </template>
+                    </select>
+                    <input type="text" class="link-label-input" x-model="lk.label"
+                           @input="mediaDirty = true" placeholder="Etiqueta (opcional)" />
+                    <input type="url" class="link-url-input" x-model="lk.url"
+                           @input="mediaDirty = true" :placeholder="linkTypeInfo(lk.type).urlPh" />
                     <div class="link-actions">
+                      <a class="btn-mini" x-show="lk.url" :href="lk.url" target="_blank"
+                         title="Abrir en una pestaña nueva">↗</a>
                       <button class="btn-mini" :disabled="i === 0"
-                              @click="moveMediaLink('spotifyLinks', i, -1)">↑</button>
-                      <button class="btn-mini" :disabled="i === mediaForm.spotifyLinks.length - 1"
-                              @click="moveMediaLink('spotifyLinks', i, 1)">↓</button>
-                      <button class="btn-mini danger" @click="removeMediaLink('spotifyLinks', i)">✕</button>
+                              @click="moveMediaLink('extraLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.extraLinks.length - 1"
+                              @click="moveMediaLink('extraLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('extraLinks', i)">✕</button>
                     </div>
                   </div>
                 </template>
-                <div class="muted" x-show="mediaForm.spotifyLinks.length === 0"
-                     style="font-size:12px;padding:6px">— Sin enlaces de Spotify —</div>
-              </div>
-            </div>
-
-            <div class="media-section">
-              <h4>📁 Documento (Drive)</h4>
-              <p class="muted" style="font-size:11px;margin-top:0">
-                Partitura, cancionero o PDF escaneado en Drive. Se muestra <strong>a pantalla
-                completa dentro de la app</strong> (visor de documento) — NO es audio. Enlace de
-                compartir tal cual (<code>drive.google.com/file/d/&lt;id&gt;/view?usp=drive_link</code>),
-                compartido como «cualquiera con el enlace».
-              </p>
-              <div class="link-list-editor">
-                <div class="link-list-header">
-                  <span>Documentos de Drive (orden = prioridad)</span>
-                  <button class="btn-mini" @click="addMediaLink('driveLinks')">➕ Añadir</button>
-                </div>
-                <template x-for="(dr, i) in mediaForm.driveLinks" :key="'dr-'+i">
-                  <div class="link-row">
-                    <span class="link-num" x-text="i+1"></span>
-                    <input type="text" class="link-label-input" x-model="dr.label"
-                           @input="mediaDirty = true" placeholder="Partitura, Cancionero…" />
-                    <input type="url" class="link-url-input" x-model="dr.url"
-                           @input="mediaDirty = true" placeholder="https://drive.google.com/file/d/…/view?usp=drive_link" />
-                    <div class="link-actions">
-                      <button class="btn-mini" :disabled="i === 0"
-                              @click="moveMediaLink('driveLinks', i, -1)">↑</button>
-                      <button class="btn-mini" :disabled="i === mediaForm.driveLinks.length - 1"
-                              @click="moveMediaLink('driveLinks', i, 1)">↓</button>
-                      <button class="btn-mini danger" @click="removeMediaLink('driveLinks', i)">✕</button>
-                    </div>
-                  </div>
-                </template>
-                <div class="muted" x-show="mediaForm.driveLinks.length === 0"
-                     style="font-size:12px;padding:6px">— Sin documentos de Drive —</div>
-              </div>
-            </div>
-
-            <div class="media-section">
-              <h4>🔗 Otros enlaces</h4>
-              <p class="muted" style="font-size:11px;margin-top:0">
-                Cualquier otro recurso (p.ej. una partitura en una web externa que no es Drive).
-                Se abre <strong>a pantalla completa dentro de la app</strong>, tal cual la URL.
-              </p>
-              <div class="link-list-editor">
-                <div class="link-list-header">
-                  <span>Otros enlaces (orden = prioridad)</span>
-                  <button class="btn-mini" @click="addMediaLink('otherLinks')">➕ Añadir</button>
-                </div>
-                <template x-for="(ot, i) in mediaForm.otherLinks" :key="'ot-'+i">
-                  <div class="link-row">
-                    <span class="link-num" x-text="i+1"></span>
-                    <input type="text" class="link-label-input" x-model="ot.label"
-                           @input="mediaDirty = true" placeholder="Partitura (web externa)…" />
-                    <input type="url" class="link-url-input" x-model="ot.url"
-                           @input="mediaDirty = true" placeholder="https://…" />
-                    <div class="link-actions">
-                      <button class="btn-mini" :disabled="i === 0"
-                              @click="moveMediaLink('otherLinks', i, -1)">↑</button>
-                      <button class="btn-mini" :disabled="i === mediaForm.otherLinks.length - 1"
-                              @click="moveMediaLink('otherLinks', i, 1)">↓</button>
-                      <button class="btn-mini danger" @click="removeMediaLink('otherLinks', i)">✕</button>
-                    </div>
-                  </div>
-                </template>
-                <div class="muted" x-show="mediaForm.otherLinks.length === 0"
-                     style="font-size:12px;padding:6px">— Sin otros enlaces —</div>
+                <div class="muted" x-show="mediaForm.extraLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Ninguno todavía —</div>
               </div>
             </div>
           </div>
@@ -2297,8 +2240,10 @@
           <div class="media-toolbar">
             <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
                     @click="saveMediaMeta()"
-                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar'"></button>
-            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar</button>
+                    title="Guarda solo los datos de esta pestaña"
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar datos extra'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()"
+                    title="Deja estos datos como estaban antes de tocar nada">↩ Descartar</button>
           </div>
 
           <div class="extra-grid">
@@ -2379,7 +2324,7 @@
     <div class="editor-modal compact">
       <div class="editor-header">
         <h2>
-          <span x-text="quickLinkInfo().title"></span>
+          <span>🔗 Enlaces de la canción</span>
           <span class="muted" style="font-size:13px;font-weight:normal"
                 x-text="quickLink.songTitle ? '— ' + quickLink.songTitle : ''"></span>
         </h2>
@@ -2387,33 +2332,53 @@
       </div>
       <div class="editor-body single">
         <div class="editor-pane" style="overflow:auto">
-          <!-- Lista de links existentes -->
-          <div x-show="quickLink.existing.length > 0" style="margin-bottom:14px">
-            <h4 style="margin:0 0 6px;font-size:12px;color:var(--fg-3)">Existentes</h4>
+          <!-- Elegir tipo: con su nombre, no solo el icono. Es lo que explica
+               la diferencia justo donde hace falta. -->
+          <div class="type-picker">
+            <template x-for="t in linkTypes()" :key="t.type">
+              <button class="type-btn" :class="{ active: quickLink.type === t.type }"
+                      @click="switchQuickLinkType(t.type)">
+                <span x-text="t.icon"></span> <span x-text="t.word"></span>
+                <span class="type-btn-count"
+                      x-show="(quickLink.meta[t.key] || []).length"
+                      x-text="(quickLink.meta[t.key] || []).length"></span>
+              </button>
+            </template>
+          </div>
+          <p class="type-hint">
+            <span x-text="quickLinkInfo().dentro ? '▶' : '↗'"></span>
+            <span x-text="quickLinkInfo().hint"></span>
+          </p>
+
+          <!-- Lista de enlaces existentes de este tipo -->
+          <div x-show="quickLinkExisting().length > 0" style="margin-bottom:14px">
+            <h4 style="margin:0 0 6px;font-size:12px;color:var(--fg-3)">Ya puestos</h4>
             <ul class="link-list">
-              <template x-for="(lk, i) in quickLink.existing" :key="i">
+              <template x-for="(lk, i) in quickLinkExisting()" :key="i">
                 <li>
                   <span class="link-num" x-text="i+1"></span>
                   <span class="link-label" x-text="lk.label || '(sin etiqueta)'"></span>
                   <a :href="lk.url" target="_blank" class="link-url" x-text="lk.url"></a>
-                  <button class="btn-mini danger" @click="removeQuickLink(i)">✕</button>
+                  <button class="btn-mini danger" @click="removeQuickLink(i)" title="Quitar este enlace">✕</button>
                 </li>
               </template>
             </ul>
           </div>
           <div class="form-grid">
-            <label>Etiqueta</label>
+            <label>Etiqueta <span class="muted" style="font-weight:normal">(opcional)</span></label>
             <input type="text" x-model="quickLink.label"
                    :placeholder="quickLinkInfo().labelPh" />
             <label>URL</label>
             <input type="url" x-model="quickLink.url"
+                   @keydown.enter="saveQuickAddLink()"
                    :placeholder="quickLinkInfo().urlPh" />
           </div>
           <div class="actions-row">
             <button class="btn primary" :disabled="!quickLink.url || quickLink.saving"
                     @click="saveQuickAddLink()"
-                    x-text="quickLink.saving ? 'Guardando…' : 'Añadir y guardar'"></button>
-            <button class="btn" @click="openMultimediaTab(quickLink.path)">Editar todo →</button>
+                    x-text="quickLink.saving ? 'Guardando…' : '➕ Añadir'"></button>
+            <button class="btn" @click="openMultimediaTab(quickLink.path)"
+                    title="Abrir la canción en la pestaña Audio / Vídeo">Abrir la canción →</button>
           </div>
         </div>
       </div>
@@ -2429,6 +2394,25 @@
       </div>
       <div class="editor-body single">
         <div class="editor-pane" style="overflow:auto">
+          <h3>¿Qué enlace pongo dónde?</h3>
+          <p>Los pones con el <span class="chuleta-key">➕</span> de la columna
+             <strong>🎬 Enlaces</strong> del catálogo, o en la pestaña
+             <strong>🎬 Audio / Vídeo</strong> de la canción. La diferencia entre unos y
+             otros es solo <strong>qué hace la app al pulsarlos</strong>:</p>
+          <table class="kbd-help">
+            <template x-for="t in linkTypes()" :key="t.type">
+              <tr>
+                <th><span x-text="t.icon"></span> <span x-text="t.word"></span></th>
+                <td>
+                  <span x-text="t.dentro ? '▶ ' : '↗ '"></span><span x-text="t.hint"></span>
+                </td>
+              </tr>
+            </template>
+          </table>
+          <p class="muted small">La <strong>etiqueta</strong> es opcional y es el texto que
+             se ve en el botón dentro de la app («Versión coro», «Partitura»…). Si la dejas
+             vacía, la app pone un nombre por defecto.</p>
+
           <h3>Editor visual</h3>
           <table class="kbd-help">
             <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Durante el drag verás en azul la letra donde caerá y una etiqueta del modo (PALABRA/SÍLABA/LIBRE).</td></tr>

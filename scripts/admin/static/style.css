@@ -268,6 +268,10 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 }
 .doce-manual-banner .link-mini { margin-left: auto; }
 
+/* Los 3 botones de Acciones en una sola línea: partidos en dos, doblaban el
+   alto de cada fila y la tabla entera se leía peor. */
+.acciones-col { white-space: nowrap; width: 1%; }
+
 /* ─────── Multimedia (catálogo + editor) ─────── */
 .media-cell { white-space: nowrap; }
 .media-icon {
@@ -278,6 +282,10 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 }
 .media-icon:hover { opacity: 1; background: var(--bg-2); }
 .media-icon.active { opacity: 1; background: rgba(14, 165, 233, 0.10); border-color: rgba(14, 165, 233, 0.35); }
+/* El ➕ solo se nota al pasar por encima: está en todas las filas y no debe
+   competir con los chips de lo que la canción sí tiene. */
+.media-icon.add { opacity: 0.25; border-style: dashed; }
+.media-icon.add:hover { opacity: 1; border-style: solid; }
 .media-icon .media-count {
   font-size: 10px; font-weight: 700; color: var(--fg-2);
   background: var(--bg-2); padding: 0 4px; border-radius: 8px; margin-left: 2px;
@@ -312,6 +320,33 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
   width: 100%; padding: 5px 7px; font-size: 13px;
   background: var(--bg); border: 1px solid var(--border-strong); border-radius: 3px; color: var(--fg);
 }
+/* Frase de contexto al entrar en una pestaña del editor (una línea, sin ruido). */
+.pane-intro {
+  margin: 0; padding: 8px 16px; font-size: 12px; line-height: 1.5; color: var(--fg-2);
+  background: var(--bg-2); border-bottom: 1px solid var(--border);
+}
+.media-section h4 .h4-sub { font-size: 11px; font-weight: normal; color: var(--fg-3); margin-left: 6px; }
+
+/* Selector de tipo de enlace (modal de añadir): icono + nombre, para que se
+   entienda sin tener que saber qué significa cada emoji. */
+.type-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.type-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; font-size: 12px; cursor: pointer; color: var(--fg);
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.type-btn:hover { border-color: var(--accent); }
+.type-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.type-btn-count {
+  font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 8px;
+  background: var(--bg-3); color: var(--fg-2);
+}
+.type-btn.active .type-btn-count { background: rgba(255, 255, 255, 0.25); color: white; }
+.type-hint {
+  margin: 0 0 14px; padding: 7px 10px; font-size: 12px; line-height: 1.45; color: var(--fg-2);
+  background: var(--bg-2); border-left: 3px solid var(--accent); border-radius: 0 4px 4px 0;
+}
+
 .link-list-editor { margin-top: 10px; }
 .link-list-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -326,10 +361,18 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
   display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center;
   background: var(--accent); color: white; border-radius: 3px; font-size: 11px; font-weight: 700;
 }
+/* Fila con selector de tipo (Spotify / partitura / otro). */
+.link-row.with-type { grid-template-columns: 24px 150px 120px 1fr auto; }
+.link-type-select {
+  width: 100%; padding: 4px 5px; font-size: 12px;
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 3px; color: var(--fg);
+}
 .link-label-input { font-size: 12px !important; }
 .link-url-input { font-size: 11px !important; font-family: monospace; }
-.link-actions { display: flex; gap: 2px; }
+.link-actions { display: flex; gap: 2px; align-items: center; }
 .link-actions .btn-mini { padding: 2px 5px; font-size: 11px; min-width: 22px; }
+/* El ↗ de «abrir en otra pestaña» es un <a>, que no hereda el alto del botón. */
+.link-actions a.btn-mini { display: inline-block; text-align: center; text-decoration: none; line-height: 1.5; }
 
 /* Quick-add modal lista existentes */
 .link-list { list-style: none; margin: 0; padding: 0; }
