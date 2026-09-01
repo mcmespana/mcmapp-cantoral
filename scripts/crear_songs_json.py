@@ -122,6 +122,9 @@ def main():
             if extra['videoEmbed']:     entry['videoEmbed'] = extra['videoEmbed']
             if extra['youtubeLinks']:   entry['youtubeLinks'] = extra['youtubeLinks']
             if extra['audioLinks']:     entry['audioLinks'] = extra['audioLinks']
+            if extra['spotifyLinks']:   entry['spotifyLinks'] = extra['spotifyLinks']
+            if extra['driveLinks']:     entry['driveLinks'] = extra['driveLinks']
+            if extra['otherLinks']:     entry['otherLinks'] = extra['otherLinks']
             if extra['comment']:        entry['comment'] = extra['comment']
             tags = cp.normalize_tags(extra['tags'], tag_aliases)
             if tags:

@@ -119,7 +119,7 @@
       <div class="peticiones-banner-text">
         <h3>🙋 Peticiones de la gente</h3>
         <p class="muted">Consulta las solicitudes de canciones y los reportes de fallitos que la
-           gente envía desde la app. Se descargan de Firebase y se guardan en el repo.</p>
+           gente envía desde la app, para verlas y darles salida.</p>
       </div>
       <button class="btn primary big" @click="view = 'peticiones'; refreshPeticiones()"
               :disabled="peticiones.refreshing">
@@ -133,15 +133,17 @@
       <div class="stats-grid">
         <div class="stat">
           <div class="stat-val" x-text="data?.stats?.repo_total"></div>
-          <div class="stat-lbl">canciones en el repo</div>
+          <div class="stat-lbl">ya en la app</div>
         </div>
         <div class="stat">
           <div class="stat-val" x-text="data?.stats?.docx_total"></div>
-          <div class="stat-lbl">canciones en el cantoral</div>
+          <div class="stat-lbl">en el Word del cantoral</div>
         </div>
-        <div class="stat info">
+        <div class="stat info" style="cursor:pointer"
+             @click="view='catalog'; onlyInRepoFilter=true; categoryFilter=''"
+             title="Canciones que se hicieron aquí a mano y no están en el Word del cantoral">
           <div class="stat-val" x-text="data?.stats?.only_in_repo"></div>
-          <div class="stat-lbl">solo en repo (manuales)</div>
+          <div class="stat-lbl">hechas a mano (no están en el Word)</div>
         </div>
       </div>
     </div>
@@ -149,10 +151,6 @@
     <div class="stats-group">
       <h3 class="stats-group-title">📝 Pendiente de revisión</h3>
       <div class="stats-grid">
-        <div class="stat warn">
-          <div class="stat-val" x-text="data?.stats?.missing_from_repo"></div>
-          <div class="stat-lbl">faltan en el repo</div>
-        </div>
         <div class="stat todo" style="cursor:pointer" @click="view='catalog'; statusFilter='revisar'">
           <div class="stat-val" x-text="data?.stats?.todo_count"></div>
           <div class="stat-lbl">📝 revisar canción</div>
@@ -165,8 +163,15 @@
     </div>
 
     <div class="stats-group">
-      <h3 class="stats-group-title">📥 Fuentes de importación</h3>
+      <h3 class="stats-group-title">📥 De dónde traer canciones</h3>
       <div class="stats-grid">
+        <!-- «Faltan por importar» vive aquí, no en «Pendiente de revisión»:
+             no es una canción que haya que repasar, es una que aún no está. -->
+        <div class="stat warn" style="cursor:pointer" @click="view = 'import'"
+             title="Canciones del Word del cantoral que todavía no están en la app">
+          <div class="stat-val" x-text="data?.stats?.missing_from_repo"></div>
+          <div class="stat-lbl">📥 faltan por importar del Word</div>
+        </div>
         <div class="stat" style="background: rgba(139, 92, 246, 0.10); cursor: pointer" @click="view = 'latex'; loadLatex()">
           <div class="stat-val" x-text="(data?.stats?.latex_new || 0) + '/' + (data?.stats?.latex_total || 0)"></div>
           <div class="stat-lbl">📐 nuevas / total en LaTeX</div>
@@ -180,15 +185,22 @@
     </div>
 
     <div class="stats-group">
-      <h3 class="stats-group-title">🎬 Multimedia</h3>
+      <h3 class="stats-group-title">🎬 Vídeos, audios y enlaces</h3>
       <div class="stats-grid">
+        <!-- Antes esta tarjeta ponía «36 / 1» con la etiqueta «con YouTube · con
+             Audio»: se leía como una proporción y no lo era. Ahora cada número
+             va en su tarjeta y todas dicen algo que se puede ir a arreglar. -->
         <div class="stat" style="background: rgba(14, 165, 233, 0.10); cursor: pointer"
              @click="view='catalog'; mediaFilter='any_media'; categoryFilter=''"
-             title="Canciones con vídeo, YouTube o audio">
-          <div class="stat-val">
-            <span x-text="(data?.stats?.with_youtube || 0)"></span><span class="muted" style="font-size:13px"> / </span><span class="muted" style="font-size:13px" x-text="(data?.stats?.with_audio || 0)"></span>
-          </div>
-          <div class="stat-lbl">📺 con YouTube · 🎧 con Audio</div>
+             title="Canciones que ya tienen algo: vídeo, YouTube, audio, Spotify o partitura">
+          <div class="stat-val" x-text="countWithMedia(true)"></div>
+          <div class="stat-lbl">★ con algo puesto</div>
+        </div>
+        <div class="stat" style="background: rgba(100, 116, 139, 0.10); cursor: pointer"
+             @click="view='catalog'; mediaFilter='no_media'; categoryFilter=''"
+             title="Canciones sin nada: ni vídeo, ni audio, ni Spotify, ni partitura">
+          <div class="stat-val" x-text="countWithMedia(false)"></div>
+          <div class="stat-lbl">∅ sin nada puesto</div>
         </div>
         <div class="stat" style="background: rgba(239, 68, 68, 0.10); cursor: pointer"
              @click="view='catalog'; mediaFilter='no_youtube'; categoryFilter=''"
@@ -211,16 +223,16 @@
     </div>
 
     <div class="commit-reminder">
-      <h3>🚀 Cómo publicar tus cambios</h3>
+      <h3>🚀 Cómo llega esto a la app de la gente</h3>
       <p>
-        Esta app guarda directamente en los archivos <code>.cho</code> del repositorio.
-        Cuando hayas terminado de editar, haz un <code>git commit</code> y un
-        <code>git push</code> a la rama. Un GitHub Action se encarga automáticamente
-        de regenerar <code>songs-vX.json</code> y subirlo a Firebase.
+        Lo que editas aquí se guarda al momento, pero <strong>solo en este ordenador</strong>.
+        Para que lo vea todo el mundo hay que <strong>subirlo a la nube</strong>: pulsa el
+        botón de estado de abajo a la izquierda (⎇) y dale a subir. A partir de ahí es
+        automático — en unos minutos las canciones nuevas están en la app.
       </p>
       <p class="muted">
-        En la terminal, desde la raíz del repo:
-        <code>git add songs/ &amp;&amp; git commit -m "..." &amp;&amp; git push</code>
+        Cuando ese botón dice «✓ Todo guardado en la nube», no hay nada pendiente: lo
+        tuyo ya está publicado.
       </p>
     </div>
   </section>
@@ -359,9 +371,9 @@
           <th>Autor</th>
           <th style="width:46px">Tono</th>
           <th style="width:90px">Categoría</th>
-          <th style="width:80px" title="Multimedia">🎬</th>
+          <th style="width:110px" title="Vídeos, audios y enlaces de la canción">🎬 Enlaces</th>
           <th style="width:130px">Estado revisión</th>
-          <th>Acciones</th>
+          <th class="acciones-col">Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -371,7 +383,7 @@
             <td style="color:var(--fg-3);font-size:11px" x-text="r.number"></td>
             <td>
               <a href="#" @click.prevent="openEditor(r.path)" x-text="r.title"></a>
-              <span x-show="!r.in_docx" class="badge-manual" title="Solo en repo, no en cantoral">manual</span>
+              <span x-show="!r.in_docx" class="badge-manual" title="Se hizo aquí a mano: no está en el Word del cantoral">manual</span>
               <div class="tag-cell" x-show="(r.tags || []).length">
                 <template x-for="slug in (r.tags || [])" :key="slug">
                   <span class="tag-chip sm clickable"
@@ -386,28 +398,31 @@
             </td>
             <td style="color:var(--fg-2)" x-text="r.artist"></td>
             <td style="font-family:monospace;font-size:12px" x-text="r.key"></td>
-            <td style="font-size:12px;color:var(--fg-3)" x-text="r.category_letter"></td>
+            <!-- La letra sola no dice nada a quien no se sabe el índice de
+                 memoria; el nombre completo no cabe sin doblar el alto de la
+                 fila, así que va en el tooltip. -->
+            <td style="font-size:12px;color:var(--fg-3)"
+                :title="categoryName(r.category_letter)"
+                x-text="r.category_letter"></td>
+            <!-- Solo se pinta lo que la canción TIENE; el ➕ abre el panel para
+                 añadir cualquier tipo. Así una tabla de cientos de filas no se
+                 llena de iconos apagados. -->
             <td class="media-cell">
-              <button class="media-icon" :class="{ active: r.has_video || r.youtube_count > 0 }"
-                      :title="mediaYoutubeTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'youtube')">
-                <span x-text="(r.youtube_count > 0 || r.has_video) ? '📺' : '➕📺'"></span>
-                <span x-show="r.youtube_count + (r.has_video ? 1 : 0) > 0"
-                      class="media-count"
-                      x-text="r.youtube_count + (r.has_video ? 1 : 0)"></span>
-              </button>
-              <button class="media-icon" :class="{ active: r.audio_count > 0 }"
-                      :title="mediaAudioTooltip(r)"
-                      @click.stop="openQuickAddLink(r, 'audio')">
-                <span x-text="r.audio_count > 0 ? '🎧' : '➕🎧'"></span>
-                <span x-show="r.audio_count > 0" class="media-count" x-text="r.audio_count"></span>
-              </button>
+              <template x-for="c in mediaChips(r)" :key="c.type">
+                <button class="media-icon active" :title="c.tooltip"
+                        @click.stop="openQuickAddLink(r, c.type)">
+                  <span x-text="c.icon"></span>
+                  <span class="media-count" x-text="c.count"></span>
+                </button>
+              </template>
+              <button class="media-icon add" @click.stop="openQuickAddLink(r, 'youtube')"
+                      title="Añadir enlace: YouTube, audio, Spotify, partitura…">➕</button>
             </td>
             <td>
               <span class="status-pill status-revisar" x-show="r.has_todo">📝 Revisar</span>
               <span class="status-pill status-acordes" x-show="r.has_chord_review">🎵 Acordes</span>
             </td>
-            <td>
+            <td class="acciones-col">
               <button class="btn-mini" @click="openEditor(r.path)">Editar</button>
               <button class="btn-mini" @click="openMoveModal(r)" title="Mover a otra categoría">↔ Mover</button>
               <button class="btn-mini danger" @click="deleteSong(r)">Borrar</button>
@@ -422,9 +437,10 @@
   <section x-show="view === 'import' && data" x-cloak x-init="loadIgnored()">
     <h1>📥 Importar del cantoral</h1>
     <p class="muted">
-      Canciones del Word que <strong>aún no existen</strong> en <code>/songs/</code>.
-      Al importar, se guarda con la línea <code>{comment: TO DO: PENDIENTE REVISIÓN ACORDES}</code>
-      al principio para que las revises (mostrarán <span class="badge todo">📝</span>).
+      Canciones del Word del cantoral que <strong>todavía no están en la app</strong>.
+      Al importarlas quedan marcadas para <strong>revisar los acordes</strong>
+      (<span class="badge todo">📝</span>), porque la conversión automática no siempre
+      los coloca bien: alguien tiene que darles un repaso antes de darlas por buenas.
     </p>
 
     <div class="filter-bar">
@@ -454,7 +470,7 @@
                      :checked="selectedImports.has(m.docx_id)"
                      @change="toggleImport(m.docx_id)" />
             </td>
-            <td x-text="m.section_letter"></td>
+            <td :title="categoryName(m.section_letter)" x-text="m.section_letter"></td>
             <td>
               <a href="#" @click.prevent="previewDocx(m.docx_id)" x-text="m.title"></a>
               <template x-if="m.doce_available">
@@ -553,7 +569,7 @@
           <tbody>
             <template x-for="ig in importIgnored" :key="ig.title_raw">
               <tr>
-                <td x-text="ig.section_letter"></td>
+                <td :title="categoryName(ig.section_letter)" x-text="ig.section_letter"></td>
                 <td x-text="ig.title"></td>
                 <td style="font-size:11px;color:var(--fg-3)" x-text="ig.archived_at ? ig.archived_at.slice(0,10) : ''"></td>
                 <td>
@@ -572,7 +588,7 @@
     <h1>📐 Importar de LaTeX</h1>
     <p class="muted">
       Archivos <code>.tex</code> en <code>scripts/input/&lt;categoría&gt;/</code>.
-      Si el título <strong>coincide con una canción ya existente</strong> en el repo, se ofrece
+      Si el título <strong>coincide con una canción que ya está en la app</strong>, se ofrece
       <span class="badge-overwrite">↻ sobrescribir manteniendo número</span> en lugar de crear otra.
       Tras importar, el <code>.tex</code> se mueve a <code>scripts/input/processed/</code>.
     </p>
@@ -611,7 +627,7 @@
           <th>Categoría destino</th>
           <th>Título (LaTeX)</th>
           <th>Tono</th>
-          <th>Coincidencia en repo</th>
+          <th>¿Ya está en la app?</th>
           <th>Modo</th>
           <th>Avisos</th>
           <th></th>
@@ -722,8 +738,8 @@
       <input type="search" placeholder="Buscar título o autor…" x-model="doceSearch" />
       <select x-model="doceMatchFilter">
         <option value="">Todas</option>
-        <option value="new">Sólo nuevas (no en repo)</option>
-        <option value="match">Ya en repo</option>
+        <option value="new">Sólo las que no están en la app</option>
+        <option value="match">Ya están en la app</option>
       </select>
       <label class="muted" style="font-size:12px" title="Hace 1 request extra por canción">
         <input type="checkbox" x-model="doceIncludeMeta" />
@@ -778,7 +794,7 @@
           <th>Título</th>
           <th>Autor</th>
           <th>Subtítulo</th>
-          <th>En repo</th>
+          <th title="Si la canción ya está en la app o sería nueva">¿Ya está?</th>
           <th>Categoría destino</th>
           <th>Nº</th>
           <th>Acciones</th>
@@ -1336,11 +1352,11 @@
   <section x-show="view === 'tags'" x-cloak>
     <h1>🏷 Etiquetas</h1>
     <p class="muted">
-      Las etiquetas viven en los <code>.cho</code> como <code>{tags: a, b, c}</code> — esa es
-      la fuente de verdad, y son <strong>libres</strong>: se inventan sobre la marcha y
-      funcionan sin declarar nada. Aquí solo se les pone el <strong>nombre bonito</strong>,
-      el <strong>emoji</strong> y los <strong>alias</strong>, que se guardan en
-      <code>songs/tags.json</code> y viajan a la app en <code>songs/tags</code>.
+      Las etiquetas se ponen <strong>en cada canción</strong> (pestaña 📋 Datos extra) y son
+      <strong>libres</strong>: te las inventas sobre la marcha y ya funcionan en la app, sin
+      pasar por aquí. Esta pantalla es solo para <strong>darles buena pinta</strong>: nombre
+      con acentos y mayúsculas, emoji, y <strong>alias</strong> para que dos formas de
+      escribir lo mismo («viejuna» / «viejunas») cuenten como una sola.
     </p>
 
     <div class="filter-bar">
@@ -1516,9 +1532,11 @@
 
   <section x-show="view === 'reorder' && data" x-cloak>
     <h1>🔀 Reordenar canciones</h1>
-    <p class="muted">Elige una categoría, arrastra para reordenar y pulsa <em>Aplicar</em>.
-       Puedes <strong>dejar huecos</strong> entre canciones (líneas grises) y se respetarán
-       en el numerado. Se hace backup en <code>songs-backup-edits/</code>.</p>
+    <p class="muted">Cambia el <strong>número</strong> con el que sale cada canción en la app:
+       elige una categoría, arrastra las canciones al orden que quieras y pulsa
+       <em>Aplicar</em>. Puedes <strong>dejar huecos</strong> (líneas grises) para reservar
+       números. Antes de tocar nada se guarda una copia de seguridad, así que se puede
+       deshacer.</p>
     <div class="filter-bar">
       <select x-model="reorderCategory" @change="loadReorder()">
         <option value="">— Elige categoría —</option>
@@ -1536,6 +1554,9 @@
       </template>
     </div>
 
+    <p class="muted" x-show="!reorderCategory" style="padding:8px 2px">
+      Elige una categoría arriba para ver sus canciones y poder arrastrarlas.
+    </p>
     <ul class="reorder-list" x-show="reorderCategory">
       <template x-for="(s, idx) in reorderSlots" :key="(s.filename || 'gap-') + idx">
         <li draggable="true"
@@ -1569,21 +1590,21 @@
   <!-- PETICIONES DE LA GENTE -->
   <section x-show="view === 'peticiones'" x-cloak>
     <h1>🙋 Peticiones de la gente</h1>
-    <p class="muted">Solicitudes de canciones y reportes de fallitos que la gente manda desde la app
-       (lo que el MCM Panel muestra). Al consultar, se descargan de Firebase
-       (<code>songs/solicitudes</code> y <code>songs/fallitos</code>) y se guardan en
-       <code>peticiones/peticiones.json</code>. Haz <code>git commit</code> para conservar el histórico.</p>
+    <p class="muted">Canciones que la gente pide y fallitos que avisa desde la app.
+       <strong>Consultar y guardar</strong> trae lo nuevo que haya llegado; con
+       <strong>Guardar en el repo</strong> queda registrado para siempre y lo ve el resto
+       del equipo. Es lo mismo que muestra el MCM Panel.</p>
 
     <div class="filter-bar" style="justify-content: flex-start;">
       <button class="btn primary" @click="refreshPeticiones()" :disabled="peticiones.refreshing || peticiones.committing">
         <span x-show="!peticiones.refreshing">🔄 Consultar y guardar</span>
-        <span x-show="peticiones.refreshing">⏳ Consultando Firebase…</span>
+        <span x-show="peticiones.refreshing">⏳ Buscando novedades…</span>
       </button>
       <button class="btn" @click="commitPeticiones()"
               :disabled="peticiones.committing || peticiones.refreshing"
-              title="Hace git add/commit/push solo de la carpeta peticiones/">
-        <span x-show="!peticiones.committing">📦 Guardar en el repo (commit)</span>
-        <span x-show="peticiones.committing">⏳ Guardando en git…</span>
+              title="Sube solo estas peticiones a la nube, para que queden guardadas y las vea el equipo">
+        <span x-show="!peticiones.committing">📦 Subir a la nube</span>
+        <span x-show="peticiones.committing">⏳ Subiendo…</span>
       </button>
       <span class="muted" style="font-size:12px" x-show="peticiones.updatedAt">
         Última consulta: <span x-text="fmtFecha({ _lastFetched: peticiones.updatedAt })"></span>
@@ -1628,7 +1649,7 @@
               </td>
               <td style="white-space:nowrap" x-text="fmtFecha(s)"></td>
               <td>
-                <span class="status-pill" x-text="s.status || 'pendiente'"></span>
+                <span class="status-pill" x-text="estadoLabel(s.status)"></span>
                 <span class="muted" style="font-size:11px" x-show="s._inFirebase === false" title="Ya no está en Firebase (resuelta o borrada)">· archivada</span>
               </td>
             </tr>
@@ -1665,7 +1686,7 @@
               </td>
               <td style="white-space:nowrap" x-text="fmtFecha(f)"></td>
               <td>
-                <span class="status-pill" x-text="f.status || 'pending'"></span>
+                <span class="status-pill" x-text="estadoLabel(f.status)"></span>
                 <span class="muted" style="font-size:11px" x-show="f._inFirebase === false" title="Ya no está en Firebase (resuelto o borrado)">· archivado</span>
               </td>
             </tr>
@@ -1677,8 +1698,10 @@
 
   <section x-show="view === 'backups'" x-cloak>
     <h1>🗂 Gestión de backups</h1>
-    <p class="muted">Cada vez que guardas o borras una canción se crea una copia en
-       <code>songs-backup-edits/</code>. Aquí puedes limpiarlos manualmente cuando ya no los necesites.</p>
+    <p class="muted">Cada vez que alguien guarda o borra una canción, se guarda antes una
+       <strong>copia de cómo estaba</strong>. Es la red de seguridad por si hay que volver
+       atrás. Aquí solo hace falta entrar para <strong>hacer sitio</strong> cuando se acumulan
+       muchas.</p>
 
     <div class="filter-bar" style="justify-content: flex-start;">
       <button class="btn" @click="loadBackups()" :disabled="backups.loading">🔄 Actualizar</button>
@@ -1696,10 +1719,15 @@
             <option value="10">10</option>
           </select>
           <span style="font-size:13px">más recientes y borrar el resto</span>
-          <button class="btn" @click="cleanupBackups()"
+          <!-- «Limpiar» es la acción normal de mantenimiento, así que es la
+               destacada. «Borrar todos» se lleva la red de seguridad entera:
+               sigue estando, pero sin ser el botón más llamativo de la pantalla. -->
+          <button class="btn primary" @click="cleanupBackups()"
+                  title="Borra las copias viejas y conserva las más recientes"
                   x-text="'Limpiar (' + Math.max(0, backups.sessions.length - backups.keepLast) + ' a borrar)'"
                   :disabled="backups.sessions.length <= backups.keepLast"></button>
-          <button class="btn danger" @click="deleteAllBackups()">Borrar todos</button>
+          <button class="btn danger-ghost" @click="deleteAllBackups()"
+                  title="Borra TODAS las copias de seguridad, incluidas las de hoy">Borrar todos</button>
         </div>
       </template>
     </div>
@@ -1759,7 +1787,10 @@
             <button class="link-mini" @click="skipEditorQueue()" title="Siguiente sin guardar">⏭</button>
             <button class="link-mini" @click="cancelEditorQueue()" title="Salir de la cola">✕</button>
           </span>
-          <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()">💾 Guardar</button>
+          <!-- Hay otro Guardar en las pestañas Audio/Vídeo y Datos extra: cada
+               uno dice QUÉ guarda, que si no nadie sabe cuál pulsar. -->
+          <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()"
+                  title="Guarda la letra, los acordes y los metadatos de aquí al lado · Ctrl+S">💾 Guardar canción</button>
           <button class="btn" @click="downloadCho()"
                   title="Bajarte el .cho tal y como está ahora, por si algo falla al guardar">⬇</button>
           <button class="btn" @click="closeEditor()">
@@ -1774,8 +1805,8 @@
         <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
         <button :class="{active: editor.tab === 'media'}" @click="setEditorTab('media')">
           🎬 Audio / Vídeo
-          <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) > 0"
-                x-text="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0)"></span>
+          <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) + (editor.meta.spotify_count || 0) + (editor.meta.drive_count || 0) + (editor.meta.other_count || 0) > 0"
+                x-text="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) + (editor.meta.spotify_count || 0) + (editor.meta.drive_count || 0) + (editor.meta.other_count || 0)"></span>
         </button>
         <button :class="{active: editor.tab === 'extra'}" @click="setEditorTab('extra')">
           📋 Datos extra
@@ -1818,6 +1849,11 @@
           <div class="path-info">
             <small x-text="editor.path"></small>
           </div>
+          <!-- Chuletas del editor visual: solo estorban cuando estás en Raw,
+               Preview o rellenando enlaces/datos, así que solo salen en Visual.
+               La ayuda completa sigue en el ❓ de arriba. -->
+          <template x-if="editor.tab === 'visual'">
+          <div>
           <div class="meta-chuleta">
             <div class="chuleta-title">Copiar acordes entre estrofas (paso a paso)</div>
             <div class="chuleta-step"><span class="step-num">1</span> Click en el círculo <span class="chuleta-key">○</span> del margen izquierdo de cada línea con los acordes que quieres copiar (se pondrá <span class="chuleta-key chuleta-on">◉</span> azul).</div>
@@ -1846,6 +1882,8 @@
               Sin selección, <span class="chuleta-key">Supr</span> borra el acorde marcado.
             </div>
           </div>
+          </div>
+          </template>
         </div>
 
         <!-- VISUAL -->
@@ -2094,20 +2132,27 @@
           <div class="media-toolbar">
             <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
                     @click="saveMediaMeta()"
-                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar'"></button>
-            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar</button>
+                    title="Guarda solo los enlaces de esta pestaña"
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar enlaces'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()"
+                    title="Deja los enlaces como estaban antes de tocar nada">↩ Descartar</button>
             <span class="muted" style="margin-left:auto;font-size:11px">
               No aparecen en el chordpro del cantor — solo en la ficha.
             </span>
           </div>
 
+          <p class="pane-intro">
+            <strong>▶ Arriba</strong>: lo que suena o se ve <strong>dentro</strong> de la app.
+            <strong>↗ Abajo</strong>: lo que <strong>se abre aparte</strong> (Spotify, partituras…).
+            La etiqueta es opcional: es el texto del botón en la app.
+          </p>
+
           <div class="media-grid">
             <div class="media-section">
               <h4>📺 YouTube / Vídeo</h4>
               <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.4">
-                Pega el link de YouTube como te venga (<code>watch?v=</code>, <code>youtu.be</code>,
-                <code>shorts</code>…). Al guardar se convierte solo a formato <code>embed</code>,
-                que es el que reproduce la app; aquí siempre lo verás como link normal.
+                Pega el link como te venga (<code>watch?v=</code>, <code>youtu.be</code>,
+                <code>shorts</code>…): al guardar se convierte solo al formato que reproduce la app.
               </p>
               <label>Vídeo principal</label>
               <input type="url" x-model="mediaForm.videoEmbed" @input="mediaDirty = true"
@@ -2172,6 +2217,51 @@
                      style="font-size:12px;padding:6px">— Sin audios internos —</div>
               </div>
             </div>
+
+            <!-- Spotify + partitura de Drive + otros enlaces: una sola lista.
+                 Son idénticos de rellenar (etiqueta + URL) y lo único que
+                 cambia es el tipo, así que el tipo es un desplegable de la
+                 fila en vez de tres cajas separadas. -->
+            <div class="media-section">
+              <h4>↗ Se abre aparte <span class="h4-sub">Spotify · partituras · otras webs</span></h4>
+              <p class="muted" style="font-size:11px;margin-top:0">
+                Estos no suenan dentro de la app: <strong>Spotify</strong> abre la app de Spotify
+                (hay que volver a mano) y <strong>partituras y otras webs</strong> se abren a
+                pantalla completa dentro del cantoral.
+              </p>
+              <div class="link-list-editor">
+                <div class="link-list-header">
+                  <span>Enlaces (orden = prioridad dentro de cada tipo)</span>
+                  <button class="btn-mini" @click="addMediaLink('extraLinks', { type: 'spotify' })">➕ Añadir enlace</button>
+                </div>
+                <template x-for="(lk, i) in mediaForm.extraLinks" :key="'ex-'+i">
+                  <div class="link-row with-type">
+                    <span class="link-num" x-text="i+1"></span>
+                    <select class="link-type-select" x-model="lk.type" @change="mediaDirty = true"
+                            :title="linkTypeInfo(lk.type).hint">
+                      <template x-for="t in extraLinkTypes()" :key="t.type">
+                        <option :value="t.type" x-text="t.icon + ' ' + t.word"></option>
+                      </template>
+                    </select>
+                    <input type="text" class="link-label-input" x-model="lk.label"
+                           @input="mediaDirty = true" placeholder="Etiqueta (opcional)" />
+                    <input type="url" class="link-url-input" x-model="lk.url"
+                           @input="mediaDirty = true" :placeholder="linkTypeInfo(lk.type).urlPh" />
+                    <div class="link-actions">
+                      <a class="btn-mini" x-show="lk.url" :href="lk.url" target="_blank"
+                         title="Abrir en una pestaña nueva">↗</a>
+                      <button class="btn-mini" :disabled="i === 0"
+                              @click="moveMediaLink('extraLinks', i, -1)">↑</button>
+                      <button class="btn-mini" :disabled="i === mediaForm.extraLinks.length - 1"
+                              @click="moveMediaLink('extraLinks', i, 1)">↓</button>
+                      <button class="btn-mini danger" @click="removeMediaLink('extraLinks', i)">✕</button>
+                    </div>
+                  </div>
+                </template>
+                <div class="muted" x-show="mediaForm.extraLinks.length === 0"
+                     style="font-size:12px;padding:6px">— Ninguno todavía —</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2180,8 +2270,10 @@
           <div class="media-toolbar">
             <button class="btn primary" :disabled="!mediaDirty || mediaSaving"
                     @click="saveMediaMeta()"
-                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar'"></button>
-            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()">Cancelar</button>
+                    title="Guarda solo los datos de esta pestaña"
+                    x-text="mediaSaving ? 'Guardando…' : '💾 Guardar datos extra'"></button>
+            <button class="btn" :disabled="!mediaDirty" @click="resetMediaMeta()"
+                    title="Deja estos datos como estaban antes de tocar nada">↩ Descartar</button>
           </div>
 
           <div class="extra-grid">
@@ -2262,7 +2354,7 @@
     <div class="editor-modal compact">
       <div class="editor-header">
         <h2>
-          <span x-text="quickLink.type === 'youtube' ? '📺 Añadir YouTube' : '🎧 Añadir Audio'"></span>
+          <span>🔗 Enlaces de la canción</span>
           <span class="muted" style="font-size:13px;font-weight:normal"
                 x-text="quickLink.songTitle ? '— ' + quickLink.songTitle : ''"></span>
         </h2>
@@ -2270,33 +2362,53 @@
       </div>
       <div class="editor-body single">
         <div class="editor-pane" style="overflow:auto">
-          <!-- Lista de links existentes -->
-          <div x-show="quickLink.existing.length > 0" style="margin-bottom:14px">
-            <h4 style="margin:0 0 6px;font-size:12px;color:var(--fg-3)">Existentes</h4>
+          <!-- Elegir tipo: con su nombre, no solo el icono. Es lo que explica
+               la diferencia justo donde hace falta. -->
+          <div class="type-picker">
+            <template x-for="t in linkTypes()" :key="t.type">
+              <button class="type-btn" :class="{ active: quickLink.type === t.type }"
+                      @click="switchQuickLinkType(t.type)">
+                <span x-text="t.icon"></span> <span x-text="t.word"></span>
+                <span class="type-btn-count"
+                      x-show="(quickLink.meta[t.key] || []).length"
+                      x-text="(quickLink.meta[t.key] || []).length"></span>
+              </button>
+            </template>
+          </div>
+          <p class="type-hint">
+            <span x-text="quickLinkInfo().dentro ? '▶' : '↗'"></span>
+            <span x-text="quickLinkInfo().hint"></span>
+          </p>
+
+          <!-- Lista de enlaces existentes de este tipo -->
+          <div x-show="quickLinkExisting().length > 0" style="margin-bottom:14px">
+            <h4 style="margin:0 0 6px;font-size:12px;color:var(--fg-3)">Ya puestos</h4>
             <ul class="link-list">
-              <template x-for="(lk, i) in quickLink.existing" :key="i">
+              <template x-for="(lk, i) in quickLinkExisting()" :key="i">
                 <li>
                   <span class="link-num" x-text="i+1"></span>
                   <span class="link-label" x-text="lk.label || '(sin etiqueta)'"></span>
                   <a :href="lk.url" target="_blank" class="link-url" x-text="lk.url"></a>
-                  <button class="btn-mini danger" @click="removeQuickLink(i)">✕</button>
+                  <button class="btn-mini danger" @click="removeQuickLink(i)" title="Quitar este enlace">✕</button>
                 </li>
               </template>
             </ul>
           </div>
           <div class="form-grid">
-            <label>Etiqueta</label>
+            <label>Etiqueta <span class="muted" style="font-weight:normal">(opcional)</span></label>
             <input type="text" x-model="quickLink.label"
-                   :placeholder="quickLink.type === 'youtube' ? 'Original, Alternativo, En vivo…' : 'Ensayo voces, Versión coro…'" />
+                   :placeholder="quickLinkInfo().labelPh" />
             <label>URL</label>
             <input type="url" x-model="quickLink.url"
-                   :placeholder="quickLink.type === 'youtube' ? 'https://www.youtube.com/watch?v=…' : 'https://drive.google.com/… o /audio.mp3'" />
+                   @keydown.enter="saveQuickAddLink()"
+                   :placeholder="quickLinkInfo().urlPh" />
           </div>
           <div class="actions-row">
             <button class="btn primary" :disabled="!quickLink.url || quickLink.saving"
                     @click="saveQuickAddLink()"
-                    x-text="quickLink.saving ? 'Guardando…' : 'Añadir y guardar'"></button>
-            <button class="btn" @click="openMultimediaTab(quickLink.path)">Editar todo →</button>
+                    x-text="quickLink.saving ? 'Guardando…' : '➕ Añadir'"></button>
+            <button class="btn" @click="openMultimediaTab(quickLink.path)"
+                    title="Abrir la canción en la pestaña Audio / Vídeo">Abrir la canción →</button>
           </div>
         </div>
       </div>
@@ -2312,6 +2424,25 @@
       </div>
       <div class="editor-body single">
         <div class="editor-pane" style="overflow:auto">
+          <h3>¿Qué enlace pongo dónde?</h3>
+          <p>Los pones con el <span class="chuleta-key">➕</span> de la columna
+             <strong>🎬 Enlaces</strong> del catálogo, o en la pestaña
+             <strong>🎬 Audio / Vídeo</strong> de la canción. La diferencia entre unos y
+             otros es solo <strong>qué hace la app al pulsarlos</strong>:</p>
+          <table class="kbd-help">
+            <template x-for="t in linkTypes()" :key="t.type">
+              <tr>
+                <th><span x-text="t.icon"></span> <span x-text="t.word"></span></th>
+                <td>
+                  <span x-text="t.dentro ? '▶ ' : '↗ '"></span><span x-text="t.hint"></span>
+                </td>
+              </tr>
+            </template>
+          </table>
+          <p class="muted small">La <strong>etiqueta</strong> es opcional y es el texto que
+             se ve en el botón dentro de la app («Versión coro», «Partitura»…). Si la dejas
+             vacía, la app pone un nombre por defecto.</p>
+
           <h3>Editor visual</h3>
           <table class="kbd-help">
             <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Durante el drag verás en azul la letra donde caerá y una etiqueta del modo (PALABRA/SÍLABA/LIBRE).</td></tr>
@@ -2413,7 +2544,12 @@
             <li>Pulsa <strong>"Pegar acordes"</strong>. Se alinean por <em>palabra</em>: el acorde N de la línea origen va a la palabra N de la línea destino. Luego ajusta a mano lo que haga falta.</li>
           </ol>
           <h3>Guardado</h3>
-          <p>La app escribe directamente en los archivos <code>.cho</code>. Cuando termines, haz <code>git commit</code> y <code>git push</code> — un GitHub Action regenera <code>songs.json</code> y lo sube a Firebase automáticamente.</p>
+          <p>Lo que editas se guarda al momento, pero solo en este ordenador. Para que llegue
+             a la app de la gente hay que <strong>subirlo a la nube</strong> con el botón de
+             estado de la esquina de abajo a la izquierda (⎇). De ahí en adelante es
+             automático: en unos minutos está publicado.</p>
+          <p class="muted small">Por debajo eso hace un <code>commit</code> y un
+             <code>push</code>, y un proceso automático regenera el JSON de la app.</p>
         </div>
       </div>
     </div>

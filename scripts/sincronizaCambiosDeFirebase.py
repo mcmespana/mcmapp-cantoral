@@ -131,14 +131,11 @@ def build_media_lines(media: dict) -> list:
         val = val.strip() if isinstance(val, str) else val
         if val:
             lines.append(f"{{{directive}: {val}}}")
-    for it in (media.get("youtubeLinks") or []):
-        v = cp.format_label_url(it)
-        if v:
-            lines.append(f"{{youtube: {v}}}")
-    for it in (media.get("audioLinks") or []):
-        v = cp.format_label_url(it)
-        if v:
-            lines.append(f"{{audio: {v}}}")
+    for field, directive in cp.LIST_FIELDS.items():
+        for it in (media.get(field) or []):
+            v = cp.format_label_url(it)
+            if v:
+                lines.append(f"{{{directive}: {v}}}")
     tags = cp.format_tags(media.get("tags") or [])
     if tags:
         lines.append(f"{{tags: {tags}}}")

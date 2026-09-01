@@ -35,6 +35,46 @@ function toYoutubeWatch(url) {
   return 'https://www.youtube.com/watch?v=' + id + (s ? '&t=' + s : '');
 }
 
+// ─────────── Tipos de enlace de una canción ───────────
+// Única fuente de verdad de la UI para los enlaces: de aquí salen los chips del
+// catálogo, el selector del modal de «añadir» y el desplegable de la pestaña
+// Audio / Vídeo. `key` es el campo del .cho (ver chordpro.LIST_FIELDS) y `type`
+// el nombre que entiende /api/song/meta/quick-add.
+//
+// `dentro` distingue las dos familias, que es LO ÚNICO que hay que entender:
+//   true  → suena/se ve dentro de la app (reproductor flotante o embed).
+//   false → se abre aparte (Spotify sale de la app; Drive/Otros a pantalla completa).
+const LINK_TYPES = [
+  { type: 'youtube', key: 'youtubeLinks', countField: 'youtube_count', icon: '📺',
+    word: 'YouTube', dentro: true,
+    hint: 'Se ve dentro de la app, embebido.',
+    labelPh: 'Original, Alternativo, En vivo…',
+    urlPh: 'https://www.youtube.com/watch?v=…' },
+  { type: 'audio', key: 'audioLinks', countField: 'audio_count', icon: '🎧',
+    word: 'Audio', dentro: true,
+    hint: 'Se escucha dentro de la app, con el reproductor flotante.',
+    labelPh: 'Ensayo voces, Versión coro…',
+    urlPh: 'https://drive.google.com/… o /audio.mp3' },
+  { type: 'spotify', key: 'spotifyLinks', countField: 'spotify_count', icon: '🎵',
+    word: 'Spotify', dentro: false,
+    hint: 'Abre la app de Spotify: se sale del cantoral y hay que volver a mano.',
+    labelPh: 'Álbum, Single, Versión…',
+    urlPh: 'https://open.spotify.com/track/…' },
+  { type: 'drive', key: 'driveLinks', countField: 'drive_count', icon: '📁',
+    word: 'Partitura en Drive', dentro: false,
+    hint: 'Documento de Drive (partitura, PDF) a pantalla completa dentro de la app.',
+    labelPh: 'Partitura, Cancionero…',
+    urlPh: 'https://drive.google.com/file/d/…/view?usp=drive_link' },
+  { type: 'otro', key: 'otherLinks', countField: 'other_count', icon: '🔗',
+    word: 'Otro enlace', dentro: false,
+    hint: 'Cualquier otra web o PDF, a pantalla completa dentro de la app.',
+    labelPh: 'Partitura (web externa)…',
+    urlPh: 'https://…' },
+];
+const LINK_TYPE_BY_TYPE = Object.fromEntries(LINK_TYPES.map(t => [t.type, t]));
+// Los que se editan juntos en una sola lista («se abren aparte»).
+const EXTRA_LINK_TYPES = LINK_TYPES.filter(t => !t.dentro);
+
 // ─────────── Etiquetas: slug y picker reutilizable ───────────
 // Espejo de `slugify_tag` en scripts/chordpro.py. Si cambia el criterio en un
 // lado hay que cambiarlo en el otro (igual que con los helpers de YouTube).
@@ -160,8 +200,8 @@ function app() {
     bulkMoving: false,
 
     // Quick add link modal
-    quickLink: { open: false, path: '', songTitle: '', type: '', label: '', url: '',
-                 existing: [], saving: false },
+    quickLink: { open: false, path: '', songTitle: '', type: 'youtube', label: '', url: '',
+                 meta: {}, saving: false },
     // ── Etiquetas ──
     // Catálogo global (declaradas + descubiertas en los .cho, con su recuento).
     // Se carga una vez y se refresca solo cuando algo lo cambia.
@@ -184,7 +224,7 @@ function app() {
 
     // Editor multimedia tab
     mediaForm: { rhythm: '', album: '', liturgicalTime: '', source: '', videoEmbed: '',
-                 comment: '', youtubeLinks: [], audioLinks: [], tags: [] },
+                 comment: '', youtubeLinks: [], audioLinks: [], extraLinks: [], tags: [] },
     mediaOriginal: '',
     mediaDirty: false,
     mediaSaving: false,
@@ -554,9 +594,9 @@ function app() {
       } else if (this.mediaFilter === 'no_audio') {
         list = list.filter(r => (r.audio_count || 0) === 0);
       } else if (this.mediaFilter === 'no_media') {
-        list = list.filter(r => (r.youtube_count || 0) === 0 && !r.has_video && (r.audio_count || 0) === 0);
+        list = list.filter(r => this.mediaTotal(r) === 0);
       } else if (this.mediaFilter === 'any_media') {
-        list = list.filter(r => (r.youtube_count || 0) > 0 || r.has_video || (r.audio_count || 0) > 0);
+        list = list.filter(r => this.mediaTotal(r) > 0);
       }
       if (this.tagFilter === '__none__') {
         list = list.filter(r => !(r.tags || []).length);
@@ -1267,40 +1307,72 @@ function app() {
     },
 
     // ─────────── Multimedia / quick add ───────────
-    mediaYoutubeTooltip(r) {
-      const n = (r.youtube_count || 0) + (r.has_video ? 1 : 0);
-      if (n === 0) return 'Sin YouTube ni vídeo — click para añadir';
-      return `${n} link${n > 1 ? 's' : ''} de YouTube/vídeo · click para añadir más`;
+    // Cuántas canciones tienen (o no) algo puesto. Se cuenta aquí y no en el
+    // servidor para que siempre cuadre con el filtro del catálogo.
+    countWithMedia(conAlgo) {
+      const list = (this.data && this.data.repo_songs) || [];
+      return list.filter(r => (this.mediaTotal(r) > 0) === conAlgo).length;
     },
-    mediaAudioTooltip(r) {
-      const n = r.audio_count || 0;
-      if (n === 0) return 'Sin audio interno — click para añadir';
-      return `${n} audio${n > 1 ? 's' : ''} interno${n > 1 ? 's' : ''} · click para añadir más`;
+    // Cuántas cosas multimedia tiene una canción, contando los 5 tipos de
+    // enlace más el vídeo principal.
+    mediaTotal(r) {
+      return LINK_TYPES.reduce((n, t) => n + (r[t.countField] || 0), 0) + (r.has_video ? 1 : 0);
+    },
+    // Chips de la columna 🎬 del catálogo: SOLO los tipos que tienen algo. Una
+    // fila sin multimedia se queda limpia (solo el ➕), que es lo que hace
+    // legible una tabla de cientos de canciones.
+    mediaChips(r) {
+      return LINK_TYPES.map(t => {
+        let n = r[t.countField] || 0;
+        if (t.type === 'youtube' && r.has_video) n += 1;  // el vídeo principal cuenta
+        if (!n) return null;
+        return {
+          type: t.type, icon: t.icon, count: n,
+          tooltip: `${n} ${t.word}${n > 1 ? ' (x' + n + ')' : ''} — ${t.hint} Click para ver o añadir.`,
+        };
+      }).filter(Boolean);
+    },
+    // Los estados llegan de Firebase en inglés ('pending'); la interfaz está en
+    // español, así que se traducen al pintarlos.
+    estadoLabel(v) {
+      const k = String(v || 'pending').toLowerCase();
+      return {
+        pending: 'pendiente', in_progress: 'en curso', done: 'hecho',
+        resolved: 'resuelto', rejected: 'descartado', duplicate: 'duplicado',
+      }[k] || k;
+    },
+    linkTypes() { return LINK_TYPES; },
+    extraLinkTypes() { return EXTRA_LINK_TYPES; },
+    linkTypeInfo(type) { return LINK_TYPE_BY_TYPE[type] || LINK_TYPE_BY_TYPE.otro; },
+    // Info del tipo elegido ahora mismo en el modal de añadir.
+    quickLinkInfo() { return this.linkTypeInfo(this.quickLink.type); },
+    // Los enlaces que ya tiene la canción del tipo elegido. Se leen del `meta`
+    // que se cargó al abrir, así cambiar de tipo es instantáneo (sin fetch).
+    quickLinkExisting() {
+      return (this.quickLink.meta || {})[this.quickLinkInfo().key] || [];
     },
     async openQuickAddLink(repoSong, type) {
-      // Carga el .cho actual para listar los links existentes
-      let existing = [];
-      try {
-        const r = await fetch('/api/song?path=' + encodeURIComponent(repoSong.path));
-        if (r.ok) {
-          const j = await r.json();
-          existing = type === 'youtube'
-            ? (j.meta.youtubeLinks || [])
-            : (j.meta.audioLinks || []);
-        }
-      } catch (_) { /* silence */ }
       this.quickLink = {
         open: true, path: repoSong.path, songTitle: repoSong.title,
-        type, label: '', url: '', existing, saving: false,
+        type, label: '', url: '', meta: {}, saving: false,
       };
+      try {
+        const r = await fetch('/api/song?path=' + encodeURIComponent(repoSong.path));
+        if (r.ok) this.quickLink.meta = (await r.json()).meta || {};
+      } catch (_) { /* silence */ }
+    },
+    switchQuickLinkType(type) {
+      this.quickLink.type = type;
+      this.quickLink.label = '';
+      this.quickLink.url = '';
     },
     async removeQuickLink(idx) {
       // Borra un link existente (reescribe meta entera sin él)
-      if (!confirm('¿Borrar este link?')) return;
+      if (!confirm('¿Borrar este enlace?')) return;
       try {
         const r = await fetch('/api/song?path=' + encodeURIComponent(this.quickLink.path));
         const j = await r.json();
-        const key = this.quickLink.type === 'youtube' ? 'youtubeLinks' : 'audioLinks';
+        const key = this.quickLinkInfo().key;
         const list = (j.meta[key] || []).slice();
         list.splice(idx, 1);
         const meta = { ...j.meta, [key]: list };
@@ -1309,7 +1381,7 @@ function app() {
           body: JSON.stringify(meta),
         });
         if (!r2.ok) throw new Error('HTTP ' + r2.status);
-        this.quickLink.existing = list;
+        this.quickLink.meta = (await r2.json()).meta || meta;
         await this.loadCatalog();
       } catch (e) {
         alert('Error: ' + e.message);
@@ -1330,9 +1402,7 @@ function app() {
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
-        // Actualizar lista existente + refrescar catálogo
-        const key = this.quickLink.type === 'youtube' ? 'youtubeLinks' : 'audioLinks';
-        this.quickLink.existing = j.meta[key] || [];
+        this.quickLink.meta = j.meta || {};
         this.quickLink.label = '';
         this.quickLink.url = '';
         await this.loadCatalog();
@@ -1366,14 +1436,19 @@ function app() {
         comment: m.comment || '',
         youtubeLinks: (m.youtubeLinks || []).map(l => ({ ...l, url: toYoutubeWatch(l.url) })),
         audioLinks: (m.audioLinks || []).map(l => ({ ...l })),
+        // Spotify + Drive + Otros se editan en UNA sola lista con selector de
+        // tipo: son tres cajas idénticas y separarlas solo hacía la pantalla
+        // más larga. Al guardar se reparten otra vez en sus tres campos.
+        extraLinks: EXTRA_LINK_TYPES.flatMap(
+          t => (m[t.key] || []).map(l => ({ type: t.type, label: l.label || '', url: l.url || '' }))),
         tags: [...(m.tags || [])],
       };
       this.mediaOriginal = JSON.stringify(this.mediaForm);
       this.mediaDirty = false;
     },
     resetMediaMeta() { this.loadMediaForm(); },
-    addMediaLink(key) {
-      this.mediaForm[key] = [...this.mediaForm[key], { label: '', url: '' }];
+    addMediaLink(key, tpl = {}) {
+      this.mediaForm[key] = [...this.mediaForm[key], { label: '', url: '', ...tpl }];
       this.mediaDirty = true;
     },
     removeMediaLink(key, idx) {
@@ -1413,6 +1488,14 @@ function app() {
           youtubeLinks: this.mediaForm.youtubeLinks.filter(l => l.url && l.url.trim()),
           audioLinks: this.mediaForm.audioLinks.filter(l => l.url && l.url.trim()),
         };
+        // La lista única de «se abren aparte» vuelve a sus tres campos del .cho,
+        // conservando el orden dentro de cada tipo.
+        delete payload.extraLinks;
+        for (const t of EXTRA_LINK_TYPES) {
+          payload[t.key] = this.mediaForm.extraLinks
+            .filter(l => l.type === t.type && l.url && l.url.trim())
+            .map(l => ({ label: l.label || '', url: l.url }));
+        }
         const r = await fetch('/api/song/meta?path=' + encodeURIComponent(this.editor.path), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -1484,6 +1567,10 @@ function app() {
       }
     },
     get reorderModified() {
+      // Sin categoría elegida no hay nada que aplicar. Antes comparaba "[]"
+      // con '' y salía true: la pantalla decía que tenías cambios pendientes
+      // recién entrar, sin haber tocado nada.
+      if (!this.reorderCategory) return false;
       return JSON.stringify((this.reorderSlots || []).map(s => s.filename)) !== this.reorderOriginal;
     },
     onReorderDrop(targetIdx) {
@@ -2794,7 +2881,7 @@ function app() {
         this.editor.originalContent = this.editor.content;
         this.editor.dirty = false;
         this.lastSaveAt = new Date();
-        this.setSaveIndicator('saved', '✓ Guardado · haz commit cuando termines');
+        this.setSaveIndicator('saved', '✓ Guardado · súbelo a la nube al terminar');
         await this.loadCatalog();
       } catch (e) {
         this.setSaveIndicator('error', '✗ Error guardando');
@@ -2803,7 +2890,7 @@ function app() {
     },
     setSaveIndicator(cls, text) { this.saveIndicator = { cls, text }; },
     async deleteSong(r) {
-      if (!confirm(`¿Borrar "${r.title}" (${r.filename})? Se hace backup en songs-backup-edits.`)) return;
+      if (!confirm(`¿Borrar "${r.title}"?\n\nSe guarda una copia de seguridad antes, así que se puede recuperar.`)) return;
       try {
         const res = await fetch('/api/song?path=' + encodeURIComponent(r.path), { method: 'DELETE' });
         if (!res.ok) throw new Error('HTTP ' + res.status);

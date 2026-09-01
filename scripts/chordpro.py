@@ -28,6 +28,18 @@ SCALAR_FIELDS = {
 LIST_FIELDS = {
     "youtubeLinks": "youtube",
     "audioLinks":   "audio",
+    # Enlaces "no-audio-embebido": la app los abre distinto a audioLinks (que
+    # se escucha con reproductor flotante dentro de la app). Ver §3.1 de
+    # docs/CAMPOS_CANCIONES.md para el porqué de cada uno:
+    #   - spotify: abre la app/web de Spotify fuera de la nuestra (no hay embed).
+    #   - drive:   documento de Drive (partitura, PDF, imagen) a pantalla
+    #              completa dentro de la app. NO es audio (eso sigue siendo
+    #              un {audio:} con enlace de Drive, que sí se reproduce embebido).
+    #   - otro:    cualquier otro enlace (partitura en una web externa, etc.)
+    #              a pantalla completa dentro de la app.
+    "spotifyLinks": "spotify",
+    "driveLinks":   "drive",
+    "otherLinks":   "otro",
 }
 # Etiquetas: una sola directiva {tags: a, b, c} → lista de slugs.
 # Es su propia familia porque no es ni escalar ni «label | url»: es una lista
@@ -40,6 +52,7 @@ MEDIA_DIRECTIVES = (list(SCALAR_FIELDS.values()) + list(LIST_FIELDS.values())
                     + list(TAG_FIELDS.values()))
 
 _DIRECTIVE_TO_SCALAR = {v: k for k, v in SCALAR_FIELDS.items()}
+_DIRECTIVE_TO_LIST = {v: k for k, v in LIST_FIELDS.items()}
 
 _MEDIA_RX = re.compile(
     r"\{\s*(" + "|".join(MEDIA_DIRECTIVES) + r")\s*:\s*(.*?)\s*\}", re.IGNORECASE)
@@ -184,10 +197,8 @@ def parse_media(text: str) -> dict:
         val = m.group(2).strip()
         if not val:
             continue
-        if directive == "youtube":
-            media["youtubeLinks"].append(parse_label_url(val))
-        elif directive == "audio":
-            media["audioLinks"].append(parse_label_url(val))
+        if directive in _DIRECTIVE_TO_LIST:
+            media[_DIRECTIVE_TO_LIST[directive]].append(parse_label_url(val))
         elif directive == "tags":
             # Repetible por comodidad: dos {tags:} se acumulan sin duplicar.
             media["tags"] = normalize_tags(media["tags"] + [val])

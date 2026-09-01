@@ -70,7 +70,10 @@ y su clave en `songs/ediciones`.
 | Fuente | `{fuente: ...}` | `source` | `sourceNew` / `sourceOld` | string | Atribución de origen. |
 | Vídeo embebido | `{video: ...}` | `videoEmbed` | `videoEmbedNew` / `videoEmbedOld` | string (url) | Cualquier forma de URL de YouTube vale (`embed/`, `watch?v=`, `youtu.be/`…): la app normaliza a embed al leerla. |
 | Enlaces YouTube | `{youtube: label \| url}` | `youtubeLinks` | `youtubeLinksNew` / `youtubeLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
-| Enlaces de audio | `{audio: label \| url}` | `audioLinks` | `audioLinksNew` / `audioLinksOld` | array de `{label,url}` | Repetible. Ver §3. |
+| Enlaces de audio | `{audio: label \| url}` | `audioLinks` | `audioLinksNew` / `audioLinksOld` | array de `{label,url}` | Repetible. Se **escucha** con reproductor flotante dentro de la app. Ver §3. |
+| Enlaces Spotify | `{spotify: label \| url}` | `spotifyLinks` | `spotifyLinksNew` / `spotifyLinksOld` | array de `{label,url}` | Repetible. **Nuevo.** Abre la app/web de Spotify (sale de la app). Ver §3.1. |
+| Enlaces Drive (documento) | `{drive: label \| url}` | `driveLinks` | `driveLinksNew` / `driveLinksOld` | array de `{label,url}` | Repetible. **Nuevo.** Documento de Drive (partitura, PDF, imagen) a pantalla completa. **No confundir** con un `{audio:}` que apunte a Drive (eso es audio y se reproduce embebido). Ver §3.1. |
+| Otros enlaces | `{otro: label \| url}` | `otherLinks` | `otherLinksNew` / `otherLinksOld` | array de `{label,url}` | Repetible. **Nuevo.** Cualquier otro enlace (p.ej. partitura en una web externa) a pantalla completa. Ver §3.1. |
 | Comentario (meta) | `{comentario: ...}` | `comment` | `commentNew` / `commentOld` | string | OJO: solo `{comentario:}` (español) se extrae a metadato. |
 | Etiquetas | `{tags: a, b, c}` | `tags` | `tagsNew` / `tagsOld` | array de string (slugs) | Libres y transversales. Ver §6. |
 
@@ -84,7 +87,8 @@ y su clave en `songs/ediciones`.
 > **Multimedia sí se sincroniza.** Desde la ampliación del
 > `scripts/sincronizaCambiosDeFirebase.py`, el repo aplica también los campos
 > multimedia (`rhythm`, `album`, `liturgicalTime`, `source`, `videoEmbed`,
-> `youtubeLinks`, `audioLinks`, `comment`) que la app escriba en `ediciones`.
+> `youtubeLinks`, `audioLinks`, `spotifyLinks`, `driveLinks`, `otherLinks`,
+> `comment`) que la app escriba en `ediciones`.
 > Reglas de aplicación (importante para la app):
 >
 > - El **cuerpo** (`contentNew`) viaja **sin** las directivas multimedia (igual
@@ -93,7 +97,8 @@ y su clave en `songs/ediciones`.
 >   (un string vacío o un array vacío **borra** la directiva); si **no** lo trae,
 >   se **conserva** lo que ya hubiera en el `.cho`. Así, editar solo la letra no
 >   pierde los enlaces, y editar solo un enlace no toca la letra.
-> - `youtubeLinksNew` / `audioLinksNew` son arrays de `{label, url}` (ver §3).
+> - `youtubeLinksNew` / `audioLinksNew` / `spotifyLinksNew` / `driveLinksNew` /
+>   `otherLinksNew` son arrays de `{label, url}` (ver §3).
 
 ---
 
@@ -132,6 +137,35 @@ Drive). El fichero debe estar compartido como «cualquiera con el enlace».
 
 `{video:}` es distinto: una sola URL de embed que va al campo `videoEmbed`
 (string, no array).
+
+### 3.1 Spotify / Drive (documento) / Otros — enlaces que NO son audio embebido
+
+`{spotify:}`, `{drive:}` y `{otro:}` usan **la misma convención `label | url`**
+que `{youtube:}`/`{audio:}` y son igual de **repetibles**. La diferencia está
+en cómo los abre la app, y por eso van en campos separados de `audioLinks` en
+vez de mezclarse con él:
+
+| Directiva | Campo JSON | Cómo lo abre la app | Ejemplo de uso |
+|-----------|-----------|----------------------|-----------------|
+| `{audio:}` | `audioLinks` | **Reproductor flotante embebido**, dentro de la propia app (incluye audio de Drive, ver arriba). | Pista guía, versión de referencia. |
+| `{youtube:}` | `youtubeLinks` | Vídeo embebido (según la pantalla). | Versión oficial en YouTube. |
+| `{spotify:}` | `spotifyLinks` | **Sale de la app**: abre la app de Spotify (o Spotify Web si no está instalada). El usuario tiene que volver a la app del cantoral a mano — no hay reproductor embebido posible ahí. | `https://open.spotify.com/track/...` o `/album/...`. |
+| `{drive:}` | `driveLinks` | **Documento a pantalla completa** dentro de la app (visor, no reproductor de audio). Mismo truco que el audio de Drive: se extrae el `id` del enlace de compartir para construir el visor/preview. | Partitura o cancionero escaneado, guardado como PDF/imagen en Drive. |
+| `{otro:}` | `otherLinks` | **Enlace genérico a pantalla completa** dentro de la app (visor web / PDF, tal cual la URL, sin transformarla). | Partitura o recurso en una web externa que no es Drive. |
+
+Puntos importantes para quien lo implemente en la app:
+
+- **`spotifyLinks` es el único que sale de la app.** Los demás (`audioLinks`,
+  `youtubeLinks`, `driveLinks`, `otherLinks`) se quedan dentro, aunque
+  `driveLinks`/`otherLinks` lo hagan a pantalla completa en vez de en un
+  reproductor flotante.
+- **`driveLinks` NO es audio.** Un `{audio: ... drive.google.com ...}` y un
+  `{drive: ... drive.google.com ...}` son intencionadamente cosas distintas:
+  el primero se reproduce como sonido embebido, el segundo se muestra como
+  documento a pantalla completa. No hay auto-detección de uno a partir del
+  otro: el tipo lo decide la directiva que se use en el `.cho`.
+- `otherLinks` es el cajón de sastre para «un enlace más, a pantalla
+  completa» que no encaja como Spotify ni como documento de Drive.
 
 ---
 
@@ -189,7 +223,7 @@ Al generar el JSON (`crear_songs_json.py`), estas directivas **se eliminan** de
 `content` porque pasan a ser campos propios:
 
 `{ritmo:}` · `{album:}` · `{tiempo:}` · `{fuente:}` · `{video:}` ·
-`{youtube:}` · `{audio:}` · `{comentario:}`
+`{youtube:}` · `{audio:}` · `{spotify:}` · `{drive:}` · `{otro:}` · `{comentario:}`
 
 El resto **permanece** en `content`: `{title:}`, `{artist:}`/`{author:}`,
 `{key:}`, `{capo:}`, `{soc}`, `{eoc}`, `{arr:}`, `{comment:}`, `{c:}` y los
@@ -232,6 +266,9 @@ y el `filename`; el sincronizador resuelve la carpeta a partir de la letra.
 {youtube: Versión oficial | https://www.youtube.com/watch?v=yffsxTH2DiE}
 {youtube: Alternativo | https://www.youtube.com/watch?v=otroId}
 {audio: Pista guía | https://example.com/guia.mp3}
+{spotify: Alborada | https://open.spotify.com/track/1a2b3c4d5e}
+{drive: Partitura | https://drive.google.com/file/d/1AbCdEfGhIjK/view?usp=drive_link}
+{otro: Cancionero (web) | https://doceacordes.es/partituras/ven-a-celebrar.pdf}
 
 {soc}
 [G]Ven a cele[D]brar...
@@ -260,6 +297,15 @@ y el `filename`; el sincronizador resuelve la carpeta a partir de la letra.
   ],
   "audioLinks": [
     { "label": "Pista guía", "url": "https://example.com/guia.mp3" }
+  ],
+  "spotifyLinks": [
+    { "label": "Alborada", "url": "https://open.spotify.com/track/1a2b3c4d5e" }
+  ],
+  "driveLinks": [
+    { "label": "Partitura", "url": "https://drive.google.com/file/d/1AbCdEfGhIjK/view?usp=drive_link" }
+  ],
+  "otherLinks": [
+    { "label": "Cancionero (web)", "url": "https://doceacordes.es/partituras/ven-a-celebrar.pdf" }
   ],
   "content": "{title: Ven a Celebrar}\n{artist: Alborada}\n{key: G}\n{capo: 2}\n\n{soc}\n[G]Ven a cele[D]brar...\n{eoc}\n{arr: Intro: SOL · RE · DO  (x2)}\n[Em]Estrofa primera...\n"
 }
@@ -328,8 +374,14 @@ Reglas del sincronizador:
 - Campos garantizados en cada canción: `title`, `filename`, `author`, `key`,
   `capo`, `info`, `content`.
 - Campos opcionales (pueden faltar): `rhythm`, `album`, `liturgicalTime`,
-  `source`, `videoEmbed`, `youtubeLinks`, `audioLinks`, `comment`.
-- `youtubeLinks` / `audioLinks` son arrays de `{label, url}` (label puede ser `""`).
+  `source`, `videoEmbed`, `youtubeLinks`, `audioLinks`, `spotifyLinks`,
+  `driveLinks`, `otherLinks`, `comment`.
+- `youtubeLinks` / `audioLinks` / `spotifyLinks` / `driveLinks` / `otherLinks`
+  son arrays de `{label, url}` (label puede ser `""`). Ver §3.1 para cómo debe
+  abrir cada uno la app: `audioLinks` = reproductor flotante; `youtubeLinks` =
+  vídeo embebido; `spotifyLinks` = **sale de la app** (abre Spotify);
+  `driveLinks`/`otherLinks` = documento/enlace a **pantalla completa** dentro
+  de la app.
 - Al renderizar `content`: acordes `[X]` sobre la letra; estribillos entre
   `{soc}`/`{eoc}`; líneas `{arr: ...}` como anotación de arreglo; `{comment:}` y
   `{c:}` como notas.
@@ -337,7 +389,8 @@ Reglas del sincronizador:
   `*Old`/`*New` + `filename` + `category`. El repo aplica
   `title/author/key/capo/info/content` **y** los multimedia (`rhythmNew`,
   `albumNew`, `liturgicalTimeNew`, `sourceNew`, `videoEmbedNew`,
-  `youtubeLinksNew`, `audioLinksNew`, `commentNew`).
+  `youtubeLinksNew`, `audioLinksNew`, `spotifyLinksNew`, `driveLinksNew`,
+  `otherLinksNew`, `commentNew`).
 - El `contentNew` debe ir **sin** directivas multimedia (el repo las reinyecta);
   los multimedia se envían como sus campos estructurados. Solo hace falta incluir
   los campos que cambian; los demás se conservan.
