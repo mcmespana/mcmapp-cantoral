@@ -177,6 +177,10 @@ code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size:
 .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .btn.primary:hover:not(:disabled) { background: #1d4ed8; }
 .btn.danger { background: var(--danger); color: white; border-color: var(--danger); }
+/* Destructivo pero sin gritar: para lo que no debe ser el botón que más llama
+   la atención de la pantalla (p.ej. «Borrar todos» los backups). */
+.btn.danger-ghost { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn.danger-ghost:hover:not(:disabled) { background: var(--danger); color: white; }
 .btn-mini { font-size: 12px; padding: 3px 8px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; color: var(--fg); margin-right: 4px; }
 .btn-mini.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
 .btn-mini.btn-archive { background: transparent; border-color: var(--fg-3); color: var(--fg-3); }

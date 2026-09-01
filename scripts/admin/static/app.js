@@ -1307,6 +1307,12 @@ function app() {
     },
 
     // ─────────── Multimedia / quick add ───────────
+    // Cuántas canciones tienen (o no) algo puesto. Se cuenta aquí y no en el
+    // servidor para que siempre cuadre con el filtro del catálogo.
+    countWithMedia(conAlgo) {
+      const list = (this.data && this.data.repo_songs) || [];
+      return list.filter(r => (this.mediaTotal(r) > 0) === conAlgo).length;
+    },
     // Cuántas cosas multimedia tiene una canción, contando los 5 tipos de
     // enlace más el vídeo principal.
     mediaTotal(r) {
@@ -1325,6 +1331,15 @@ function app() {
           tooltip: `${n} ${t.word}${n > 1 ? ' (x' + n + ')' : ''} — ${t.hint} Click para ver o añadir.`,
         };
       }).filter(Boolean);
+    },
+    // Los estados llegan de Firebase en inglés ('pending'); la interfaz está en
+    // español, así que se traducen al pintarlos.
+    estadoLabel(v) {
+      const k = String(v || 'pending').toLowerCase();
+      return {
+        pending: 'pendiente', in_progress: 'en curso', done: 'hecho',
+        resolved: 'resuelto', rejected: 'descartado', duplicate: 'duplicado',
+      }[k] || k;
     },
     linkTypes() { return LINK_TYPES; },
     extraLinkTypes() { return EXTRA_LINK_TYPES; },
@@ -1552,6 +1567,10 @@ function app() {
       }
     },
     get reorderModified() {
+      // Sin categoría elegida no hay nada que aplicar. Antes comparaba "[]"
+      // con '' y salía true: la pantalla decía que tenías cambios pendientes
+      // recién entrar, sin haber tocado nada.
+      if (!this.reorderCategory) return false;
       return JSON.stringify((this.reorderSlots || []).map(s => s.filename)) !== this.reorderOriginal;
     },
     onReorderDrop(targetIdx) {
@@ -2862,7 +2881,7 @@ function app() {
         this.editor.originalContent = this.editor.content;
         this.editor.dirty = false;
         this.lastSaveAt = new Date();
-        this.setSaveIndicator('saved', '✓ Guardado · haz commit cuando termines');
+        this.setSaveIndicator('saved', '✓ Guardado · súbelo a la nube al terminar');
         await this.loadCatalog();
       } catch (e) {
         this.setSaveIndicator('error', '✗ Error guardando');
@@ -2871,7 +2890,7 @@ function app() {
     },
     setSaveIndicator(cls, text) { this.saveIndicator = { cls, text }; },
     async deleteSong(r) {
-      if (!confirm(`¿Borrar "${r.title}" (${r.filename})? Se hace backup en songs-backup-edits.`)) return;
+      if (!confirm(`¿Borrar "${r.title}"?\n\nSe guarda una copia de seguridad antes, así que se puede recuperar.`)) return;
       try {
         const res = await fetch('/api/song?path=' + encodeURIComponent(r.path), { method: 'DELETE' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
