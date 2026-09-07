@@ -44,6 +44,37 @@ es que la política del tailnet aún no lo permite: ábrela, acepta, y repite
   cuando cambia código: el `git pull` trae los ficheros pero el proceso ya
   tiene el Python viejo cargado en memoria. El propio admin avisa con un
   cartel cuando detecta que se ha actualizado código.
+- **«Could not resolve hostname github.com» al subir a la nube** (y, a la vez,
+  un **502** al abrir una canción de doceacordes): son el mismo problema, el
+  contenedor no resuelve nombres. Ojo, que el NAS sí resuelva no descarta nada:
+  el contenedor hereda sus mismos resolvers pero sale por el bridge de Docker,
+  y hay redes donde esos resolvers no contestan a ese tráfico. Para localizarlo:
+
+  ```sh
+  sudo docker exec cantoral-admin getent hosts github.com   # ¿resuelve el contenedor?
+  getent hosts github.com                                   # ¿resuelve el NAS?
+  # ¿tiene salida a internet, sin DNS de por medio?
+  sudo docker exec cantoral-admin python -c "import socket;socket.create_connection(('140.82.121.4',443),5);print('OK')"
+  # ¿resuelve con un DNS público?
+  sudo docker run --rm --dns 1.1.1.1 --entrypoint getent alpine/git hosts github.com
+  ```
+
+  Si hay salida por IP y con DNS público sí resuelve, es solo el DNS: el
+  contenedor tiene que arrancar con `--dns` (ya viene puesto en
+  `run-cantoral.sh` desde septiembre de 2026). Si tu `run-cantoral.sh` es
+  anterior, añádele la línea y vuelve a lanzarlo:
+
+  ```sh
+  sudo sed -i '/--name cantoral-admin --restart=always/a\  --dns 1.1.1.1 --dns 8.8.8.8 \\' \
+    /volume1/docker/cantoral-admin/run-cantoral.sh
+  sh /volume1/docker/cantoral-admin/run-cantoral.sh
+  ```
+
+  Si **no** hay salida ni por IP, el problema es de red del contenedor, no de
+  DNS: mira si siguen las reglas de NAT de Docker
+  (`sudo iptables -t nat -S POSTROUTING | grep -i masq`) y, si faltan,
+  `sudo systemctl restart docker` las reinstala.
+
 - **Cambiar usuarios/contraseñas**: edita
   `/volume1/docker/cantoral-admin/cantoral-admin.env` y vuelve a correr
   `sh /volume1/docker/cantoral-admin/run-cantoral.sh`.
