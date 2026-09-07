@@ -58,12 +58,21 @@ else
   echo "Ya existe $ENV_FILE, lo reutilizo (editalo a mano para cambiar usuarios)."
 fi
 
+# El `--dns` es a propósito: el contenedor hereda por defecto los resolvers del
+# NAS (los del ISP) y hay redes donde esos no contestan a las consultas que
+# salen del bridge de Docker, aunque el propio NAS resuelva bien con ellos. El
+# síntoma es de los que hacen perder una tarde: "Could not resolve hostname
+# github.com" al hacer push, y un 502 al traer una canción de doceacordes,
+# mientras el NAS resuelve sin problema. El admin solo necesita nombres
+# públicos (GitHub, doceacordes, Firebase), así que un resolver público le vale
+# y le hace independiente de la red donde esté el NAS.
 cat > "$BASE_DIR/run-cantoral.sh" <<EOF
 #!/bin/sh
 set -eu
 sudo docker build -t cantoral-admin "$REPO_DIR"
 sudo docker rm -f cantoral-admin 2>/dev/null || true
 sudo docker run -d --name cantoral-admin --restart=always \\
+  --dns 1.1.1.1 --dns 8.8.8.8 \\
   -v "$REPO_DIR":/app \\
   -v "$SSH_DIR":/root/.ssh \\
   --env-file "$ENV_FILE" \\
