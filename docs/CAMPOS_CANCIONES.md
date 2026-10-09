@@ -268,7 +268,11 @@ Desde octubre de 2026 la app pinta las canciones con su propia «hoja»
    estribillo.
 
 `python scripts/revisar_cho.py` lista qué canciones incumplen cada punto
-(solo informa, no toca nada).
+(solo informa, no toca nada). `python scripts/arreglar_cho.py` arregla lo
+mecánico (puntos 1–4 y las estrofas copiadas de un PDF) sin cambiar ni una
+palabra ni un acorde; `--dry-run` para ver antes qué haría. Lo que necesita
+oído (revisar acordes, marcar estribillos, muros de texto) se queda para una
+persona.
 
 ## 5. Categorías
 

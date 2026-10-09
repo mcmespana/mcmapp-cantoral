@@ -78,7 +78,7 @@ def revisar(text):
                     has_chorus = True
                 elif ES_CHORDS_IN_TEXT_RE.search(value) and re.search(r"intro|instrumental|final", value, re.I):
                     found["intro_comentario"] += 1
-            if name in ("soc", "eoc", "start_of_chorus", "end_of_chorus"):
+            if name in ("soc", "eoc", "start_of_chorus", "end_of_chorus", "chorus"):
                 block = 0
             continue
         if not raw.strip():
