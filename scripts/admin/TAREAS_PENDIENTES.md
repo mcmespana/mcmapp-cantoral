@@ -84,27 +84,26 @@ coloreado. No hecho todavía:
   pocos ms, pero es el mismo trabajo que hace `/api/catalog`: se podría compartir
   un único resultado memoizado por mtime.
 
-## Importadores adicionales para "Nueva canción a mano"
+## ✨ Añadir canción — siguientes pasos
 
-El modal de nueva canción tiene los modos `blank` y `chordpro` funcionando.
-Los siguientes están como placeholder (`disabled`):
+Hecho: texto pegado (acordes encima / ChordPro / letra sola), estribillos,
+deducción de acordes con marca 👁, revisor IA. Falta:
 
-### Modo "Ultimate Guitar / formato tabulado monoespaciado"
-Texto pegado de UG, e-Chords, La Cuerda… donde los acordes están en líneas
-sobre la letra, alineados por posición de columna con fuente monoespaciada.
-
-Aprovechar el detector de `tab2chordpro.py` clásico, pero invocándolo desde el
-backend (sin prompts interactivos): aceptar el texto, ejecutar el conversor en
-memoria, devolver el .cho generado y abrirlo en el editor visual con TO DO.
-
-Punto de partida: copiar la lógica de `convert_lines` + `is_chord_line` +
-`inject` de `scripts/tab2chordpro.py` y exponerla como `POST /api/song/from-tabs`.
-
-### Modo "Texto con acordes en línea de encima (estilo Word)"
-Similar al anterior pero con espacios variables / tabs. Reusar el mismo
-parser que el modo Ultimate Guitar — la diferencia visual es solo cómo
-suele venir el texto. En realidad ambos modos pueden ser el mismo endpoint
-con la misma lógica de detección.
+- **Capturas / fotos**: Claude lee la imagen y devuelve cada acorde **anclado a
+  la sílaba** donde va («el Re sobre el *Se* de *Señor*»), no por columnas; el
+  JSON entra en el mismo motor (`song_import.py`) para estribillos y deducción.
+  Hay que probarlo antes con capturas reales: dos columnas, texto centrado,
+  versos partidos por el ancho de la columna.
+- **Links**: LaCuerda / Ultimate Guitar / Cifra Club traen el texto bueno en el
+  HTML (`<pre>` o JSON con los acordes marcados) → Python. Webs desconocidas →
+  sacar el texto y pasarlo por el mismo importador.
+- **«(x2)» al final de un estribillo**: hoy se deja escrito. Se podría ofrecer
+  «escribirlo dos veces» con un botón, para que quede tal cual se canta.
+- **Revisor IA también en el editor**, para canciones que ya están en el repo
+  (sin texto original: solo coherencia de acordes entre estrofas).
+- **Compartir al admin desde el móvil**: en Android, «Compartir → Cantoral»
+  (Web Share Target, requiere instalar la web como app); en iPhone, un Atajo
+  que mande el texto o la captura.
 
 ## Mejoras del parser docx2chordpro.py
 

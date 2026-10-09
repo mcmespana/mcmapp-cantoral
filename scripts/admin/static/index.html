@@ -2759,8 +2759,6 @@
             <select x-model="newSong.mode">
               <option value="blank">En blanco (rellenas en el editor)</option>
               <option value="chordpro">Pego un .cho en formato ChordPro</option>
-              <option value="ug" disabled>📌 Pegar formato Ultimate Guitar (próximamente)</option>
-              <option value="word" disabled>📌 Pegar texto con acordes encima en líneas separadas (próximamente)</option>
             </select>
             <label x-show="newSong.mode === 'chordpro'">Contenido ChordPro</label>
             <textarea x-show="newSong.mode === 'chordpro'" x-model="newSong.content" rows="10"
