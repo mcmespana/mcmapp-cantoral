@@ -40,7 +40,7 @@ MURO = 14
 CHECKS = [
     ("linea_larga", "Líneas de más de %d caracteres (estrofa en una sola línea)" % LINEA_LARGA),
     ("revision", "Marca «REVISAR ACORDES» / «PENDIENTE»"),
-    ("sin_estribillo", "Sin {soc} ni {c: Estribillo}"),
+    ("sin_estribillo", "Un bloque que se repite sin {soc} (estribillo sin marcar)"),
     ("estribillo_texto", "«ESTRIBILLO» escrito como letra (mejor {chorus})"),
     ("numeracion", "Estrofas numeradas a mano («1. …»)"),
     ("intro_comentario", "Acordes escritos en un comentario («Intro: lam | SOL»)"),
@@ -64,6 +64,11 @@ def revisar(text):
     found = Counter()
     has_chorus = False
     block = 0
+    # Letra de cada bloque (entre líneas en blanco), para ver si alguno se
+    # repite: eso es un estribillo sin marcar. Una canción sin {soc} y sin
+    # nada que se repita (un himno de estrofas, una oración seguida, un
+    # canon) no tiene estribillo que marcar.
+    blocks = [[]]
     for raw in text.splitlines():
         d = DIRECTIVE_RE.match(raw)
         if d:
@@ -76,17 +81,19 @@ def revisar(text):
                     found["revision"] += 1
                 elif re.match(r"\W*(estribillo|coro)\b", value, re.I):
                     has_chorus = True
-                elif ES_CHORDS_IN_TEXT_RE.search(value) and re.search(r"intro|instrumental|final", value, re.I):
+                elif ES_CHORDS_IN_TEXT_RE.search(value) and re.match(r"\W*(intro|instrumental|final)", value, re.I):
                     found["intro_comentario"] += 1
             if name in ("soc", "eoc", "start_of_chorus", "end_of_chorus", "chorus"):
                 block = 0
             continue
         if not raw.strip():
             block = 0
+            blocks.append([])
             continue
         lyric = lyric_of(raw)
         if not lyric:
             continue
+        blocks[-1].append(re.sub(r"[^\w]+", " ", lyric.lower()).strip())
         block += 1
         if block == MURO:
             found["muro"] += 1
@@ -100,7 +107,8 @@ def revisar(text):
             found["numeracion"] += 1
         if is_upper(lyric):
             found["mayusculas"] += 1
-    if not has_chorus:
+    texts = ["\n".join(b) for b in blocks if len(b) >= 2]
+    if not has_chorus and len(texts) != len(set(texts)):
         found["sin_estribillo"] += 1
     return found
 

@@ -3,7 +3,8 @@
 {ritmo: Intro Piano: DO, Re, DO, Re, Mi, Fa, Mi, Re, DO, La Fa, Sib, DO, DO, Re, DO, DO Sib, DO, Sib, La Sib, La,}
 {comentario: Intro Piano: DO, Re, DO, Re, Mi, Fa, Mi, Re, DO, La Fa, Sib, DO, DO, Re, DO, DO Sib, DO, Sib, La Sib, La,}
 
-[Intro:] [F] [C] [Dm] [Am] [Bb] [C] [F]
+{c: Intro}
+[F] [C] [Dm] [Am] [Bb] [C] [F]
 
 [F]Hoy [C]Señor, quiero [Dm]darte mi ora[Am]ción,
 que con el [Bb]soplo de tu [C]amor se hará más [F]fuerte.[C]
@@ -11,9 +12,10 @@ que con el [Bb]soplo de tu [C]amor se hará más [F]fuerte.[C]
 que den la [Bb]fuerza al cora[C]zón para se[F]guirte.[C]
 
 {soc}
-[Bb]¡OOOH [C]SE[Dm]ÑOR,
-TOMA MI [Bb]VIDA EN TUS MANOS Y LLÉNALA [F]DE TI![C]
-[Bb]¡OOOH [C]MI [Dm]DIOS,
-TOMA MI [Bb]FE Y MI ESPERANZA, FRUTOS DE MI [F]AMOR [C]POR [Dm]TI! (BIS)[re-]
-FRUTOS DE MI [F]AMOR [C]POR, POR [F]TI!
+[Bb]¡Oooh [C]Se[Dm]ñor,
+toma mi [Bb]vida en tus manos y llénala [F]de Ti![C]
+[Bb]¡Oooh [C]mi [Dm]Dios,
+toma mi [Bb]fe y mi esperanza,
+frutos de mi [F]amor [C]por [Dm]Ti! (Bis)[re-]
+Frutos de mi [F]amor [C]por, por [F]Ti!
 {eoc}

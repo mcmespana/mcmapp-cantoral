@@ -243,7 +243,7 @@ Desde octubre de 2026 la app pinta las canciones con su propia «hoja»
 | En el `.cho` | En la app |
 |---|---|
 | Línea en blanco | Separa secciones. Un `{soc}` también abre sección aunque no lleve línea en blanco delante. |
-| `{soc}` … `{eoc}` | Estribillo: raya amarilla a la izquierda y etiqueta «Estribillo». **No** se fuerzan mayúsculas. |
+| `{soc}` … `{eoc}` | Estribillo: raya amarilla a la izquierda, negrita y etiqueta «Estribillo» (cada cual puede elegir otro estilo en la app). **No** se fuerzan mayúsculas. |
 | `{chorus}` o una línea que solo dice `ESTRIBILLO` | «Aquí va el estribillo»: en la vista completa se pinta entero; en la compacta, plegado en una línea. |
 | El mismo estribillo copiado varias veces | Igual que `{chorus}`: la vista compacta pliega las repeticiones (idénticas o casi). |
 | `{c: Estribillo}` / `{c: Puente}` / `{c: Intro}` | Etiqueta de la sección que empieza ahí (no una línea de comentario). |
@@ -264,15 +264,26 @@ Desde octubre de 2026 la app pinta las canciones con su propia «hoja»
 4. **Intros con acordes de verdad**: `{c: Intro}` y en la línea siguiente
    `[Am] [G] [C] [G] x2`. Escritas en un comentario («Intro: lam | SOL») no
    se transportan ni cambian de notación.
-5. **Estribillo en minúsculas** como el resto: la raya ya dice que es el
-   estribillo.
+5. **Estribillo en minúsculas** como el resto: la raya y la negrita ya
+   dicen que es el estribillo. Mayúscula al empezar frase y en Dios, Señor,
+   Jesús, María, Padre, Reino…; los pronombres (Tú, Él) como haga la propia
+   canción.
+6. **Notas y explicaciones** («se repite dos veces», «nota de los
+   editores»), en `{c: …}`, no como letra: si no, se cantan y se numeran.
+7. **Acordes siempre entre corchetes**, nunca en una línea suelta encima de
+   la letra («MIM   SIM»): así se transportan y cambian de notación.
 
 `python scripts/revisar_cho.py` lista qué canciones incumplen cada punto
 (solo informa, no toca nada). `python scripts/arreglar_cho.py` arregla lo
 mecánico (puntos 1–4 y las estrofas copiadas de un PDF) sin cambiar ni una
-palabra ni un acorde; `--dry-run` para ver antes qué haría. Lo que necesita
-oído (revisar acordes, marcar estribillos, muros de texto) se queda para una
-persona.
+palabra ni un acorde; `--dry-run` para ver antes qué haría.
+
+En octubre de 2026 se repasaron a mano las 258 canciones con estas reglas
+(mayúsculas, estribillos sin marcar, muros de texto, notas, acordes encima
+de la letra). Desde entonces `revisar_cho.py` solo avisa de «REVISAR
+ACORDES», que es cosa de tocar y escuchar. Una canción sin `{soc}` no es un
+fallo si nada se repite: un himno de estrofas, una oración seguida o un
+canon no tienen estribillo que marcar.
 
 ## 5. Categorías
 

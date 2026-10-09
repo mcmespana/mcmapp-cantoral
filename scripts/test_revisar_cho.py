@@ -37,7 +37,11 @@ def test_marca_de_revision():
 
 
 def test_sin_estribillo():
-    assert revisar("[G]Solo una estrofa")["sin_estribillo"] == 1
+    coro = "[G]Este es el coro\nque se repite\n"
+    assert revisar(coro + "\nUna estrofa\ncon dos líneas\n\n" + coro)["sin_estribillo"] == 1
+    # Sin nada que se repita (himno de estrofas, oración, canon) no hay
+    # estribillo que marcar.
+    assert "sin_estribillo" not in revisar("[G]Solo una estrofa\ncon dos líneas")
     # {c: Estribillo} cuenta como estribillo marcado
     assert "sin_estribillo" not in revisar("{c: Estribillo}\n[G]Coro")
 
