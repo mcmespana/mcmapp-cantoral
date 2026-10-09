@@ -61,6 +61,8 @@ import docx2chordpro as d2c  # noqa: E402
 import latex_import as lx  # noqa: E402
 import doceacordes_import as da  # noqa: E402
 import chordpro as cp  # noqa: E402  (módulo común: parseo campos ↔ directivas)
+import song_import as si  # noqa: E402  (canciones sueltas: texto pegado → .cho)
+import ai_review  # noqa: E402  (segunda mirada con Claude: señala, no reescribe)
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -982,7 +984,12 @@ def api_song_new():
     if fpath.exists():
         abort(409, f"Ya existe {fname}. Elige otro número.")
 
-    if mode == "chordpro" and user_content.strip():
+    if mode == "import" and user_content.strip():
+        # Viene de «✨ Añadir canción»: el .cho ya está hecho por song_import;
+        # se le pone la cabecera del formulario (por si se corrigió algo) y el TO DO.
+        content = TODO_COMMENT_LINE + "\n" + si.with_meta(
+            user_content, {"title": title, "artist": artist, "key": key, "capo": capo})
+    elif mode == "chordpro" and user_content.strip():
         # Limpieza mínima: asegurar que tiene la línea TO DO al principio
         content = user_content
         if not TODO_REGEX.search(content):
@@ -1006,6 +1013,95 @@ def api_song_new():
         "path": str(fpath.relative_to(REPO_DIR)),
         "filename": fname,
     })
+
+
+@app.route("/api/song/import/preview", methods=["POST"])
+def api_song_import_preview():
+    """Texto pegado → .cho + avisos, sin escribir nada.
+
+    Body: {text, format?}  (format: chordpro | chords_above | lyrics; si no
+    viene se detecta). Devuelve lo de ImportResult.to_dict() y además:
+      - duplicate: canción del repo con el mismo título, si la hay.
+      - doce: candidatas de doceacordes por título (útil sobre todo cuando se
+        pega letra sola: allí puede estar con acordes).
+    """
+    body = request.get_json(silent=True) or {}
+    text = body.get("text") or ""
+    if len(text) > 60000:
+        abort(413, "Texto demasiado largo para una canción")
+    fmt = body.get("format") or None
+    if fmt not in (None, "chordpro", "chords_above", "lyrics"):
+        abort(400, "format no válido")
+    res = si.import_text(text, fmt).to_dict()
+    title = res["meta"].get("title") or ""
+    res["duplicate"] = None
+    res["doce"] = []
+    if title:
+        r = find_repo_match(title, build_repo_title_index(list_repo_songs()))
+        if r:
+            res["duplicate"] = {"path": r["path"], "title": r["title"],
+                                "category_letter": r["category_letter"]}
+        try:
+            res["doce"] = [
+                {"id": c["id"], "title": c.get("title", ""), "artist": c.get("artist", ""),
+                 "score": c.get("_score", 0)}
+                for c in da.find_candidates(title, res["meta"].get("artist") or "", top=3)
+                if c.get("_score", 0) >= 60
+            ]
+        except Exception:  # el índice de doceacordes es opcional aquí
+            res["doce"] = []
+    return jsonify(res)
+
+
+@app.route("/api/ai/status")
+def api_ai_status():
+    """Estado y ajustes de la IA: ¿hay clave?, modelo, esfuerzo, automático."""
+    return jsonify(ai_review.status())
+
+
+@app.route("/api/ai/settings", methods=["POST"])
+def api_ai_settings():
+    """Body: {model?, effort?, auto?}. Se guarda en .admin-settings.json (fuera de git)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        ai_review.save_settings({k: body[k] for k in ("model", "effort", "auto") if k in body})
+    except ValueError as e:
+        abort(400, str(e))
+    return jsonify(ai_review.status())
+
+
+@app.route("/api/ai/models")
+def api_ai_models():
+    """Modelos de Claude disponibles en la cuenta (Models API), más nuevos primero."""
+    if not ai_review.is_configured():
+        abort(503, "Falta ANTHROPIC_API_KEY en el servidor.")
+    try:
+        return jsonify({"models": ai_review.list_models(force=request.args.get("force") == "1")})
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
+
+
+@app.route("/api/song/ai-correct", methods=["POST"])
+def api_song_ai_correct():
+    """Claude corrige el .cho: devuelve cambios línea a línea (no toca archivos).
+
+    Body: {cho, text?, notes?, categories?: bool}
+      - text: el original pegado (si lo hay; en el editor puede no haberlo).
+      - categories: true para que proponga también la categoría.
+    """
+    if not ai_review.is_configured():
+        abort(503, "La IA no está configurada: falta ANTHROPIC_API_KEY.")
+    body = request.get_json(silent=True) or {}
+    text = body.get("text") or ""
+    cho = body.get("cho") or ""
+    if len(text) + len(cho) > 120000:
+        abort(413, "Demasiado largo para una canción")
+    notes = [str(n) for n in (body.get("notes") or [])][:40]
+    cats = [c["title"] for c in list_categories()] if body.get("categories") else None
+    try:
+        return jsonify(ai_review.correct(text, cho, notes, cats))
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
 
 
 @app.route("/api/song", methods=["DELETE"])

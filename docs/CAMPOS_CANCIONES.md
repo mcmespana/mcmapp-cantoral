@@ -229,6 +229,9 @@ El resto **permanece** en `content`: `{title:}`, `{artist:}`/`{author:}`,
 `{key:}`, `{capo:}`, `{soc}`, `{eoc}`, `{arr:}`, `{comment:}`, `{c:}` y los
 acordes `[X]`.
 
+También se quita `{x_acordes_deducidos: …}`, una marca de trabajo del admin
+(«esta estrofa lleva acordes deducidos de otra, revísala») que no es para la app.
+
 ---
 
 ### 4.6 Cómo pinta la app el cuerpo (y cómo escribir un `.cho` que se lea bien)

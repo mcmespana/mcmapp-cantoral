@@ -28,6 +28,7 @@
 - Smoke-test generators: run `python scripts/crear_songs_json.py`; ensure a new `songs-v*.json` is created and valid JSON.
 - Validate parsing: open random entries to confirm `title`, `author`, `key`, and `capo` populated.
 - Shared ChordPro/sync logic has tests: `python scripts/test_sync.py` (no deps needed; also works under pytest). Extend it when touching `scripts/chordpro.py`.
+- The admin song importer has tests: `python scripts/admin/test_song_import.py` (real songs in `scripts/admin/fixtures_import/`) and `python scripts/admin/test_ai_review.py` (fake client, no API calls). Extend them when touching `song_import.py` / `ai_review.py`.
 - Optional: add minimal unit tests under `scripts/` with `pytest` if present; name tests `test_*.py`.
 
 ## Commit & Pull Request Guidelines

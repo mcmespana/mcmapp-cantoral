@@ -181,6 +181,7 @@ function app() {
     // ─────────── State ───────────
     view: 'dashboard',
     otrosOpen: false,   // submenú «Otros» del lateral
+    navOpen: false,     // menú lateral desplegado (solo en móvil, donde va oculto)
     theme: localStorage.theme || 'light',
     loading: false,
     error: null,
@@ -320,6 +321,11 @@ function app() {
     editorQueueIdx: 0,
     newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
                number: null, mode: 'blank', content: '', creating: false },
+    // ✨ Añadir canción (texto pegado → .cho con song_import.py)
+    addSong: { open: false },
+    editorAi: null,   // resultado de 🤖 Corregir en el editor
+    aiStatus: { enabled: false, model: '', effort: 'high', auto: true, efforts: [] },  // ai_review.py
+    settings: { models: [], loadingModels: false, saving: false, error: '', savedAt: 0 },
     // Selector visual de número de canción.
     // {category, categoryTitle, numbers, suggested, selected, target, loading}
     numberPicker: null,
@@ -349,6 +355,9 @@ function app() {
 
     // ─────────── Lifecycle ───────────
     async boot() {
+      this.pruneOriginals();
+      fetch('/api/ai/status').then(r => r.ok ? r.json() : null)
+        .then(j => { if (j) this.aiStatus = j; }).catch(() => {});
       this.$watch('editor.dirty', (v) => {
         if (v) this.setSaveIndicator('dirty', '● Sin guardar — pulsa 💾');
       });
@@ -1012,6 +1021,8 @@ function app() {
         this.doceNumberSel = { ...this.doceNumberSel, [t.id]: p.selected };
       } else if (t.kind === 'new') {
         this.newSong.number = p.selected;
+      } else if (t.kind === 'add') {
+        this.addSong.number = p.selected;
       } else if (t.kind === 'move' && this.moveModal) {
         this.moveModal.number = p.selected;
       }
@@ -1634,7 +1645,9 @@ function app() {
           tab: 'visual',  // por defecto abrimos en visual
           meta: { ...json.meta },
           parsed: [],
+          original: this.loadOriginal(json.path),
         };
+        this.editorAi = null;
         this.visualSelectedLines = new Set();
         this.visualSelectedChord = null;
         this.resetUndo();
@@ -1646,6 +1659,77 @@ function app() {
       } catch (e) {
         alert('Error abriendo: ' + e.message);
       }
+    },
+    // Texto pegado al crear la canción con ✨ (si se creó en este navegador).
+    loadOriginal(path) {
+      try {
+        const v = JSON.parse(localStorage.getItem('cantoral.original:' + path) || 'null');
+        return v && v.text ? v.text : '';
+      } catch (e) { return ''; }
+    },
+    // Los originales caducan a los 60 días: son para la revisión de recién creada.
+    pruneOriginals() {
+      try {
+        const limit = Date.now() - 60 * 864e5;
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (!k || !k.startsWith('cantoral.original:')) continue;
+          const v = JSON.parse(localStorage.getItem(k) || 'null');
+          if (!v || !v.at || v.at < limit) localStorage.removeItem(k);
+        }
+      } catch (e) { /* nada */ }
+    },
+    editorCurrentContent() {
+      return this.editor.tab === 'visual' ? serializeCho(this.editor.parsed) : this.editor.content;
+    },
+    // 🤖 Corregir en el editor: mismos cambios línea a línea que en ✨, aplicados
+    // sobre lo que hay ahora. Queda un paso de deshacer (Ctrl+Z también vale).
+    async aiCorrectEditor() {
+      const content = this.editorCurrentContent();
+      const path = this.editor.path;
+      this.editorAi = { running: true, done: false, error: '', edits: [], open: false };
+      try {
+        const r = await fetch('/api/song/ai-correct', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cho: content, text: this.editor.original || '' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (this.editor.path !== path) return;
+        if (this.editorCurrentContent() !== content) {
+          throw new Error('Has cambiado la canción mientras corregía: vuelve a pulsar 🤖 Corregir.');
+        }
+        const edits = (j.edits || []).map(e => ({ ...e, on: true }));
+        this.editorAi = { running: false, done: true, error: '', summary: j.summary, edits,
+                          open: false, base: content, result: content };
+        if (edits.length) this.applyEditorAi();
+      } catch (e) {
+        this.editorAi = { running: false, done: false, error: 'La IA ha fallado: ' + e.message, edits: [] };
+      }
+    },
+    // Recalcula la canción desde la base con los cambios activados.
+    applyEditorAi() {
+      const ai = this.editorAi;
+      if (!ai || !ai.done) return false;
+      const now = this.editorCurrentContent();
+      if (now !== ai.result && !confirm('Has editado la canción después de la corrección. Si sigues, se pierde lo que hayas hecho desde entonces. ¿Seguir?')) {
+        return false;
+      }
+      const next = applyAiEdits(ai.base, ai.edits.filter(e => e.on));
+      this.recordUndo(now);
+      this.applyEditorContent(next);
+      ai.result = next;
+      return true;
+    },
+    toggleEditorAiEdit(e) {
+      e.on = !e.on;
+      if (!this.applyEditorAi()) e.on = !e.on;
+    },
+    setEditorAiAll(on) {
+      const ai = this.editorAi;
+      const prev = ai.edits.map(e => e.on);
+      ai.edits.forEach(e => { e.on = on; });
+      if (!this.applyEditorAi()) ai.edits.forEach((e, i) => { e.on = prev[i]; });
     },
     // Red de seguridad: si guardar en la nube falla (o falta descargar antes),
     // te llevas el .cho tal cual está y luego lo vuelves a subir.
@@ -1817,12 +1901,17 @@ function app() {
       const self = this;
       let dragState = null;
 
-      el.addEventListener('mousedown', (ev) => {
+      // Pointer events (no mouse events) para que el arrastre funcione también
+      // con el dedo en el móvil. El `touch-action: none` del CSS de .ed-chord es
+      // lo que impide que el navegador se quede el gesto para hacer scroll.
+      el.addEventListener('pointerdown', (ev) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         const lineIdx = parseInt(el.dataset.lineIdx, 10);
         const chordIdx = parseInt(el.dataset.chordIdx, 10);
+        const sel = self.visualSelectedChord;
+        const wasSelected = !!sel && sel.lineIdx === lineIdx && sel.chordIdx === chordIdx;
         self.visualSelectedChord = { lineIdx, chordIdx };
         // Refresh selection visuals
         document.querySelectorAll('.ed-chord.selected').forEach(n => n.classList.remove('selected'));
@@ -1873,14 +1962,26 @@ function app() {
             el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'word' : 'syl');
           }
         }
-        function onUp(e) {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+        function cleanup() {
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          document.removeEventListener('pointercancel', onCancel);
           el.classList.remove('dragging');
           el.removeAttribute('data-snap-mode');
           self.clearSnapHighlight();
+        }
+        function onCancel() {
+          cleanup();
+          dragState = null;
+          self.layoutChords();
+        }
+        function onUp(e) {
+          cleanup();
           if (!dragState || !dragState.moved) {
             dragState = null;
+            // En táctil no hay doble click fiable: tocar un acorde que ya estaba
+            // seleccionado abre su edición.
+            if (e.pointerType !== 'mouse' && wasSelected) self.editChordPrompt(lineIdx, chordIdx);
             return;
           }
           const bestIdx = computeSnapIdx(e);
@@ -1891,27 +1992,15 @@ function app() {
           self.layoutChords();
           dragState = null;
         }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onCancel);
       });
 
       el.addEventListener('dblclick', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        const lineIdx = parseInt(el.dataset.lineIdx, 10);
-        const chordIdx = parseInt(el.dataset.chordIdx, 10);
-        const cur = self.editor.parsed[lineIdx].chords[chordIdx].text;
-        const next = prompt('Acorde:', cur);
-        if (next != null) {
-          const v = next.trim();
-          if (v === '') {
-            self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
-          } else {
-            self.editor.parsed[lineIdx].chords[chordIdx].text = v;
-          }
-          self.commitParsed();
-          self.layoutChords();
-        }
+        self.editChordPrompt(parseInt(el.dataset.lineIdx, 10), parseInt(el.dataset.chordIdx, 10));
       });
 
       el.addEventListener('contextmenu', (ev) => {
@@ -1924,6 +2013,20 @@ function app() {
           self.layoutChords();
         }
       });
+    },
+
+    // Cambiar el texto de un acorde (vacío = borrarlo). Doble click con ratón,
+    // segundo toque sobre un acorde ya seleccionado en táctil.
+    editChordPrompt(lineIdx, chordIdx) {
+      const chord = this.editor.parsed[lineIdx]?.chords?.[chordIdx];
+      if (!chord) return;
+      const next = prompt('Acorde (vacío = borrar):', chord.text);
+      if (next == null) return;
+      const v = next.trim();
+      if (v === '') this.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+      else chord.text = v;
+      this.commitParsed();
+      this.layoutChords();
     },
 
     onVisualClick(ev) {
@@ -2031,6 +2134,7 @@ function app() {
       const cls = ['ed-line', 'ed-' + ln.type];
       if (this.visualSelectedLines.has(idx)) cls.push('selected');
       if (ln._inChorus) cls.push('in-chorus');
+      if (ln._deduced) cls.push('in-deduced');
       const drag = this.lineDragClass(idx);
       if (drag) cls.push(drag);
       return cls.join(' ');
@@ -2250,15 +2354,17 @@ function app() {
           this.lineDrag = { ...this.lineDrag, over: target };
         }
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onUp = (e) => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
         const d = this.lineDrag;
         this.lineDrag = null;
-        if (d && d.moved) this.dropLines(d.moving, d.over);
+        if (d && d.moved && e.type !== 'pointercancel') this.dropLines(d.moving, d.over);
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     },
     // Índice de la línea que está bajo esa coordenada vertical.
     lineIdxAtPoint(clientY) {
@@ -2491,12 +2597,37 @@ function app() {
     },
     markChorusFlags() {
       // Anota _inChorus en líneas que estén entre {soc}/{eoc}
+      // y _deduced en las de la estrofa que sigue a una marca 👁 (hasta la
+      // siguiente línea en blanco: la marca va justo antes de la estrofa).
       let inside = false;
+      let deduced = false;
       for (const ln of this.editor.parsed) {
+        if (ln.type === 'deduced') { deduced = true; ln._deduced = false; continue; }
+        if (ln.type === 'blank') deduced = false;
+        ln._deduced = deduced;
         if (ln.type === 'soc') { inside = true; ln._inChorus = false; continue; }
         if (ln.type === 'eoc') { inside = false; ln._inChorus = false; continue; }
         ln._inChorus = inside;
       }
+    },
+    // «✓ Dar por buena»: quita la marca 👁 de una estrofa ya revisada.
+    acceptDeduced(idx) {
+      if (this.editor.parsed[idx]?.type !== 'deduced') return;
+      this.editor.parsed.splice(idx, 1);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    deducedCount() {
+      return (this.editor.parsed || []).filter(l => l.type === 'deduced').length;
+    },
+    acceptAllDeduced() {
+      const n = this.deducedCount();
+      if (!n || !confirm(`¿Dar por buenas las ${n} estrofas con acordes deducidos?`)) return;
+      this.editor.parsed = this.editor.parsed.filter(l => l.type !== 'deduced');
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
     },
 
     // Devuelve [{startIdx, endIdx, lines}] de cada bloque de estribillo (entre soc/eoc).
@@ -3015,6 +3146,12 @@ function app() {
     },
 
     // Ir a la pestaña de etiquetas y abrir una concreta.
+    // En móvil el lateral es un cajón: al elegir una sección se cierra solo.
+    // «Otros» solo despliega el submenú, así que ese no cuenta.
+    closeNavOnPick(ev) {
+      const a = ev.target.closest('a');
+      if (a && !a.classList.contains('nav-group')) this.navOpen = false;
+    },
     goTags(slug) {
       this.view = 'tags';
       this.loadTags().then(() => { if (slug) this.openTagEditor(slug); });
@@ -3405,6 +3542,263 @@ function app() {
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     },
 
+    // ─────────── ⚙️ Ajustes (IA) ───────────
+    goSettings() {
+      this.view = 'settings';
+      this.otrosOpen = true;
+      if (this.aiStatus.enabled && !this.settings.models.length) this.loadAiModels(false);
+    },
+    async loadAiModels(force) {
+      this.settings.loadingModels = true;
+      this.settings.error = '';
+      try {
+        const r = await fetch('/api/ai/models' + (force ? '?force=1' : ''));
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        this.settings.models = j.models || [];
+      } catch (e) {
+        this.settings.error = 'No se ha podido cargar la lista de modelos: ' + e.message;
+      } finally {
+        this.settings.loadingModels = false;
+      }
+    },
+    // El valor del select: "" significa «el de por defecto».
+    settingsModelValue() {
+      const m = this.aiStatus.model;
+      return m && m !== this.aiStatus.default_model ? m : '';
+    },
+    async saveAiSettings(changes) {
+      this.settings.saving = true;
+      this.settings.error = '';
+      try {
+        const r = await fetch('/api/ai/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(changes),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        this.aiStatus = j;
+        this.settings.savedAt = Date.now();
+        setTimeout(() => { if (Date.now() - this.settings.savedAt >= 1900) this.settings.savedAt = 0; }, 2000);
+      } catch (e) {
+        this.settings.error = 'No se ha podido guardar: ' + e.message;
+      } finally {
+        this.settings.saving = false;
+      }
+    },
+
+    // ─────────── ✨ Añadir canción ───────────
+    // La conversión entera vive en el servidor (song_import.py): aquí sólo se
+    // pide la vista previa mientras se escribe, se dejan corregir los datos y
+    // se crea el .cho con /api/song/new en modo «import».
+    openAddSong() {
+      this.addSong = {
+        open: true, text: '', format: '', preview: null, loading: false, error: '',
+        title: '', artist: '', key: '', capo: 0, metaTouched: false,
+        ai: null, aiRunning: false, aiError: '', aiOpen: false, _aiTimer: null,
+        category: this.categoryFilter || this.lastAddCategory(), number: null, creating: false,
+        view: 'preview', _timer: null, _seq: 0,
+      };
+      this.$nextTick(() => document.querySelector('.add-song-input textarea')?.focus());
+    },
+    closeAddSong() {
+      if (this.addSong.text && this.addSong.text.trim().length > 40 && !this.addSong.creating
+          && !confirm('¿Cerrar sin crear la canción? Se pierde lo pegado.')) return;
+      clearTimeout(this.addSong._timer);
+      clearTimeout(this.addSong._aiTimer);
+      this.addSong = { open: false };
+    },
+    lastAddCategory() {
+      try { return localStorage.getItem('cantoral.lastAddCategory') || ''; } catch (e) { return ''; }
+    },
+    async pasteIntoAddSong() {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) { this.addSong.text = t; this.refreshAddSongPreview(); }
+      } catch (e) {
+        // Sin permiso de portapapeles (o navegador que no lo deja): que pegue a mano.
+        alert('El navegador no deja leer el portapapeles. Mantén pulsado en la caja y elige «Pegar».');
+      }
+    },
+    scheduleAddSongPreview() {
+      clearTimeout(this.addSong._timer);
+      this.addSong._timer = setTimeout(() => this.refreshAddSongPreview(), 350);
+    },
+    async refreshAddSongPreview() {
+      const a = this.addSong;
+      if (!a.text || !a.text.trim()) { a.preview = null; a.error = ''; return; }
+      const seq = ++a._seq;
+      a.loading = true;
+      try {
+        const r = await fetch('/api/song/import/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: a.text, format: a.format || undefined }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const j = await r.json();
+        if (seq !== a._seq || !this.addSong.open) return;  // llegó una más nueva
+        a.preview = j;
+        a.error = '';
+        // Los datos detectados rellenan el formulario hasta que el usuario toque algo.
+        if (!a.metaTouched) {
+          a.title = j.meta.title || '';
+          a.artist = j.meta.artist || '';
+          a.key = j.meta.key || '';
+          a.capo = j.meta.capo || 0;
+        }
+        // La corrección de IA era sobre la versión anterior: se tira y, en
+        // automático, se pide otra cuando el texto deja de cambiar.
+        a.ai = null;
+        a.aiError = '';
+        clearTimeout(a._aiTimer);
+        if (this.aiStatus.enabled && this.aiStatus.auto && j.cho && a.text.trim().length > 30) {
+          a._aiTimer = setTimeout(() => this.runAiCorrect(), 1200);
+        }
+      } catch (e) {
+        if (seq === a._seq) a.error = 'No se ha podido convertir: ' + e.message;
+      } finally {
+        if (seq === a._seq) a.loading = false;
+      }
+    },
+    // El .cho tal y como se va a guardar: el del servidor con la cabecera del formulario.
+    addSongCho() {
+      const a = this.addSong;
+      if (!a.preview) return '';
+      const body = this.addSongBodyCho().split('\n')
+        .filter(l => !/^\s*\{\s*(title|t|artist|author|key|capo)\s*:/i.test(l));
+      while (body.length && !body[0].trim()) body.shift();
+      const head = [];
+      if (a.title) head.push(`{title: ${a.title}}`);
+      if (a.artist) head.push(`{artist: ${a.artist}}`);
+      if (a.key) head.push(`{key: ${a.key}}`);
+      if (parseInt(a.capo)) head.push(`{capo: ${parseInt(a.capo)}}`);
+      return head.concat([''], body).join('\n');
+    },
+    addSongStatsText() {
+      const st = this.addSong.preview?.stats;
+      if (!st) return '';
+      const parts = [];
+      if (st.chorus) parts.push(`${st.chorus} estribillo${st.chorus > 1 ? 's' : ''}`);
+      if (st.deduced) parts.push(`👁 ${st.deduced} deducida${st.deduced > 1 ? 's' : ''}`);
+      if (st.copied) parts.push(`${st.copied} copiado${st.copied > 1 ? 's' : ''}`);
+      return parts.join(' · ');
+    },
+    formatLabel(f) {
+      return { chords_above: 'acordes encima', chordpro: 'ChordPro', lyrics: 'letra sola' }[f] || f || '';
+    },
+    // El .cho del conversor con los cambios de la IA que estén activados.
+    addSongBodyCho() {
+      const a = this.addSong;
+      if (!a.preview) return '';
+      return a.ai ? applyAiEdits(a.preview.cho, a.ai.edits.filter(e => e.on)) : a.preview.cho;
+    },
+    async runAiCorrect() {
+      const a = this.addSong;
+      if (!a.open || !a.preview || !a.preview.cho || a.aiRunning || !this.aiStatus.enabled) return;
+      clearTimeout(a._aiTimer);
+      const seq = a._seq;
+      a.aiRunning = true;
+      a.aiError = '';
+      try {
+        const r = await fetch('/api/song/ai-correct', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: a.text, cho: a.preview.cho, categories: true,
+                                 notes: a.preview.notes.map(n => n.msg) }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (!this.addSong.open || seq !== a._seq) return;  // el texto cambió mientras tanto
+        a.ai = { ...j, edits: j.edits.map(e => ({ ...e, on: true })), metaChanges: [] };
+        this.applyAiMeta(a, j.meta || {});
+      } catch (e) {
+        if (seq === a._seq) a.aiError = 'La IA ha fallado: ' + e.message;
+      } finally {
+        a.aiRunning = false;
+        // El texto cambió mientras corregía: la de la versión nueva se pidió y
+        // se ignoró (había una en marcha). Se lanza ahora.
+        if (seq !== a._seq && this.addSong.open && this.aiStatus.auto && a.preview?.cho && !a.ai) {
+          clearTimeout(a._aiTimer);
+          a._aiTimer = setTimeout(() => this.runAiCorrect(), 300);
+        }
+      }
+    },
+    // Título/autor/tono/cejilla/categoría que propone la IA: se aplican si el
+    // usuario no ha tocado ese dato, y cada uno se puede deshacer.
+    applyAiMeta(a, meta) {
+      const fields = [
+        ['title', 'Título'], ['artist', 'Autor'], ['key', 'Tono'], ['capo', 'Cejilla'],
+      ];
+      for (const [f, label] of fields) {
+        const to = meta[f];
+        if (to === null || to === undefined || to === '' || a.metaTouched) continue;
+        if (String(to) === String(a[f] ?? '')) continue;
+        a.ai.metaChanges.push({ field: f, label, from: String(a[f] ?? ''), to: String(to), on: true });
+        a[f] = f === 'capo' ? parseInt(to) || 0 : to;
+      }
+      const cat = (meta.category || '').toUpperCase();
+      const cats = (this.data?.categories || []).map(c => c.letter);
+      if (cat && !a.category && cats.includes(cat)) {
+        a.ai.metaChanges.push({ field: 'category', label: 'Categoría', from: '', to: cat, on: true });
+        a.category = cat;
+      }
+    },
+    toggleAiMeta(c) {
+      const a = this.addSong;
+      c.on = !c.on;
+      const v = c.on ? c.to : c.from;
+      a[c.field] = c.field === 'capo' ? (parseInt(v) || 0) : v;
+      if (c.field === 'category') a.number = null;
+    },
+    aiChangeCount(ai) {
+      return ai ? ai.edits.length + (ai.metaChanges || []).length : 0;
+    },
+    aiOnCount(ai) {
+      return ai ? ai.edits.filter(e => e.on).length + (ai.metaChanges || []).filter(c => c.on).length : 0;
+    },
+    setAllAi(ai, on) {
+      ai.edits.forEach(e => { e.on = on; });
+      (ai.metaChanges || []).forEach(c => { if (c.on !== on) this.toggleAiMeta(c); });
+    },
+    canCreateAddSong() {
+      const a = this.addSong;
+      return !!(a.preview && a.preview.cho && a.title && a.title.trim() && a.category && !a.creating);
+    },
+    async createFromAddSong() {
+      const a = this.addSong;
+      if (!this.canCreateAddSong()) return;
+      a.creating = true;
+      try {
+        const r = await fetch('/api/song/new', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: a.category, title: a.title.trim(), artist: (a.artist || '').trim(),
+            key: (a.key || '').trim(), capo: parseInt(a.capo) || 0,
+            number: a.number || undefined, mode: 'import', content: this.addSongBodyCho(),
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const { path } = await r.json();
+        try {
+          localStorage.setItem('cantoral.lastAddCategory', a.category);
+          // El texto pegado se guarda (en este navegador) para verlo luego en la
+          // pestaña 📄 Original del editor mientras se revisa la canción.
+          localStorage.setItem('cantoral.original:' + path, JSON.stringify({ text: a.text, at: Date.now() }));
+        } catch (e) { /* sin localStorage: no pasa nada */ }
+        this.addSong = { open: false };
+        await this.loadCatalog();
+        await this.openEditor(path);
+      } catch (e) {
+        alert('Error creando: ' + e.message);
+        a.creating = false;
+      }
+    },
+
     // ─────────── Nueva canción ───────────
     openNewSongModal() {
       this.newSong = { open: true, category: '', title: '', artist: '', key: '', capo: 0,
@@ -3464,6 +3858,12 @@ function app() {
           out.push(`<div class="pv-meta">${m ? esc(m[1] + ': ' + m[2]) : esc(trimmed)}</div>`);
           continue;
         }
+        // Marca del importador: la estrofa que sigue trae acordes deducidos.
+        if (/^\{x_acordes_deducidos\b/i.test(trimmed)) {
+          const m = trimmed.match(/^\{x_acordes_deducidos\s*:?\s*(.*?)\s*\}/i);
+          out.push(`<div class="pv-deduced">👁 Acordes deducidos${m && m[1] ? ' ' + esc(m[1]) : ''} · revisar</div>`);
+          continue;
+        }
         if (/^\{soc\}/.test(trimmed)) { inChorus = true; out.push('<div class="pv-chorus">'); continue; }
         if (/^\{eoc\}/.test(trimmed)) { inChorus = false; out.push('</div>'); continue; }
         // Cualquier otro directive ({ritmo}, {tiempo}, {video}, {youtube}, …):
@@ -3486,6 +3886,25 @@ function app() {
 
 // Parse full ChordPro content into a list of line-objects.
 // Types: 'directive' (incl. {comment}), 'soc', 'eoc', 'blank', 'lyric'.
+// Aplica los cambios de la IA ({find, replace}): línea entera (sin espacios
+// finales), en todas sus copias. Misma regla que ai_review.apply_edits en Python.
+function applyAiEdits(cho, edits) {
+  let lines = cho.split('\n');
+  for (const e of edits) {
+    const find = e.find.replace(/\s+$/, '');
+    const out = [];
+    for (const ln of lines) {
+      if (ln.replace(/\s+$/, '') === find) {
+        if (e.replace !== '') out.push(...e.replace.split('\n'));
+      } else {
+        out.push(ln);
+      }
+    }
+    lines = out;
+  }
+  return lines.join('\n');
+}
+
 function parseCho(content) {
   const lines = content.split('\n');
   return lines.map(raw => {
@@ -3497,6 +3916,9 @@ function parseCho(content) {
       const text = t.replace(/^\{arr\s*:\s*/i, '').replace(/\}\s*$/, '');
       return { type: 'arr', raw, text };
     }
+    // Marca del importador: la estrofa que sigue trae acordes deducidos de otra.
+    const dd = t.match(/^\{x_acordes_deducidos\s*(?::\s*(.*?))?\s*\}$/i);
+    if (dd) return { type: 'deduced', raw, text: dd[1] || '' };
     // Comentarios editables: {comment: ...} y su forma corta {c: ...}
     const cm = t.match(/^\{(comment|c)\s*:\s*(.*?)\s*\}$/i);
     if (cm) return { type: 'comment', raw, tag: cm[1].toLowerCase(), text: cm[2] };
