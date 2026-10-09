@@ -321,6 +321,8 @@ function app() {
     editorQueueIdx: 0,
     newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
                number: null, mode: 'blank', content: '', creating: false },
+    // ✨ Añadir canción (texto pegado → .cho con song_import.py)
+    addSong: { open: false },
     // Selector visual de número de canción.
     // {category, categoryTitle, numbers, suggested, selected, target, loading}
     numberPicker: null,
@@ -1013,6 +1015,8 @@ function app() {
         this.doceNumberSel = { ...this.doceNumberSel, [t.id]: p.selected };
       } else if (t.kind === 'new') {
         this.newSong.number = p.selected;
+      } else if (t.kind === 'add') {
+        this.addSong.number = p.selected;
       } else if (t.kind === 'move' && this.moveModal) {
         this.moveModal.number = p.selected;
       }
@@ -3433,6 +3437,126 @@ function app() {
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     },
 
+    // ─────────── ✨ Añadir canción ───────────
+    // La conversión entera vive en el servidor (song_import.py): aquí sólo se
+    // pide la vista previa mientras se escribe, se dejan corregir los datos y
+    // se crea el .cho con /api/song/new en modo «import».
+    openAddSong() {
+      this.addSong = {
+        open: true, text: '', format: '', preview: null, loading: false, error: '',
+        title: '', artist: '', key: '', capo: 0, metaTouched: false,
+        category: this.categoryFilter || '', number: null, creating: false,
+        view: 'preview', _timer: null, _seq: 0,
+      };
+      this.$nextTick(() => document.querySelector('.add-song-input textarea')?.focus());
+    },
+    closeAddSong() {
+      if (this.addSong.text && this.addSong.text.trim().length > 40 && !this.addSong.creating
+          && !confirm('¿Cerrar sin crear la canción? Se pierde lo pegado.')) return;
+      clearTimeout(this.addSong._timer);
+      this.addSong = { open: false };
+    },
+    async pasteIntoAddSong() {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) { this.addSong.text = t; this.refreshAddSongPreview(); }
+      } catch (e) {
+        // Sin permiso de portapapeles (o navegador que no lo deja): que pegue a mano.
+        alert('El navegador no deja leer el portapapeles. Mantén pulsado en la caja y elige «Pegar».');
+      }
+    },
+    scheduleAddSongPreview() {
+      clearTimeout(this.addSong._timer);
+      this.addSong._timer = setTimeout(() => this.refreshAddSongPreview(), 350);
+    },
+    async refreshAddSongPreview() {
+      const a = this.addSong;
+      if (!a.text || !a.text.trim()) { a.preview = null; a.error = ''; return; }
+      const seq = ++a._seq;
+      a.loading = true;
+      try {
+        const r = await fetch('/api/song/import/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: a.text, format: a.format || undefined }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const j = await r.json();
+        if (seq !== a._seq || !this.addSong.open) return;  // llegó una más nueva
+        a.preview = j;
+        a.error = '';
+        // Los datos detectados rellenan el formulario hasta que el usuario toque algo.
+        if (!a.metaTouched) {
+          a.title = j.meta.title || '';
+          a.artist = j.meta.artist || '';
+          a.key = j.meta.key || '';
+          a.capo = j.meta.capo || 0;
+        }
+      } catch (e) {
+        if (seq === a._seq) a.error = 'No se ha podido convertir: ' + e.message;
+      } finally {
+        if (seq === a._seq) a.loading = false;
+      }
+    },
+    // El .cho tal y como se va a guardar: el del servidor con la cabecera del formulario.
+    addSongCho() {
+      const a = this.addSong;
+      if (!a.preview) return '';
+      const body = a.preview.cho.split('\n')
+        .filter(l => !/^\s*\{\s*(title|t|artist|author|key|capo)\s*:/i.test(l));
+      while (body.length && !body[0].trim()) body.shift();
+      const head = [];
+      if (a.title) head.push(`{title: ${a.title}}`);
+      if (a.artist) head.push(`{artist: ${a.artist}}`);
+      if (a.key) head.push(`{key: ${a.key}}`);
+      if (parseInt(a.capo)) head.push(`{capo: ${parseInt(a.capo)}}`);
+      return head.concat([''], body).join('\n');
+    },
+    addSongStatsText() {
+      const st = this.addSong.preview?.stats;
+      if (!st) return '';
+      const parts = [];
+      if (st.chorus) parts.push(`${st.chorus} estribillo${st.chorus > 1 ? 's' : ''}`);
+      if (st.deduced) parts.push(`👁 ${st.deduced} deducida${st.deduced > 1 ? 's' : ''}`);
+      if (st.copied) parts.push(`${st.copied} copiado${st.copied > 1 ? 's' : ''}`);
+      return parts.join(' · ');
+    },
+    formatLabel(f) {
+      return { chords_above: 'acordes encima', chordpro: 'ChordPro', lyrics: 'letra sola' }[f] || f || '';
+    },
+    canCreateAddSong() {
+      const a = this.addSong;
+      return !!(a.preview && a.preview.cho && a.title && a.title.trim() && a.category && !a.creating);
+    },
+    async createFromAddSong() {
+      const a = this.addSong;
+      if (!this.canCreateAddSong()) return;
+      a.creating = true;
+      try {
+        const r = await fetch('/api/song/new', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: a.category, title: a.title.trim(), artist: (a.artist || '').trim(),
+            key: (a.key || '').trim(), capo: parseInt(a.capo) || 0,
+            number: a.number || undefined, mode: 'import', content: a.preview.cho,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const { path } = await r.json();
+        this.addSong = { open: false };
+        await this.loadCatalog();
+        await this.openEditor(path);
+      } catch (e) {
+        alert('Error creando: ' + e.message);
+        a.creating = false;
+      }
+    },
+
     // ─────────── Nueva canción ───────────
     openNewSongModal() {
       this.newSong = { open: true, category: '', title: '', artist: '', key: '', capo: 0,
@@ -3490,6 +3614,12 @@ function app() {
         if (/^\{(comment|artist|author|key|capo)\s*:/.test(trimmed)) {
           const m = trimmed.match(/^\{(\w+)\s*:\s*(.*?)\s*\}/i);
           out.push(`<div class="pv-meta">${m ? esc(m[1] + ': ' + m[2]) : esc(trimmed)}</div>`);
+          continue;
+        }
+        // Marca del importador: la estrofa que sigue trae acordes deducidos.
+        if (/^\{x_acordes_deducidos\b/i.test(trimmed)) {
+          const m = trimmed.match(/^\{x_acordes_deducidos\s*:?\s*(.*?)\s*\}/i);
+          out.push(`<div class="pv-deduced">👁 Acordes deducidos${m && m[1] ? ' ' + esc(m[1]) : ''} · revisar</div>`);
           continue;
         }
         if (/^\{soc\}/.test(trimmed)) { inChorus = true; out.push('<div class="pv-chorus">'); continue; }

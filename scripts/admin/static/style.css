@@ -1213,6 +1213,58 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .bulk-tag-label { font-size: 13px; color: var(--fg-3); }
 .bulk-bar .tag-picker .tag-box { background: var(--bg-2); }
 
+/* ─────────── ✨ AÑADIR CANCIÓN ─────────── */
+.sidebar nav a.nav-add { background: rgba(37, 99, 235, 0.22); color: #fff; font-weight: 600; margin-bottom: 4px; }
+.sidebar nav a.nav-add:hover { background: var(--accent); }
+.add-song-banner { border-left-color: var(--ok); background: linear-gradient(135deg, rgba(22,163,74,0.10), rgba(22,163,74,0.03)); }
+.add-song-banner .btn.primary { background: var(--ok); border-color: var(--ok); }
+.add-song-banner .btn.primary:hover:not(:disabled) { background: #15803d; }
+
+.add-song-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 2fr) 3fr; }
+.add-song-input { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-right: 1px solid var(--border); background: var(--bg-2); min-height: 0; }
+.add-song-input-head { display: flex; align-items: center; gap: 6px; }
+.add-song-input-head strong { margin-right: auto; font-size: 14px; }
+.add-song-input textarea {
+  flex: 1; min-height: 260px; width: 100%; resize: none; padding: 10px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--fg);
+  white-space: pre; overflow: auto;
+}
+.add-song-input textarea:focus { outline: none; border-color: var(--accent); }
+.add-song-format { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.add-song-format select { padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); color: var(--fg); font-size: 13px; }
+.add-song-result { padding: 14px 18px; overflow-y: auto; min-height: 0; }
+.add-song-empty { padding: 40px 10px; text-align: center; }
+.add-song-alert { padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.add-song-alert.warn { background: rgba(234, 88, 12, 0.10); border: 1px solid rgba(234, 88, 12, 0.35); }
+.add-song-alert.info { background: rgba(8, 145, 178, 0.10); border: 1px solid rgba(8, 145, 178, 0.30); }
+.add-song-alert a { color: var(--accent); font-weight: 600; }
+.add-song-meta { margin: 6px 0 10px; display: flex; flex-direction: column; gap: 2px; }
+.add-song-meta label { display: block; font-size: 11px; color: var(--fg-2); text-transform: uppercase; margin: 8px 0 3px; }
+.add-song-meta input, .add-song-meta select {
+  width: 100%; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 4px;
+  font-size: 14px; background: var(--bg); color: var(--fg);
+}
+.add-song-row { display: flex; gap: 10px; align-items: flex-end; }
+.add-song-row > * { flex: 1; min-width: 0; }
+.add-song-row .numpick-open { flex: none; }
+.add-song-notes { list-style: none; padding: 0; margin: 0 0 12px; font-size: 13px; }
+.add-song-notes li { padding: 5px 10px; border-radius: 4px; margin-bottom: 3px; background: var(--bg-3); color: var(--fg-2); }
+.add-song-notes li.warn { background: rgba(202, 138, 4, 0.13); color: var(--fg); }
+.add-song-view-tabs { display: flex; gap: 4px; align-items: center; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.add-song-view-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--fg-2); font-size: 13px; }
+.add-song-view-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.add-song-view-tabs .muted { margin-left: auto; }
+.add-song-preview { overflow-x: auto; }
+.add-song-cho { margin: 0; padding: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+/* Estrofa con acordes deducidos (marca {x_acordes_deducidos}) en la vista previa */
+.preview-render .pv-deduced {
+  margin: 14px 0 -10px; padding: 3px 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px; color: #92400e; background: rgba(245, 158, 11, 0.16); border-left: 3px solid #f59e0b; border-radius: 3px;
+}
+.theme-dark .preview-render .pv-deduced { color: #fcd34d; }
+
 /* ─────────── TÁCTIL ───────────
    Acordes y asa de línea se arrastran con pointer events. Sin esto el navegador
    se queda el gesto del dedo para hacer scroll y el arrastre no llega a empezar.
@@ -1338,4 +1390,10 @@ table.songs tr.row-archived td { opacity: 0.55; }
   .preview-render { overflow-x: auto; }
 
   .numpick-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); }
+
+  /* Añadir canción: entrada arriba, resultado debajo, un solo scroll */
+  .add-song-body { display: flex; flex-direction: column; overflow-y: auto; }
+  .add-song-input { border-right: 0; border-bottom: 1px solid var(--border); flex: none; }
+  .add-song-input textarea { min-height: 38dvh; flex: none; }
+  .add-song-result { overflow: visible; padding: 12px; flex: none; }
 }

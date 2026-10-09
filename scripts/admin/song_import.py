@@ -848,8 +848,10 @@ def render_line(ln: Line) -> str:
     if ln.kind == "comment":
         return f"{{comment: {ln.text}}}"
     if ln.kind == "chords":
-        s = " ".join(f"[{c}]" for _, c in ln.chords)
-        return (s + (" " + ln.suffix if ln.suffix else "")).rstrip() + " "
+        # Cada acorde con hueco debajo de su ancho: si sólo los separa un
+        # espacio, en la app (y en la vista previa) se pisan unos con otros.
+        s = "".join(f"[{c}]" + " " * (len(c) + 2) for _, c in ln.chords)
+        return (s + (ln.suffix if ln.suffix else "")).rstrip() + " "
     text = ln.text
     chords = sorted(ln.chords, key=lambda x: x[0])
     out: List[str] = []
@@ -895,6 +897,31 @@ def render(meta: Dict[str, object], blocks: List[Block]) -> str:
         if b.chorus:
             out.append("{eoc}")
     return "\n".join(out).strip("\n") + "\n"
+
+
+def with_meta(cho: str, meta: Dict[str, object]) -> str:
+    """Cambia la cabecera (título, autor, tono, cejilla) de un .cho importado.
+
+    En el modal se puede corregir el título o la cejilla que se detectaron; se
+    quitan las directivas que hubiera y se ponen las del formulario arriba.
+    """
+    body = [ln for ln in cho.splitlines() if not _META_DIR_RX.match(ln)]
+    while body and not body[0].strip():
+        body.pop(0)
+    head = []
+    if meta.get("title"):
+        head.append(f"{{title: {meta['title']}}}")
+    if meta.get("artist"):
+        head.append(f"{{artist: {meta['artist']}}}")
+    if meta.get("key"):
+        head.append(f"{{key: {meta['key']}}}")
+    try:
+        capo = int(meta.get("capo") or 0)
+    except (TypeError, ValueError):
+        capo = 0
+    if capo:
+        head.append(f"{{capo: {capo}}}")
+    return "\n".join(head + [""] + body).strip("\n") + "\n"
 
 
 # ─────────────────────────── Entrada principal ─────────────────────────── #

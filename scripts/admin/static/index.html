@@ -24,6 +24,7 @@
 
   <nav>
     <a :class="{active: view === 'dashboard'}" @click.prevent="view = 'dashboard'" href="#">📊 Dashboard</a>
+    <a class="nav-add" @click.prevent="openAddSong()" href="#">✨ Añadir canción</a>
     <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
     <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
     <a :class="{active: view === 'doce'}" @click.prevent="view = 'doce'; loadDoce()" href="#">🎸 Importar de doceacordes</a>
@@ -122,6 +123,17 @@
   <!-- DASHBOARD -->
   <section x-show="view === 'dashboard' && data" x-cloak>
     <h1>📊 Dashboard</h1>
+
+    <!-- Lo más habitual: meter una canción que te pasan. Va lo primero. -->
+    <div class="peticiones-banner add-song-banner">
+      <div class="peticiones-banner-text">
+        <h3>✨ Añadir canción</h3>
+        <p class="muted">Pega una canción como te venga —con acordes encima, en ChordPro o la letra
+           sola— y sale lista para el cantoral, con los estribillos marcados y los acordes que falten
+           deducidos (y señalados para revisarlos).</p>
+      </div>
+      <button class="btn primary big" @click="openAddSong()">✨ Añadir canción</button>
+    </div>
 
     <div class="peticiones-banner">
       <div class="peticiones-banner-text">
@@ -2558,6 +2570,112 @@
              automático: en unos minutos está publicado.</p>
           <p class="muted small">Por debajo eso hace un <code>commit</code> y un
              <code>push</code>, y un proceso automático regenera el JSON de la app.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✨ AÑADIR CANCIÓN: pegar cualquier cosa → .cho. La conversión la hace
+       song_import.py en el servidor (determinista); aquí sólo se revisa y se
+       corrigen los metadatos antes de crear el archivo. -->
+  <div class="editor-overlay" x-show="addSong.open" @click.self="closeAddSong()" x-cloak
+       @keydown.escape.window="addSong.open && closeAddSong()">
+    <div class="editor-modal add-song-modal">
+      <div class="editor-header">
+        <h2>✨ Añadir canción</h2>
+        <div class="editor-actions">
+          <button class="btn primary" :disabled="!canCreateAddSong()"
+                  @click="createFromAddSong()"
+                  x-text="addSong.creating ? 'Creando…' : 'Crear y abrir editor'"></button>
+          <button class="btn" @click="closeAddSong()">✕ Cerrar</button>
+        </div>
+      </div>
+      <div class="add-song-body">
+        <!-- Entrada -->
+        <div class="add-song-input">
+          <div class="add-song-input-head">
+            <strong>Pega la canción</strong>
+            <button class="btn-mini" @click="pasteIntoAddSong()" title="Pegar lo que tengas copiado">📋 Pegar</button>
+            <button class="btn-mini" x-show="addSong.text" @click="addSong.text = ''; addSong.preview = null">Vaciar</button>
+          </div>
+          <textarea x-model="addSong.text" @input="scheduleAddSongPreview()" spellcheck="false"
+                    placeholder="Con acordes encima, en ChordPro o la letra sola. Título, «Cejilla 2», «Autor: …» y «Estribillo» sueltos se entienden solos."></textarea>
+          <div class="add-song-format" x-show="addSong.preview">
+            <span class="muted small">Formato:</span>
+            <select x-model="addSong.format" @change="refreshAddSongPreview()">
+              <option value="">Detectar solo</option>
+              <option value="chords_above">Acordes en la línea de encima</option>
+              <option value="chordpro">ChordPro ([acordes] en la letra)</option>
+              <option value="lyrics">Letra sola</option>
+            </select>
+            <span class="badge info" x-show="!addSong.format && addSong.preview"
+                  x-text="'detectado: ' + formatLabel(addSong.preview?.format)"></span>
+          </div>
+        </div>
+
+        <!-- Resultado -->
+        <div class="add-song-result">
+          <div class="add-song-empty muted" x-show="!addSong.preview && !addSong.loading">
+            Aquí verás la canción convertida mientras pegas.
+          </div>
+          <div class="loading" x-show="addSong.loading && !addSong.preview">Convirtiendo…</div>
+          <div class="error" x-show="addSong.error" x-text="addSong.error"></div>
+
+          <template x-if="addSong.preview">
+            <div>
+              <div class="add-song-alert warn" x-show="addSong.preview.duplicate">
+                ⚠️ Ya hay una canción con este título:
+                <a href="#" @click.prevent="closeAddSong(); openEditor(addSong.preview.duplicate.path)"
+                   x-text="(addSong.preview.duplicate?.category_letter || '') + ' · ' + (addSong.preview.duplicate?.title || '')"></a>
+              </div>
+              <div class="add-song-alert info" x-show="(addSong.preview.doce || []).length">
+                🎸 Está en doceacordes<span x-show="!addSong.preview.stats.deduced && addSong.preview.format === 'lyrics'"> con acordes</span>:
+                <template x-for="d in (addSong.preview.doce || [])" :key="d.id">
+                  <a href="#" class="add-song-doce" @click.prevent="closeAddSong(); view = 'doce'; loadDoce(); previewDoce(d.id)"
+                     x-text="d.title + (d.artist ? ' — ' + d.artist : '')"></a>
+                </template>
+              </div>
+
+              <div class="add-song-meta">
+                <label>Título</label>
+                <input type="text" x-model="addSong.title" @input="addSong.metaTouched = true" placeholder="Título de la canción" />
+                <label>Autor / Artista</label>
+                <input type="text" x-model="addSong.artist" @input="addSong.metaTouched = true" />
+                <div class="add-song-row">
+                  <div><label>Tono</label><input type="text" x-model="addSong.key" @input="addSong.metaTouched = true" /></div>
+                  <div><label>Cejilla</label><input type="number" min="0" x-model="addSong.capo" @input="addSong.metaTouched = true" /></div>
+                </div>
+                <label>Categoría</label>
+                <select x-model="addSong.category" @change="addSong.number = null">
+                  <option value="">— Elige —</option>
+                  <template x-for="cat in (data ? data?.categories : [])" :key="cat.letter">
+                    <option :value="cat.letter" x-text="cat.title"></option>
+                  </template>
+                </select>
+                <label>Número</label>
+                <div class="add-song-row">
+                  <input type="number" min="1" x-model.number="addSong.number" placeholder="auto" />
+                  <button class="numpick-open" :disabled="!addSong.category"
+                          @click="openNumberPicker(addSong.category, {kind:'add'}, addSong.number)">🔢 elegir…</button>
+                </div>
+              </div>
+
+              <ul class="add-song-notes" x-show="addSong.preview.notes.length">
+                <template x-for="(n, i) in addSong.preview.notes" :key="i">
+                  <li :class="n.level" x-text="n.msg"></li>
+                </template>
+              </ul>
+
+              <div class="add-song-view-tabs">
+                <button :class="{active: addSong.view === 'preview'}" @click="addSong.view = 'preview'">👁 Vista</button>
+                <button :class="{active: addSong.view === 'cho'}" @click="addSong.view = 'cho'">📝 ChordPro</button>
+                <span class="muted small" x-text="addSongStatsText()"></span>
+              </div>
+              <div class="add-song-preview preview-render" x-show="addSong.view === 'preview'"
+                   x-html="renderPreviewHtml(addSongCho())"></div>
+              <pre class="add-song-cho" x-show="addSong.view === 'cho'" x-text="addSongCho()"></pre>
+            </div>
+          </template>
         </div>
       </div>
     </div>
