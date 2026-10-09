@@ -12,6 +12,7 @@
 - Install deps: `pip install -r scripts/requirements.txt`.
 - Generate songs JSON: `python scripts/crear_songs_json.py` (reads `songs/indice.json`, scans `songs/*/*.cho`, writes next `songs-vX[.Y].json`, and prints a tag report flagging tags not declared in `songs/tags.json`).
 - Convert tabs → ChordPro: `python scripts/tab2chordpro.py <input.txt> > <output.cho>`.
+- Review songs for app readability: `python scripts/revisar_cho.py [--todas|--md] [file.cho]` (read-only report: long lines, review markers, missing `{soc}`, `ESTRIBILLO` placeholders, manual numbering… Rules in `docs/CAMPOS_CANCIONES.md` §4.6). Tests: `python scripts/test_revisar_cho.py`.
 - Sync Firebase (receive/push changes): `python scripts/sincronizaCambiosDeFirebase.py` or `python scripts/update_firebase.py` as needed.
 - macOS/Windows helpers: double-click the `*.command` or `*.bat` wrappers in `scripts/`.
 

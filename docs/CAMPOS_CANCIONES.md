@@ -231,6 +231,42 @@ acordes `[X]`.
 
 ---
 
+### 4.6 Cómo pinta la app el cuerpo (y cómo escribir un `.cho` que se lea bien)
+
+Desde octubre de 2026 la app pinta las canciones con su propia «hoja»
+(`utils/songSheet.ts` en el repo `mcmapp`; detalle en
+`docs/funcionalidades/HOJA_CANCION.md` de ese repo). Lo que entiende:
+
+| En el `.cho` | En la app |
+|---|---|
+| Línea en blanco | Separa secciones. Un `{soc}` también abre sección aunque no lleve línea en blanco delante. |
+| `{soc}` … `{eoc}` | Estribillo: raya amarilla a la izquierda y etiqueta «Estribillo». **No** se fuerzan mayúsculas. |
+| `{chorus}` o una línea que solo dice `ESTRIBILLO` | «Aquí va el estribillo»: en la vista completa se pinta entero; en la compacta, plegado en una línea. |
+| El mismo estribillo copiado varias veces | Igual que `{chorus}`: la vista compacta pliega las repeticiones (idénticas o casi). |
+| `{c: Estribillo}` / `{c: Puente}` / `{c: Intro}` | Etiqueta de la sección que empieza ahí (no una línea de comentario). |
+| `{c: Estrofa 2}` o «2. » al principio de la estrofa | Número de estrofa. Sin nada, la app numera sola a partir de dos estrofas. |
+| `{comment: ♩ REVISAR ACORDES}` (o «PENDIENTE», «TO DO») | Fuera de la letra: aviso «Acordes sin revisar» en la cabecera. |
+| Línea de solo acordes (`[Am] [G] [C] x2`) | Línea de acordes, sin renglón de letra debajo. Se oculta al ocultar acordes. |
+| `(Bis)`, `x2` en la letra | Se pintan en gris como indicación. |
+| Línea larga | Si no cabe en la pantalla, se parte por frases (tras punto o coma, antes de «y»/«que», nunca tras un artículo). |
+
+**Para que quede redonda**, al escribir o limpiar un `.cho`:
+
+1. **Una línea por frase musical.** La app parte bien, pero no sabe dónde
+   respira la melodía. Nada de estrofas enteras en un renglón.
+2. **Estribillo marcado con `{soc}`/`{eoc}`** la primera vez, y luego
+   `{chorus}` donde se repite (o copiado entero: las dos cosas funcionan).
+3. **Sin numerar a mano**: la app numera sola. Si una canción necesita un
+   número concreto, `{c: Estrofa 3}`.
+4. **Intros con acordes de verdad**: `{c: Intro}` y en la línea siguiente
+   `[Am] [G] [C] [G] x2`. Escritas en un comentario («Intro: lam | SOL») no
+   se transportan ni cambian de notación.
+5. **Estribillo en minúsculas** como el resto: la raya ya dice que es el
+   estribillo.
+
+`python scripts/revisar_cho.py` lista qué canciones incumplen cada punto
+(solo informa, no toca nada).
+
 ## 5. Categorías
 
 `songs/data` es un objeto cuyas claves son categorías. Cada categoría tiene
