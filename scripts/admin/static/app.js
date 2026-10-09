@@ -181,6 +181,7 @@ function app() {
     // ─────────── State ───────────
     view: 'dashboard',
     otrosOpen: false,   // submenú «Otros» del lateral
+    navOpen: false,     // menú lateral desplegado (solo en móvil, donde va oculto)
     theme: localStorage.theme || 'light',
     loading: false,
     error: null,
@@ -1817,12 +1818,17 @@ function app() {
       const self = this;
       let dragState = null;
 
-      el.addEventListener('mousedown', (ev) => {
+      // Pointer events (no mouse events) para que el arrastre funcione también
+      // con el dedo en el móvil. El `touch-action: none` del CSS de .ed-chord es
+      // lo que impide que el navegador se quede el gesto para hacer scroll.
+      el.addEventListener('pointerdown', (ev) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         const lineIdx = parseInt(el.dataset.lineIdx, 10);
         const chordIdx = parseInt(el.dataset.chordIdx, 10);
+        const sel = self.visualSelectedChord;
+        const wasSelected = !!sel && sel.lineIdx === lineIdx && sel.chordIdx === chordIdx;
         self.visualSelectedChord = { lineIdx, chordIdx };
         // Refresh selection visuals
         document.querySelectorAll('.ed-chord.selected').forEach(n => n.classList.remove('selected'));
@@ -1873,14 +1879,26 @@ function app() {
             el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'word' : 'syl');
           }
         }
-        function onUp(e) {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+        function cleanup() {
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          document.removeEventListener('pointercancel', onCancel);
           el.classList.remove('dragging');
           el.removeAttribute('data-snap-mode');
           self.clearSnapHighlight();
+        }
+        function onCancel() {
+          cleanup();
+          dragState = null;
+          self.layoutChords();
+        }
+        function onUp(e) {
+          cleanup();
           if (!dragState || !dragState.moved) {
             dragState = null;
+            // En táctil no hay doble click fiable: tocar un acorde que ya estaba
+            // seleccionado abre su edición.
+            if (e.pointerType !== 'mouse' && wasSelected) self.editChordPrompt(lineIdx, chordIdx);
             return;
           }
           const bestIdx = computeSnapIdx(e);
@@ -1891,27 +1909,15 @@ function app() {
           self.layoutChords();
           dragState = null;
         }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onCancel);
       });
 
       el.addEventListener('dblclick', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        const lineIdx = parseInt(el.dataset.lineIdx, 10);
-        const chordIdx = parseInt(el.dataset.chordIdx, 10);
-        const cur = self.editor.parsed[lineIdx].chords[chordIdx].text;
-        const next = prompt('Acorde:', cur);
-        if (next != null) {
-          const v = next.trim();
-          if (v === '') {
-            self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
-          } else {
-            self.editor.parsed[lineIdx].chords[chordIdx].text = v;
-          }
-          self.commitParsed();
-          self.layoutChords();
-        }
+        self.editChordPrompt(parseInt(el.dataset.lineIdx, 10), parseInt(el.dataset.chordIdx, 10));
       });
 
       el.addEventListener('contextmenu', (ev) => {
@@ -1924,6 +1930,20 @@ function app() {
           self.layoutChords();
         }
       });
+    },
+
+    // Cambiar el texto de un acorde (vacío = borrarlo). Doble click con ratón,
+    // segundo toque sobre un acorde ya seleccionado en táctil.
+    editChordPrompt(lineIdx, chordIdx) {
+      const chord = this.editor.parsed[lineIdx]?.chords?.[chordIdx];
+      if (!chord) return;
+      const next = prompt('Acorde (vacío = borrar):', chord.text);
+      if (next == null) return;
+      const v = next.trim();
+      if (v === '') this.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+      else chord.text = v;
+      this.commitParsed();
+      this.layoutChords();
     },
 
     onVisualClick(ev) {
@@ -2250,15 +2270,17 @@ function app() {
           this.lineDrag = { ...this.lineDrag, over: target };
         }
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onUp = (e) => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
         const d = this.lineDrag;
         this.lineDrag = null;
-        if (d && d.moved) this.dropLines(d.moving, d.over);
+        if (d && d.moved && e.type !== 'pointercancel') this.dropLines(d.moving, d.over);
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     },
     // Índice de la línea que está bajo esa coordenada vertical.
     lineIdxAtPoint(clientY) {
@@ -3015,6 +3037,12 @@ function app() {
     },
 
     // Ir a la pestaña de etiquetas y abrir una concreta.
+    // En móvil el lateral es un cajón: al elegir una sección se cierra solo.
+    // «Otros» solo despliega el submenú, así que ese no cuenta.
+    closeNavOnPick(ev) {
+      const a = ev.target.closest('a');
+      if (a && !a.classList.contains('nav-group')) this.navOpen = false;
+    },
     goTags(slug) {
       this.view = 'tags';
       this.loadTags().then(() => { if (slug) this.openTagEditor(slug); });

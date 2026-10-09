@@ -10,9 +10,10 @@
 <link rel="stylesheet" href="style.css" />
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
-<body x-data="app()" x-init="boot()" :class="{ 'theme-dark': theme === 'dark' }">
+<body x-data="app()" x-init="boot()" :class="{ 'theme-dark': theme === 'dark', 'nav-open': navOpen }"
+      @keydown.escape.window="navOpen = false">
 
-<aside class="sidebar">
+<aside class="sidebar" @click="closeNavOnPick($event)">
   <div class="brand">
     <div class="brand-emoji">🎵</div>
     <div>
@@ -72,10 +73,17 @@
   </div>
 </aside>
 
+<!-- Fondo oscuro detrás del lateral cuando se abre en el móvil -->
+<div class="nav-backdrop" @click="navOpen = false"></div>
+
 <main>
 
   <!-- TOP BAR: indicador de guardado global -->
   <div class="topbar">
+    <!-- Solo se ve en el móvil (ver @media en style.css). El punto naranja avisa
+         de cambios sin subir, que en el móvil quedan escondidos en el cajón. -->
+    <button class="nav-toggle" @click="navOpen = !navOpen" aria-label="Menú"
+            :class="{ 'has-alert': gitNeedsAttention() }">☰</button>
     <div class="save-indicator" :class="saveIndicator.cls" x-text="saveIndicator.text"></div>
     <button class="topbar-help" @click="showHelp = true" title="Ayuda y atajos">❓</button>
   </div>
@@ -360,7 +368,7 @@
       <button class="btn-mini" @click="clearCatalogSelect()">✕ Deseleccionar</button>
     </div>
 
-    <table class="songs">
+    <table class="songs catalog-table">
       <thead>
         <tr>
           <th style="width:28px"><input type="checkbox"
@@ -2000,7 +2008,7 @@
               <div :class="lineCssClass(ln, idx)" :data-line-idx="idx">
                 <div class="line-gutter"
                      @click.stop.prevent="toggleLineSelection(idx, $event)"
-                     @mousedown.stop="startLineDrag(idx, $event)"
+                     @pointerdown.stop="startLineDrag(idx, $event)"
                      title="Click selecciona · Shift+click rango · arrastra para mover"></div>
                 <button class="line-add-arr" x-show="arrMode && ln.type !== 'arr'"
                         @click.stop="insertArrAbove(idx)"

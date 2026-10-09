@@ -146,6 +146,21 @@ con la misma lógica de detección.
   diff entre la versión actual y la del cantoral para detectar
   actualizaciones del docx que conviene incorporar.
 
+## Móvil
+
+Hecha la pasada básica (cajón lateral, tablas, modales a pantalla completa,
+arrastre táctil). Queda:
+
+- **Controles que solo aparecen al pasar el ratón**: el botón «✍ arreglo» de cada
+  línea y las marcas de sílaba/palabra del visual. En táctil no se ven nunca.
+- **«Tocar y tocar» para recolocar un acorde**: seleccionar el acorde y tocar la
+  letra de destino, en vez de arrastrar. En líneas largas que hacen scroll
+  lateral es más cómodo que el arrastre.
+- **Barra del visual**: en el móvil es una sola fila con scroll lateral. Se podría
+  dejar a la vista solo lo de uso frecuente y plegar el resto en un «⋯».
+- **Tarjetas en vez de tabla** en catálogo y doceacordes, si el scroll lateral
+  se queda corto.
+
 ## Otros
 
 - **Test suite mínima** (pytest) para las funciones clave del parser:

@@ -378,6 +378,28 @@ Botón en el dashboard. Modos:
 (En la lista hay dos modos más marcados como "próximamente": pegar formato
 Ultimate Guitar y pegar texto con acordes en línea de encima. Ver TAREAS_PENDIENTES.md.)
 
+## Desde el móvil
+
+Por debajo de 820 px de ancho (todo el CSS está en un único `@media` al final de
+`static/style.css`):
+
+- El lateral pasa a **cajón**: se abre con **☰** arriba a la izquierda y se
+  cierra solo al elegir una sección (o tocando fuera, o con `Esc`). El ☰ lleva
+  un **punto naranja** cuando hay cambios sin subir, porque el botón de la nube
+  queda escondido dentro del cajón.
+- Las tablas hacen **scroll lateral propio** en vez de romper la página. En el
+  catálogo se ocultan autor, categoría y enlaces.
+- Los modales y el editor ocupan **toda la pantalla**; en el editor la canción va
+  arriba y los metadatos debajo, con un solo scroll.
+- Todos los campos a **16 px**: con menos, iOS hace zoom al enfocarlos y no lo
+  deshace. En el Raw se suben las dos capas a la vez para que el cursor cuadre.
+
+**Acordes con el dedo.** El arrastre de acordes y de líneas (asa `○`) usa
+*pointer events*, así que funciona igual con ratón que con el dedo. La zona de
+toque de cada acorde es más grande que el dibujo. Como en táctil no hay doble
+click fiable, **tocar un acorde que ya está seleccionado abre su edición**. Sin
+teclado no hay `Shift`/`Alt`, así que el arrastre táctil siempre ajusta a sílaba.
+
 ## Guardado y publicación
 
 La app guarda directamente en los archivos `.cho`. Cuando termines de editar,

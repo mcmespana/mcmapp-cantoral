@@ -1212,3 +1212,130 @@ table.songs tr.row-archived td { opacity: 0.55; }
 
 .bulk-tag-label { font-size: 13px; color: var(--fg-3); }
 .bulk-bar .tag-picker .tag-box { background: var(--bg-2); }
+
+/* ─────────── TÁCTIL ───────────
+   Acordes y asa de línea se arrastran con pointer events. Sin esto el navegador
+   se queda el gesto del dedo para hacer scroll y el arrastre no llega a empezar.
+   Va fuera del @media: una tablet en horizontal pasa de 820px y también es táctil. */
+.ed-chord, .ed-line .line-gutter { touch-action: none; }
+
+/* Botón ☰ y fondo del cajón: no existen en escritorio. */
+.nav-toggle, .nav-backdrop { display: none; }
+
+/* ─────────── MÓVIL ───────────
+   Una sola rejilla de cortes: por debajo de 820px el lateral pasa a cajón y
+   todo lo que tenía anchos fijos de escritorio se apila o hace scroll propio.
+   Lo que no está aquí se ve igual que en escritorio. */
+@media (max-width: 820px) {
+  body { display: block; }
+
+  /* Lateral → cajón que entra desde la izquierda */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 300;
+    width: min(300px, 86vw); min-width: 0; height: 100dvh;
+    transform: translateX(-100%); transition: transform 0.22s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+  }
+  body.nav-open .sidebar { transform: none; }
+  .nav-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 290;
+    background: rgba(0, 0, 0, 0.45); opacity: 0; pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+  body.nav-open .nav-backdrop { opacity: 1; pointer-events: auto; }
+  body.nav-open { overflow: hidden; }
+  .sidebar nav a, .cat-link { padding-top: 11px; padding-bottom: 11px; }
+  .sidebar-foot button { padding: 10px; }
+
+  main { height: 100dvh; padding: 0 12px 24px; }
+  .topbar {
+    position: sticky; top: 0; z-index: 50; margin: 0 -12px 8px; padding: 8px 12px;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  .nav-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-right: auto; width: 40px; height: 40px; position: relative;
+    font-size: 20px; border-radius: 8px; cursor: pointer;
+    background: var(--bg-2); border: 1px solid var(--border-strong); color: var(--fg);
+  }
+  .nav-toggle.has-alert::after {
+    content: ''; position: absolute; top: 5px; right: 5px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--todo);
+  }
+  .topbar-help { width: 36px; height: 36px; border-radius: 18px; }
+  h1 { font-size: 20px; flex-wrap: wrap; gap: 8px; }
+
+  /* iOS hace zoom al enfocar cualquier campo con letra < 16px y luego no
+     deshace el zoom. 16px en todos los campos lo evita. */
+  input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px !important; }
+  /* El raw son dos capas que deben medir lo mismo (ver arriba): se suben juntas. */
+  .editor-pane.raw textarea, .editor-pane.raw pre.raw-highlight { font-size: 16px; }
+
+  /* Dedos, no ratón: botones más altos */
+  .btn { padding: 10px 14px; }
+  .btn-mini { padding: 6px 10px; font-size: 13px; }
+
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
+  .stat { padding: 14px; }
+  .stat-val { font-size: 28px; }
+
+  .filter-bar { padding: 10px; gap: 8px; }
+  .filter-bar input[type=search] { min-width: 0; width: 100%; }
+  .filter-bar select { flex: 1 1 140px; min-width: 0; }
+  .filter-bar .count { margin-left: 0; width: 100%; }
+  .peticiones-banner { flex-direction: column; align-items: stretch; }
+  .btn.big { white-space: normal; }
+
+  /* Tablas: scroll horizontal propio en vez de romper la página entera */
+  table.songs { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.songs td, table.songs th { padding: 8px; }
+  /* Catálogo: fuera autor, categoría y enlaces (se ven al abrir la canción);
+     quedan casilla, nº, título, tono, estado y acciones. */
+  table.catalog-table th:nth-child(4), table.catalog-table td:nth-child(4),
+  table.catalog-table th:nth-child(6), table.catalog-table td:nth-child(6),
+  table.catalog-table th:nth-child(7), table.catalog-table td:nth-child(7) { display: none; }
+
+  .tags-layout { flex-direction: column; }
+  .tags-side { width: 100%; position: static; }
+
+  /* Modales a pantalla completa */
+  .editor-overlay { padding: 0; align-items: stretch; }
+  .editor-modal, .editor-modal.small, .editor-modal.compact {
+    width: 100vw; max-width: none; height: 100dvh; max-height: none; border-radius: 0;
+  }
+  /* Cabecera en columna: título, luego estado de revisión, luego botones. En
+     fila, el título encogía y los botones acababan encima del estado. */
+  .editor-header { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .editor-header-left { gap: 8px; flex: none; }
+  .editor-status-bar { flex-wrap: wrap; }
+  .editor-header-left h2 { white-space: normal; font-size: 16px; }
+  .editor-actions { flex-wrap: wrap; }
+  .editor-tabs { padding: 4px 8px 0; overflow-x: auto; flex-wrap: nowrap; }
+  .editor-tabs button { white-space: nowrap; padding: 10px 12px; flex: none; }
+
+  /* Cuerpo del editor: la canción arriba, los metadatos debajo. Todo el cuerpo
+     hace scroll en vez de dos columnas con scroll cada una. */
+  .editor-body, .editor-modal .editor-body, .editor-modal .editor-body.doce-preview-body {
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  .editor-body > .editor-pane, .doce-preview-body .chordpro-pane { flex: none; overflow: visible; }
+  .editor-meta, .doce-preview-body .meta-pane {
+    order: 2; border-right: 0; border-left: 0; border-top: 1px solid var(--border); overflow: visible;
+  }
+  .editor-pane { padding: 10px; }
+  .editor-pane.raw { min-height: 70dvh; }
+
+  /* Barra del editor visual: una fila con scroll lateral en vez de ocupar
+     media pantalla apilada */
+  .visual-toolbar { flex-wrap: nowrap; overflow-x: auto; }
+  .visual-toolbar > * { flex: none; }
+  /* Las líneas largas no se parten (los acordes van medidos sobre la línea):
+     el documento hace scroll lateral. */
+  .visual-doc { overflow-x: auto; padding: 10px 8px; }
+  /* Más superficie para el dedo sin mover el acorde de sitio: la zona de
+     toque crece con un pseudo-elemento, el dibujo se queda igual. */
+  .ed-chord::before { content: ''; position: absolute; inset: -9px -6px; }
+  .preview-render { overflow-x: auto; }
+
+  .numpick-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); }
+}
