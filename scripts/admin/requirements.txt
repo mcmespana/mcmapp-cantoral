@@ -1,2 +1,3 @@
 flask>=3.0
 pillow
+anthropic>=1.13

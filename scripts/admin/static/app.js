@@ -181,6 +181,7 @@ function app() {
     // ─────────── State ───────────
     view: 'dashboard',
     otrosOpen: false,   // submenú «Otros» del lateral
+    navOpen: false,     // menú lateral desplegado (solo en móvil, donde va oculto)
     theme: localStorage.theme || 'light',
     loading: false,
     error: null,
@@ -320,6 +321,9 @@ function app() {
     editorQueueIdx: 0,
     newSong: { open: false, category: '', title: '', artist: '', key: '', capo: 0,
                number: null, mode: 'blank', content: '', creating: false },
+    // ✨ Añadir canción (texto pegado → .cho con song_import.py)
+    addSong: { open: false },
+    aiStatus: { enabled: false, model: '' },   // revisión con Claude (ai_review.py)
     // Selector visual de número de canción.
     // {category, categoryTitle, numbers, suggested, selected, target, loading}
     numberPicker: null,
@@ -349,6 +353,8 @@ function app() {
 
     // ─────────── Lifecycle ───────────
     async boot() {
+      fetch('/api/ai/status').then(r => r.ok ? r.json() : null)
+        .then(j => { if (j) this.aiStatus = j; }).catch(() => {});
       this.$watch('editor.dirty', (v) => {
         if (v) this.setSaveIndicator('dirty', '● Sin guardar — pulsa 💾');
       });
@@ -1012,6 +1018,8 @@ function app() {
         this.doceNumberSel = { ...this.doceNumberSel, [t.id]: p.selected };
       } else if (t.kind === 'new') {
         this.newSong.number = p.selected;
+      } else if (t.kind === 'add') {
+        this.addSong.number = p.selected;
       } else if (t.kind === 'move' && this.moveModal) {
         this.moveModal.number = p.selected;
       }
@@ -1817,12 +1825,17 @@ function app() {
       const self = this;
       let dragState = null;
 
-      el.addEventListener('mousedown', (ev) => {
+      // Pointer events (no mouse events) para que el arrastre funcione también
+      // con el dedo en el móvil. El `touch-action: none` del CSS de .ed-chord es
+      // lo que impide que el navegador se quede el gesto para hacer scroll.
+      el.addEventListener('pointerdown', (ev) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         const lineIdx = parseInt(el.dataset.lineIdx, 10);
         const chordIdx = parseInt(el.dataset.chordIdx, 10);
+        const sel = self.visualSelectedChord;
+        const wasSelected = !!sel && sel.lineIdx === lineIdx && sel.chordIdx === chordIdx;
         self.visualSelectedChord = { lineIdx, chordIdx };
         // Refresh selection visuals
         document.querySelectorAll('.ed-chord.selected').forEach(n => n.classList.remove('selected'));
@@ -1873,14 +1886,26 @@ function app() {
             el.dataset.snapMode = e.altKey ? 'free' : (e.shiftKey ? 'word' : 'syl');
           }
         }
-        function onUp(e) {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+        function cleanup() {
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          document.removeEventListener('pointercancel', onCancel);
           el.classList.remove('dragging');
           el.removeAttribute('data-snap-mode');
           self.clearSnapHighlight();
+        }
+        function onCancel() {
+          cleanup();
+          dragState = null;
+          self.layoutChords();
+        }
+        function onUp(e) {
+          cleanup();
           if (!dragState || !dragState.moved) {
             dragState = null;
+            // En táctil no hay doble click fiable: tocar un acorde que ya estaba
+            // seleccionado abre su edición.
+            if (e.pointerType !== 'mouse' && wasSelected) self.editChordPrompt(lineIdx, chordIdx);
             return;
           }
           const bestIdx = computeSnapIdx(e);
@@ -1891,27 +1916,15 @@ function app() {
           self.layoutChords();
           dragState = null;
         }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onCancel);
       });
 
       el.addEventListener('dblclick', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        const lineIdx = parseInt(el.dataset.lineIdx, 10);
-        const chordIdx = parseInt(el.dataset.chordIdx, 10);
-        const cur = self.editor.parsed[lineIdx].chords[chordIdx].text;
-        const next = prompt('Acorde:', cur);
-        if (next != null) {
-          const v = next.trim();
-          if (v === '') {
-            self.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
-          } else {
-            self.editor.parsed[lineIdx].chords[chordIdx].text = v;
-          }
-          self.commitParsed();
-          self.layoutChords();
-        }
+        self.editChordPrompt(parseInt(el.dataset.lineIdx, 10), parseInt(el.dataset.chordIdx, 10));
       });
 
       el.addEventListener('contextmenu', (ev) => {
@@ -1924,6 +1937,20 @@ function app() {
           self.layoutChords();
         }
       });
+    },
+
+    // Cambiar el texto de un acorde (vacío = borrarlo). Doble click con ratón,
+    // segundo toque sobre un acorde ya seleccionado en táctil.
+    editChordPrompt(lineIdx, chordIdx) {
+      const chord = this.editor.parsed[lineIdx]?.chords?.[chordIdx];
+      if (!chord) return;
+      const next = prompt('Acorde (vacío = borrar):', chord.text);
+      if (next == null) return;
+      const v = next.trim();
+      if (v === '') this.editor.parsed[lineIdx].chords.splice(chordIdx, 1);
+      else chord.text = v;
+      this.commitParsed();
+      this.layoutChords();
     },
 
     onVisualClick(ev) {
@@ -2031,6 +2058,7 @@ function app() {
       const cls = ['ed-line', 'ed-' + ln.type];
       if (this.visualSelectedLines.has(idx)) cls.push('selected');
       if (ln._inChorus) cls.push('in-chorus');
+      if (ln._deduced) cls.push('in-deduced');
       const drag = this.lineDragClass(idx);
       if (drag) cls.push(drag);
       return cls.join(' ');
@@ -2250,15 +2278,17 @@ function app() {
           this.lineDrag = { ...this.lineDrag, over: target };
         }
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onUp = (e) => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
         const d = this.lineDrag;
         this.lineDrag = null;
-        if (d && d.moved) this.dropLines(d.moving, d.over);
+        if (d && d.moved && e.type !== 'pointercancel') this.dropLines(d.moving, d.over);
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     },
     // Índice de la línea que está bajo esa coordenada vertical.
     lineIdxAtPoint(clientY) {
@@ -2491,12 +2521,37 @@ function app() {
     },
     markChorusFlags() {
       // Anota _inChorus en líneas que estén entre {soc}/{eoc}
+      // y _deduced en las de la estrofa que sigue a una marca 👁 (hasta la
+      // siguiente línea en blanco: la marca va justo antes de la estrofa).
       let inside = false;
+      let deduced = false;
       for (const ln of this.editor.parsed) {
+        if (ln.type === 'deduced') { deduced = true; ln._deduced = false; continue; }
+        if (ln.type === 'blank') deduced = false;
+        ln._deduced = deduced;
         if (ln.type === 'soc') { inside = true; ln._inChorus = false; continue; }
         if (ln.type === 'eoc') { inside = false; ln._inChorus = false; continue; }
         ln._inChorus = inside;
       }
+    },
+    // «✓ Dar por buena»: quita la marca 👁 de una estrofa ya revisada.
+    acceptDeduced(idx) {
+      if (this.editor.parsed[idx]?.type !== 'deduced') return;
+      this.editor.parsed.splice(idx, 1);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    deducedCount() {
+      return (this.editor.parsed || []).filter(l => l.type === 'deduced').length;
+    },
+    acceptAllDeduced() {
+      const n = this.deducedCount();
+      if (!n || !confirm(`¿Dar por buenas las ${n} estrofas con acordes deducidos?`)) return;
+      this.editor.parsed = this.editor.parsed.filter(l => l.type !== 'deduced');
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
     },
 
     // Devuelve [{startIdx, endIdx, lines}] de cada bloque de estribillo (entre soc/eoc).
@@ -3015,6 +3070,12 @@ function app() {
     },
 
     // Ir a la pestaña de etiquetas y abrir una concreta.
+    // En móvil el lateral es un cajón: al elegir una sección se cierra solo.
+    // «Otros» solo despliega el submenú, así que ese no cuenta.
+    closeNavOnPick(ev) {
+      const a = ev.target.closest('a');
+      if (a && !a.classList.contains('nav-group')) this.navOpen = false;
+    },
     goTags(slug) {
       this.view = 'tags';
       this.loadTags().then(() => { if (slug) this.openTagEditor(slug); });
@@ -3405,6 +3466,148 @@ function app() {
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     },
 
+    // ─────────── ✨ Añadir canción ───────────
+    // La conversión entera vive en el servidor (song_import.py): aquí sólo se
+    // pide la vista previa mientras se escribe, se dejan corregir los datos y
+    // se crea el .cho con /api/song/new en modo «import».
+    openAddSong() {
+      this.addSong = {
+        open: true, text: '', format: '', preview: null, loading: false, error: '',
+        title: '', artist: '', key: '', capo: 0, metaTouched: false,
+        review: null, reviewing: false, reviewError: '',
+        category: this.categoryFilter || '', number: null, creating: false,
+        view: 'preview', _timer: null, _seq: 0,
+      };
+      this.$nextTick(() => document.querySelector('.add-song-input textarea')?.focus());
+    },
+    closeAddSong() {
+      if (this.addSong.text && this.addSong.text.trim().length > 40 && !this.addSong.creating
+          && !confirm('¿Cerrar sin crear la canción? Se pierde lo pegado.')) return;
+      clearTimeout(this.addSong._timer);
+      this.addSong = { open: false };
+    },
+    async pasteIntoAddSong() {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) { this.addSong.text = t; this.refreshAddSongPreview(); }
+      } catch (e) {
+        // Sin permiso de portapapeles (o navegador que no lo deja): que pegue a mano.
+        alert('El navegador no deja leer el portapapeles. Mantén pulsado en la caja y elige «Pegar».');
+      }
+    },
+    scheduleAddSongPreview() {
+      clearTimeout(this.addSong._timer);
+      this.addSong._timer = setTimeout(() => this.refreshAddSongPreview(), 350);
+    },
+    async refreshAddSongPreview() {
+      const a = this.addSong;
+      if (!a.text || !a.text.trim()) { a.preview = null; a.error = ''; return; }
+      const seq = ++a._seq;
+      a.loading = true;
+      try {
+        const r = await fetch('/api/song/import/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: a.text, format: a.format || undefined }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const j = await r.json();
+        if (seq !== a._seq || !this.addSong.open) return;  // llegó una más nueva
+        a.preview = j;
+        a.error = '';
+        a.review = null;   // la revisión era de la versión anterior
+        // Los datos detectados rellenan el formulario hasta que el usuario toque algo.
+        if (!a.metaTouched) {
+          a.title = j.meta.title || '';
+          a.artist = j.meta.artist || '';
+          a.key = j.meta.key || '';
+          a.capo = j.meta.capo || 0;
+        }
+      } catch (e) {
+        if (seq === a._seq) a.error = 'No se ha podido convertir: ' + e.message;
+      } finally {
+        if (seq === a._seq) a.loading = false;
+      }
+    },
+    // El .cho tal y como se va a guardar: el del servidor con la cabecera del formulario.
+    addSongCho() {
+      const a = this.addSong;
+      if (!a.preview) return '';
+      const body = a.preview.cho.split('\n')
+        .filter(l => !/^\s*\{\s*(title|t|artist|author|key|capo)\s*:/i.test(l));
+      while (body.length && !body[0].trim()) body.shift();
+      const head = [];
+      if (a.title) head.push(`{title: ${a.title}}`);
+      if (a.artist) head.push(`{artist: ${a.artist}}`);
+      if (a.key) head.push(`{key: ${a.key}}`);
+      if (parseInt(a.capo)) head.push(`{capo: ${parseInt(a.capo)}}`);
+      return head.concat([''], body).join('\n');
+    },
+    addSongStatsText() {
+      const st = this.addSong.preview?.stats;
+      if (!st) return '';
+      const parts = [];
+      if (st.chorus) parts.push(`${st.chorus} estribillo${st.chorus > 1 ? 's' : ''}`);
+      if (st.deduced) parts.push(`👁 ${st.deduced} deducida${st.deduced > 1 ? 's' : ''}`);
+      if (st.copied) parts.push(`${st.copied} copiado${st.copied > 1 ? 's' : ''}`);
+      return parts.join(' · ');
+    },
+    formatLabel(f) {
+      return { chords_above: 'acordes encima', chordpro: 'ChordPro', lyrics: 'letra sola' }[f] || f || '';
+    },
+    async reviewAddSong() {
+      const a = this.addSong;
+      if (!a.preview || a.reviewing) return;
+      a.reviewing = true;
+      a.reviewError = '';
+      try {
+        const r = await fetch('/api/song/import/review', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: a.text, cho: this.addSongCho(),
+                                 notes: a.preview.notes.map(n => n.msg) }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (this.addSong === a) a.review = j;
+      } catch (e) {
+        a.reviewError = e.message;
+      } finally {
+        a.reviewing = false;
+      }
+    },
+    canCreateAddSong() {
+      const a = this.addSong;
+      return !!(a.preview && a.preview.cho && a.title && a.title.trim() && a.category && !a.creating);
+    },
+    async createFromAddSong() {
+      const a = this.addSong;
+      if (!this.canCreateAddSong()) return;
+      a.creating = true;
+      try {
+        const r = await fetch('/api/song/new', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: a.category, title: a.title.trim(), artist: (a.artist || '').trim(),
+            key: (a.key || '').trim(), capo: parseInt(a.capo) || 0,
+            number: a.number || undefined, mode: 'import', content: a.preview.cho,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || ('HTTP ' + r.status));
+        }
+        const { path } = await r.json();
+        this.addSong = { open: false };
+        await this.loadCatalog();
+        await this.openEditor(path);
+      } catch (e) {
+        alert('Error creando: ' + e.message);
+        a.creating = false;
+      }
+    },
+
     // ─────────── Nueva canción ───────────
     openNewSongModal() {
       this.newSong = { open: true, category: '', title: '', artist: '', key: '', capo: 0,
@@ -3464,6 +3667,12 @@ function app() {
           out.push(`<div class="pv-meta">${m ? esc(m[1] + ': ' + m[2]) : esc(trimmed)}</div>`);
           continue;
         }
+        // Marca del importador: la estrofa que sigue trae acordes deducidos.
+        if (/^\{x_acordes_deducidos\b/i.test(trimmed)) {
+          const m = trimmed.match(/^\{x_acordes_deducidos\s*:?\s*(.*?)\s*\}/i);
+          out.push(`<div class="pv-deduced">👁 Acordes deducidos${m && m[1] ? ' ' + esc(m[1]) : ''} · revisar</div>`);
+          continue;
+        }
         if (/^\{soc\}/.test(trimmed)) { inChorus = true; out.push('<div class="pv-chorus">'); continue; }
         if (/^\{eoc\}/.test(trimmed)) { inChorus = false; out.push('</div>'); continue; }
         // Cualquier otro directive ({ritmo}, {tiempo}, {video}, {youtube}, …):
@@ -3497,6 +3706,9 @@ function parseCho(content) {
       const text = t.replace(/^\{arr\s*:\s*/i, '').replace(/\}\s*$/, '');
       return { type: 'arr', raw, text };
     }
+    // Marca del importador: la estrofa que sigue trae acordes deducidos de otra.
+    const dd = t.match(/^\{x_acordes_deducidos\s*(?::\s*(.*?))?\s*\}$/i);
+    if (dd) return { type: 'deduced', raw, text: dd[1] || '' };
     // Comentarios editables: {comment: ...} y su forma corta {c: ...}
     const cm = t.match(/^\{(comment|c)\s*:\s*(.*?)\s*\}$/i);
     if (cm) return { type: 'comment', raw, tag: cm[1].toLowerCase(), text: cm[2] };

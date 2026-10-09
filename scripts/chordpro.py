@@ -207,9 +207,20 @@ def parse_media(text: str) -> dict:
     return media
 
 
+# Marca de trabajo del admin: «esta estrofa trae acordes deducidos de otra,
+# revísala». Va justo antes de la estrofa, la pone el importador
+# (admin/song_import.py) y la quita el botón «✓ dar por buena» del editor.
+# Es solo del admin: strip_media la elimina, así que no llega nunca a la app.
+DEDUCED_DIRECTIVE = "x_acordes_deducidos"
+_ADMIN_STRIP_RX = re.compile(
+    r"^[ \t]*\{\s*" + DEDUCED_DIRECTIVE + r"\s*(?::[^}]*)?\}[ \t]*\r?\n?",
+    re.IGNORECASE | re.MULTILINE)
+
+
 def strip_media(text: str) -> str:
-    """Quita del cuerpo las líneas de directivas multimedia/meta."""
-    return _STRIP_RX.sub("", text)
+    """Quita del cuerpo las líneas de directivas multimedia/meta (y las marcas
+    de trabajo del admin, que no son para la app)."""
+    return _ADMIN_STRIP_RX.sub("", _STRIP_RX.sub("", text))
 
 
 # ─────────── Etiquetas del cantoral: {tags: a, b, c} ─────────── #

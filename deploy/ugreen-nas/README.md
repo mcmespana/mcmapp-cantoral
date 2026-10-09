@@ -37,6 +37,24 @@ Si el paso de Funnel imprime una URL de autorización en vez de funcionar,
 es que la política del tailnet aún no lo permite: ábrela, acepta, y repite
 `sudo docker exec cantoral-tailscale tailscale funnel --bg 8765`.
 
+## Revisión con IA
+
+El botón **🤖 Revisar con IA** de «✨ Añadir canción» necesita la clave de la API
+de Anthropic. Por SSH en el NAS:
+
+```sh
+# 1) Añadir la clave al fichero de variables del contenedor (no va al repo)
+sudo sh -c 'echo "ANTHROPIC_API_KEY=sk-ant-..." >> /volume1/docker/cantoral-admin/cantoral-admin.env'
+# opcional, para gastar menos:  CANTORAL_AI_MODEL=claude-sonnet-5-5
+
+# 2) Reconstruir y relanzar: trae el paquete «anthropic» y lee el .env nuevo
+sh /volume1/docker/cantoral-admin/run-cantoral.sh
+```
+
+Un `docker restart` **no basta**: las variables del `--env-file` solo se leen al
+crear el contenedor, y el paquete nuevo hay que instalarlo en la imagen.
+Conviene poner un límite de gasto mensual en la consola de Anthropic.
+
 ## Mantenimiento
 
 - **Actualizar el admin**: `sudo docker exec cantoral-admin git -C /app pull`

@@ -370,13 +370,95 @@ YouTube (Vimeo, un mp3, un Drive) se deja intacto.
 Elige categoría, arrastra filas, "Aplicar nuevo orden" renombra los archivos
 `01.xxx.cho`, `02.yyy.cho`… con backup previo de la carpeta entera.
 
+### ✨ Añadir canción
+La forma de meter una canción que te pasan **como venga**. Botón verde arriba del
+todo en el Dashboard y primera entrada del menú. Pegas el texto y a la derecha (o
+debajo, en el móvil) sale ya convertida, mientras escribes:
+
+- **Formatos**: acordes en la línea de encima (Ultimate Guitar, LaCuerda, un
+  Word…), ChordPro, o la letra sola. Se detecta solo; si se equivoca, el
+  desplegable «Formato» lo fuerza.
+- **Acordes** en español o inglés: `DO`, `Sol 7`, `sim`, `fa#m`, `RE-LA`,
+  `Cadd9`… todo sale en inglés. Una palabra que no sea acorde basta para que la
+  línea cuente como letra, así que «Si la vida…» o «A mi Dios» no se confunden.
+- **Metadatos**: título (con o sin número delante, «58. HURACÁN»), cejilla
+  («Cejilla 5º traste», «Capo 2», o «C/2» pegado al título), «Autor: …»,
+  «Tono: …». Si no hay tono, se toma el primer acorde. Todo se puede corregir en
+  el formulario antes de crear.
+- **Estribillos**: por la etiqueta («Estribillo:», «Coro»), porque el mismo bloque
+  se repite, o porque va en MAYÚSCULAS (aunque esté pegado a la estrofa de antes).
+  Un **«Estribillo» suelto** (o «Estribillo x2») se sustituye por el estribillo
+  **escrito entero**: la canción queda tal cual se canta.
+- **Acordes deducidos** 👁: una estrofa sin acordes los toma, **sílaba a sílaba**,
+  de otra del mismo tipo (estrofa de estrofa, estribillo de estribillo) que tenga
+  el mismo número de versos (±1) y casi todos con acordes. Un verso que no cuadra
+  en largo se queda sin acordes en vez de amontonarlos, y una estrofa sin
+  plantilla razonable se queda como está. Un estribillo repetido con el mismo
+  texto se copia sin más y no se marca: no hay nada inventado.
+- **Avisos**: debajo del formulario sale qué se ha deducido, qué acordes no se
+  reconocen, si hay versos sin acordes en una estrofa que sí los tiene…
+- **¿Ya existe?** Si hay una canción con ese título en el repo sale un aviso con
+  enlace, y si está en **doceacordes** también (útil cuando pegas letra sola: allí
+  puede estar con acordes).
+
+**Crear y abrir editor** escribe el `.cho` (con su `TO DO`) y lo abre. Las
+estrofas deducidas salen ahí con un aviso ámbar y los acordes en ámbar; cuando la
+revisas, **✓ Dar por buena** quita la marca (o «Dar todas por buenas» arriba).
+
+La marca es la línea `{x_acordes_deducidos: de «…»}` justo antes de la estrofa.
+Es **solo del admin**: `strip_media` la quita al generar el JSON, así que la app
+no la ve nunca. Si la canción se edita desde la app, la marca se pierde (se da por
+revisada).
+
+Toda la conversión vive en `scripts/admin/song_import.py`, es determinista y no
+cuesta nada. Tests: `python scripts/admin/test_song_import.py`, con cuatro
+canciones reales en `fixtures_import/`.
+
+#### 🤖 Revisar con IA
+En la misma ventana, **Revisar con IA** le pasa a Claude el texto original y el
+resultado y devuelve **avisos** —acorde perdido, acorde en otra sílaba, estrofa
+deducida que no cuadra, estribillo sin marcar…— citando la línea. **No cambia
+nada**: tú corriges en el editor. Cuesta céntimos por canción.
+
+Se activa con la clave de la API en el servidor (ver
+[deploy/ugreen-nas](../../deploy/ugreen-nas/README.md#revisión-con-ia)):
+
+| variable | |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | la clave. Sin ella el botón sale desactivado. |
+| `CANTORAL_AI_MODEL` | opcional; por defecto `claude-opus-5-5`. Para gastar menos, `claude-sonnet-5-5`. |
+
+Código en `scripts/admin/ai_review.py`; tests (sin llamar a la API) en
+`test_ai_review.py`.
+
 ### Nueva canción a mano (➕)
 Botón en el dashboard. Modos:
 - **En blanco** — crea el .cho solo con cabecera y TO DO. Editas con el visual.
 - **Pegar ChordPro** — pegas el texto ya en formato `{title:...}\n[C]Letra...`.
 
-(En la lista hay dos modos más marcados como "próximamente": pegar formato
-Ultimate Guitar y pegar texto con acordes en línea de encima. Ver TAREAS_PENDIENTES.md.)
+Para pegar cualquier otra cosa (acordes encima, letra sola…) está ✨ Añadir canción.
+
+## Desde el móvil
+
+Por debajo de 820 px de ancho (todo el CSS está en un único `@media` al final de
+`static/style.css`):
+
+- El lateral pasa a **cajón**: se abre con **☰** arriba a la izquierda y se
+  cierra solo al elegir una sección (o tocando fuera, o con `Esc`). El ☰ lleva
+  un **punto naranja** cuando hay cambios sin subir, porque el botón de la nube
+  queda escondido dentro del cajón.
+- Las tablas hacen **scroll lateral propio** en vez de romper la página. En el
+  catálogo se ocultan autor, categoría y enlaces.
+- Los modales y el editor ocupan **toda la pantalla**; en el editor la canción va
+  arriba y los metadatos debajo, con un solo scroll.
+- Todos los campos a **16 px**: con menos, iOS hace zoom al enfocarlos y no lo
+  deshace. En el Raw se suben las dos capas a la vez para que el cursor cuadre.
+
+**Acordes con el dedo.** El arrastre de acordes y de líneas (asa `○`) usa
+*pointer events*, así que funciona igual con ratón que con el dedo. La zona de
+toque de cada acorde es más grande que el dibujo. Como en táctil no hay doble
+click fiable, **tocar un acorde que ya está seleccionado abre su edición**. Sin
+teclado no hay `Shift`/`Alt`, así que el arrastre táctil siempre ajusta a sílaba.
 
 ## Guardado y publicación
 
