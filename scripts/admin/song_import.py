@@ -870,10 +870,11 @@ def render_line(ln: Line) -> str:
     if ln.kind == "comment":
         return f"{{comment: {ln.text}}}"
     if ln.kind == "chords":
-        # Cada acorde con hueco debajo de su ancho: si sólo los separa un
-        # espacio, en la app (y en la vista previa) se pisan unos con otros.
-        s = "".join(f"[{c}]" + " " * (len(c) + 2) for _, c in ln.chords)
-        return (s + (ln.suffix if ln.suffix else "")).rstrip() + " "
+        # Pegados, como el resto del cantoral («[D][Bm7][G][A]»): el editor y la
+        # app ponen en fila los acordes de una misma posición. Separados por
+        # espacios se pisan, porque un espacio es más estrecho que un acorde.
+        s = "".join(f"[{c}]" for _, c in ln.chords)
+        return s + (" " + ln.suffix if ln.suffix else "") + " "
     text = ln.text
     chords = sorted(ln.chords, key=lambda x: x[0])
     out: List[str] = []

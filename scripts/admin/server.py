@@ -1055,26 +1055,51 @@ def api_song_import_preview():
 
 @app.route("/api/ai/status")
 def api_ai_status():
-    """¿Está la revisión con IA disponible? (hace falta ANTHROPIC_API_KEY)."""
-    return jsonify({"enabled": ai_review.is_configured(), "model": ai_review.model_name()})
+    """Estado y ajustes de la IA: ¿hay clave?, modelo, esfuerzo, automático."""
+    return jsonify(ai_review.status())
 
 
-@app.route("/api/song/import/review", methods=["POST"])
-def api_song_import_review():
-    """Claude compara el texto original con el .cho y devuelve avisos.
+@app.route("/api/ai/settings", methods=["POST"])
+def api_ai_settings():
+    """Body: {model?, effort?, auto?}. Se guarda en .admin-settings.json (fuera de git)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        ai_review.save_settings({k: body[k] for k in ("model", "effort", "auto") if k in body})
+    except ValueError as e:
+        abort(400, str(e))
+    return jsonify(ai_review.status())
 
-    Body: {text, cho, notes?}. No toca ningún archivo.
+
+@app.route("/api/ai/models")
+def api_ai_models():
+    """Modelos de Claude disponibles en la cuenta (Models API), más nuevos primero."""
+    if not ai_review.is_configured():
+        abort(503, "Falta ANTHROPIC_API_KEY en el servidor.")
+    try:
+        return jsonify({"models": ai_review.list_models(force=request.args.get("force") == "1")})
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
+
+
+@app.route("/api/song/ai-correct", methods=["POST"])
+def api_song_ai_correct():
+    """Claude corrige el .cho: devuelve cambios línea a línea (no toca archivos).
+
+    Body: {cho, text?, notes?, categories?: bool}
+      - text: el original pegado (si lo hay; en el editor puede no haberlo).
+      - categories: true para que proponga también la categoría.
     """
     if not ai_review.is_configured():
-        abort(503, "La revisión con IA no está configurada: falta ANTHROPIC_API_KEY.")
+        abort(503, "La IA no está configurada: falta ANTHROPIC_API_KEY.")
     body = request.get_json(silent=True) or {}
     text = body.get("text") or ""
     cho = body.get("cho") or ""
     if len(text) + len(cho) > 120000:
         abort(413, "Demasiado largo para una canción")
     notes = [str(n) for n in (body.get("notes") or [])][:40]
+    cats = [c["title"] for c in list_categories()] if body.get("categories") else None
     try:
-        return jsonify(ai_review.review(text, cho, notes))
+        return jsonify(ai_review.correct(text, cho, notes, cats))
     except ai_review.ReviewError as e:
         abort(502, str(e))
 

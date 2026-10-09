@@ -401,7 +401,7 @@ debajo, en el móvil) sale ya convertida, mientras escribes:
   enlace, y si está en **doceacordes** también (útil cuando pegas letra sola: allí
   puede estar con acordes).
 
-**Crear y abrir editor** escribe el `.cho` (con su `TO DO`) y lo abre. Las
+**Crear y abrir editor** (o `Ctrl/Cmd+Enter`) escribe el `.cho` (con su `TO DO`) y lo abre. La categoría se recuerda para la siguiente. Las
 estrofas deducidas salen ahí con un aviso ámbar y los acordes en ámbar; cuando la
 revisas, **✓ Dar por buena** quita la marca (o «Dar todas por buenas» arriba).
 
@@ -414,22 +414,57 @@ Toda la conversión vive en `scripts/admin/song_import.py`, es determinista y no
 cuesta nada. Tests: `python scripts/admin/test_song_import.py`, con cuatro
 canciones reales en `fixtures_import/`.
 
-#### 🤖 Revisar con IA
-En la misma ventana, **Revisar con IA** le pasa a Claude el texto original y el
-resultado y devuelve **avisos** —acorde perdido, acorde en otra sílaba, estrofa
-deducida que no cuadra, estribillo sin marcar…— citando la línea. **No cambia
-nada**: tú corriges en el editor. Cuesta céntimos por canción.
+#### 🤖 Corrección con IA
+Con la IA activada, en cuanto dejas de pegar/escribir (1 s), Claude compara el
+texto original con el resultado y **lo corrige solo**: recoloca acordes, añade
+los que se perdieron, marca estribillos, arregla versos partidos… y además
+propone **autor, tono, cejilla y categoría** si faltan. Arriba del formulario
+sale una franja morada con el resumen en una frase y el nº de cambios:
 
-Se activa con la clave de la API en el servidor (ver
-[deploy/ugreen-nas](../../deploy/ugreen-nas/README.md#revisión-con-ia)):
+- **↶ Deshacer todo** / **↷ Rehacer** de un toque.
+- **Ver cambios**: la lista, cada uno con su motivo en 2-6 palabras, la línea
+  antes (tachada) y después, y su propio **↶** para deshacer solo ese.
 
-| variable | |
+Cómo está hecho para que sea seguro aunque se aplique solo:
+
+- Claude no reescribe la canción: devuelve cambios **línea a línea**
+  (`find` → `replace`). Un cambio cuya línea no existe en el `.cho` se descarta
+  (no se puede inventar nada fuera de lo que hay) y se aplica a **todas** las
+  copias de esa línea (un arreglo en el estribillo vale para todas sus repeticiones).
+- La marca 👁 de estrofa deducida **no la puede quitar**: eso lo decides tú.
+- Los datos (autor, tono…) solo se rellenan si no los has tocado tú.
+- Si cambias el texto mientras corrige, la respuesta vieja se tira.
+
+**En el editor** hay también un botón **🤖 Corregir** (arriba, junto a Guardar)
+para cualquier canción, recién creada o de las de siempre. Si la creaste con ✨
+en este navegador, la compara con el texto pegado; si no, solo busca errores
+evidentes del propio ChordPro. Sale la misma franja con deshacer todo / uno a
+uno, y queda además como un paso de **Ctrl+Z**. No guarda: guardas tú.
+
+**📄 Original**: al crear con ✨, el texto pegado se queda guardado en el
+navegador (60 días) y el editor enseña una pestaña **📄 Original** para
+compararlo mientras revisas.
+
+#### ⚙️ Ajustes (Otros → Ajustes)
+- **Modelo**: la lista se pide en directo a la API de Anthropic (Models API),
+  así que los modelos nuevos aparecen solos, los más recientes arriba. Los que
+  no sirven (sin salida JSON estructurada) salen desactivados. «Por defecto» es
+  `claude-opus-5-5`.
+- **Esfuerzo**: de bajo a máximo. *Alto* es el recomendado. Si el modelo elegido
+  no admite el nivel, no se manda y listo.
+- **Corregir automáticamente al pegar**: si lo quitas, sale un botón
+  **🤖 Corregir con IA** en su lugar.
+
+Se guarda en el servidor, en `scripts/admin/.admin-settings.json` (fuera de git),
+y manda sobre las variables de entorno. La **clave** no va ahí nunca:
+
+| variable de entorno | |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | la clave. Sin ella el botón sale desactivado. |
-| `CANTORAL_AI_MODEL` | opcional; por defecto `claude-opus-5-5`. Para gastar menos, `claude-sonnet-5-5`. |
+| `ANTHROPIC_API_KEY` | la clave. Sin ella la IA sale desactivada. Ver [deploy/ugreen-nas](../../deploy/ugreen-nas/README.md#revisión-con-ia). |
+| `CANTORAL_AI_MODEL` / `CANTORAL_AI_EFFORT` | opcionales: valores por defecto si no se ha elegido nada en Ajustes. |
 
-Código en `scripts/admin/ai_review.py`; tests (sin llamar a la API) en
-`test_ai_review.py`.
+Código en `scripts/admin/ai_review.py`; tests (con un cliente falso, sin llamar
+a la API) en `test_ai_review.py`.
 
 ### Nueva canción a mano (➕)
 Botón en el dashboard. Modos:

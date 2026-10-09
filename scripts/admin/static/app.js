@@ -323,7 +323,9 @@ function app() {
                number: null, mode: 'blank', content: '', creating: false },
     // ✨ Añadir canción (texto pegado → .cho con song_import.py)
     addSong: { open: false },
-    aiStatus: { enabled: false, model: '' },   // revisión con Claude (ai_review.py)
+    editorAi: null,   // resultado de 🤖 Corregir en el editor
+    aiStatus: { enabled: false, model: '', effort: 'high', auto: true, efforts: [] },  // ai_review.py
+    settings: { models: [], loadingModels: false, saving: false, error: '', savedAt: 0 },
     // Selector visual de número de canción.
     // {category, categoryTitle, numbers, suggested, selected, target, loading}
     numberPicker: null,
@@ -353,6 +355,7 @@ function app() {
 
     // ─────────── Lifecycle ───────────
     async boot() {
+      this.pruneOriginals();
       fetch('/api/ai/status').then(r => r.ok ? r.json() : null)
         .then(j => { if (j) this.aiStatus = j; }).catch(() => {});
       this.$watch('editor.dirty', (v) => {
@@ -1642,7 +1645,9 @@ function app() {
           tab: 'visual',  // por defecto abrimos en visual
           meta: { ...json.meta },
           parsed: [],
+          original: this.loadOriginal(json.path),
         };
+        this.editorAi = null;
         this.visualSelectedLines = new Set();
         this.visualSelectedChord = null;
         this.resetUndo();
@@ -1654,6 +1659,77 @@ function app() {
       } catch (e) {
         alert('Error abriendo: ' + e.message);
       }
+    },
+    // Texto pegado al crear la canción con ✨ (si se creó en este navegador).
+    loadOriginal(path) {
+      try {
+        const v = JSON.parse(localStorage.getItem('cantoral.original:' + path) || 'null');
+        return v && v.text ? v.text : '';
+      } catch (e) { return ''; }
+    },
+    // Los originales caducan a los 60 días: son para la revisión de recién creada.
+    pruneOriginals() {
+      try {
+        const limit = Date.now() - 60 * 864e5;
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (!k || !k.startsWith('cantoral.original:')) continue;
+          const v = JSON.parse(localStorage.getItem(k) || 'null');
+          if (!v || !v.at || v.at < limit) localStorage.removeItem(k);
+        }
+      } catch (e) { /* nada */ }
+    },
+    editorCurrentContent() {
+      return this.editor.tab === 'visual' ? serializeCho(this.editor.parsed) : this.editor.content;
+    },
+    // 🤖 Corregir en el editor: mismos cambios línea a línea que en ✨, aplicados
+    // sobre lo que hay ahora. Queda un paso de deshacer (Ctrl+Z también vale).
+    async aiCorrectEditor() {
+      const content = this.editorCurrentContent();
+      const path = this.editor.path;
+      this.editorAi = { running: true, done: false, error: '', edits: [], open: false };
+      try {
+        const r = await fetch('/api/song/ai-correct', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cho: content, text: this.editor.original || '' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (this.editor.path !== path) return;
+        if (this.editorCurrentContent() !== content) {
+          throw new Error('Has cambiado la canción mientras corregía: vuelve a pulsar 🤖 Corregir.');
+        }
+        const edits = (j.edits || []).map(e => ({ ...e, on: true }));
+        this.editorAi = { running: false, done: true, error: '', summary: j.summary, edits,
+                          open: false, base: content, result: content };
+        if (edits.length) this.applyEditorAi();
+      } catch (e) {
+        this.editorAi = { running: false, done: false, error: 'La IA ha fallado: ' + e.message, edits: [] };
+      }
+    },
+    // Recalcula la canción desde la base con los cambios activados.
+    applyEditorAi() {
+      const ai = this.editorAi;
+      if (!ai || !ai.done) return false;
+      const now = this.editorCurrentContent();
+      if (now !== ai.result && !confirm('Has editado la canción después de la corrección. Si sigues, se pierde lo que hayas hecho desde entonces. ¿Seguir?')) {
+        return false;
+      }
+      const next = applyAiEdits(ai.base, ai.edits.filter(e => e.on));
+      this.recordUndo(now);
+      this.applyEditorContent(next);
+      ai.result = next;
+      return true;
+    },
+    toggleEditorAiEdit(e) {
+      e.on = !e.on;
+      if (!this.applyEditorAi()) e.on = !e.on;
+    },
+    setEditorAiAll(on) {
+      const ai = this.editorAi;
+      const prev = ai.edits.map(e => e.on);
+      ai.edits.forEach(e => { e.on = on; });
+      if (!this.applyEditorAi()) ai.edits.forEach((e, i) => { e.on = prev[i]; });
     },
     // Red de seguridad: si guardar en la nube falla (o falta descargar antes),
     // te llevas el .cho tal cual está y luego lo vuelves a subir.
@@ -3466,6 +3542,51 @@ function app() {
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     },
 
+    // ─────────── ⚙️ Ajustes (IA) ───────────
+    goSettings() {
+      this.view = 'settings';
+      this.otrosOpen = true;
+      if (this.aiStatus.enabled && !this.settings.models.length) this.loadAiModels(false);
+    },
+    async loadAiModels(force) {
+      this.settings.loadingModels = true;
+      this.settings.error = '';
+      try {
+        const r = await fetch('/api/ai/models' + (force ? '?force=1' : ''));
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        this.settings.models = j.models || [];
+      } catch (e) {
+        this.settings.error = 'No se ha podido cargar la lista de modelos: ' + e.message;
+      } finally {
+        this.settings.loadingModels = false;
+      }
+    },
+    // El valor del select: "" significa «el de por defecto».
+    settingsModelValue() {
+      const m = this.aiStatus.model;
+      return m && m !== this.aiStatus.default_model ? m : '';
+    },
+    async saveAiSettings(changes) {
+      this.settings.saving = true;
+      this.settings.error = '';
+      try {
+        const r = await fetch('/api/ai/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(changes),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        this.aiStatus = j;
+        this.settings.savedAt = Date.now();
+        setTimeout(() => { if (Date.now() - this.settings.savedAt >= 1900) this.settings.savedAt = 0; }, 2000);
+      } catch (e) {
+        this.settings.error = 'No se ha podido guardar: ' + e.message;
+      } finally {
+        this.settings.saving = false;
+      }
+    },
+
     // ─────────── ✨ Añadir canción ───────────
     // La conversión entera vive en el servidor (song_import.py): aquí sólo se
     // pide la vista previa mientras se escribe, se dejan corregir los datos y
@@ -3474,8 +3595,8 @@ function app() {
       this.addSong = {
         open: true, text: '', format: '', preview: null, loading: false, error: '',
         title: '', artist: '', key: '', capo: 0, metaTouched: false,
-        review: null, reviewing: false, reviewError: '',
-        category: this.categoryFilter || '', number: null, creating: false,
+        ai: null, aiRunning: false, aiError: '', aiOpen: false, _aiTimer: null,
+        category: this.categoryFilter || this.lastAddCategory(), number: null, creating: false,
         view: 'preview', _timer: null, _seq: 0,
       };
       this.$nextTick(() => document.querySelector('.add-song-input textarea')?.focus());
@@ -3484,7 +3605,11 @@ function app() {
       if (this.addSong.text && this.addSong.text.trim().length > 40 && !this.addSong.creating
           && !confirm('¿Cerrar sin crear la canción? Se pierde lo pegado.')) return;
       clearTimeout(this.addSong._timer);
+      clearTimeout(this.addSong._aiTimer);
       this.addSong = { open: false };
+    },
+    lastAddCategory() {
+      try { return localStorage.getItem('cantoral.lastAddCategory') || ''; } catch (e) { return ''; }
     },
     async pasteIntoAddSong() {
       try {
@@ -3517,13 +3642,20 @@ function app() {
         if (seq !== a._seq || !this.addSong.open) return;  // llegó una más nueva
         a.preview = j;
         a.error = '';
-        a.review = null;   // la revisión era de la versión anterior
         // Los datos detectados rellenan el formulario hasta que el usuario toque algo.
         if (!a.metaTouched) {
           a.title = j.meta.title || '';
           a.artist = j.meta.artist || '';
           a.key = j.meta.key || '';
           a.capo = j.meta.capo || 0;
+        }
+        // La corrección de IA era sobre la versión anterior: se tira y, en
+        // automático, se pide otra cuando el texto deja de cambiar.
+        a.ai = null;
+        a.aiError = '';
+        clearTimeout(a._aiTimer);
+        if (this.aiStatus.enabled && this.aiStatus.auto && j.cho && a.text.trim().length > 30) {
+          a._aiTimer = setTimeout(() => this.runAiCorrect(), 1200);
         }
       } catch (e) {
         if (seq === a._seq) a.error = 'No se ha podido convertir: ' + e.message;
@@ -3535,7 +3667,7 @@ function app() {
     addSongCho() {
       const a = this.addSong;
       if (!a.preview) return '';
-      const body = a.preview.cho.split('\n')
+      const body = this.addSongBodyCho().split('\n')
         .filter(l => !/^\s*\{\s*(title|t|artist|author|key|capo)\s*:/i.test(l));
       while (body.length && !body[0].trim()) body.shift();
       const head = [];
@@ -3557,25 +3689,78 @@ function app() {
     formatLabel(f) {
       return { chords_above: 'acordes encima', chordpro: 'ChordPro', lyrics: 'letra sola' }[f] || f || '';
     },
-    async reviewAddSong() {
+    // El .cho del conversor con los cambios de la IA que estén activados.
+    addSongBodyCho() {
       const a = this.addSong;
-      if (!a.preview || a.reviewing) return;
-      a.reviewing = true;
-      a.reviewError = '';
+      if (!a.preview) return '';
+      return a.ai ? applyAiEdits(a.preview.cho, a.ai.edits.filter(e => e.on)) : a.preview.cho;
+    },
+    async runAiCorrect() {
+      const a = this.addSong;
+      if (!a.open || !a.preview || !a.preview.cho || a.aiRunning || !this.aiStatus.enabled) return;
+      clearTimeout(a._aiTimer);
+      const seq = a._seq;
+      a.aiRunning = true;
+      a.aiError = '';
       try {
-        const r = await fetch('/api/song/import/review', {
+        const r = await fetch('/api/song/ai-correct', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: a.text, cho: this.addSongCho(),
+          body: JSON.stringify({ text: a.text, cho: a.preview.cho, categories: true,
                                  notes: a.preview.notes.map(n => n.msg) }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
-        if (this.addSong === a) a.review = j;
+        if (!this.addSong.open || seq !== a._seq) return;  // el texto cambió mientras tanto
+        a.ai = { ...j, edits: j.edits.map(e => ({ ...e, on: true })), metaChanges: [] };
+        this.applyAiMeta(a, j.meta || {});
       } catch (e) {
-        a.reviewError = e.message;
+        if (seq === a._seq) a.aiError = 'La IA ha fallado: ' + e.message;
       } finally {
-        a.reviewing = false;
+        a.aiRunning = false;
+        // El texto cambió mientras corregía: la de la versión nueva se pidió y
+        // se ignoró (había una en marcha). Se lanza ahora.
+        if (seq !== a._seq && this.addSong.open && this.aiStatus.auto && a.preview?.cho && !a.ai) {
+          clearTimeout(a._aiTimer);
+          a._aiTimer = setTimeout(() => this.runAiCorrect(), 300);
+        }
       }
+    },
+    // Título/autor/tono/cejilla/categoría que propone la IA: se aplican si el
+    // usuario no ha tocado ese dato, y cada uno se puede deshacer.
+    applyAiMeta(a, meta) {
+      const fields = [
+        ['title', 'Título'], ['artist', 'Autor'], ['key', 'Tono'], ['capo', 'Cejilla'],
+      ];
+      for (const [f, label] of fields) {
+        const to = meta[f];
+        if (to === null || to === undefined || to === '' || a.metaTouched) continue;
+        if (String(to) === String(a[f] ?? '')) continue;
+        a.ai.metaChanges.push({ field: f, label, from: String(a[f] ?? ''), to: String(to), on: true });
+        a[f] = f === 'capo' ? parseInt(to) || 0 : to;
+      }
+      const cat = (meta.category || '').toUpperCase();
+      const cats = (this.data?.categories || []).map(c => c.letter);
+      if (cat && !a.category && cats.includes(cat)) {
+        a.ai.metaChanges.push({ field: 'category', label: 'Categoría', from: '', to: cat, on: true });
+        a.category = cat;
+      }
+    },
+    toggleAiMeta(c) {
+      const a = this.addSong;
+      c.on = !c.on;
+      const v = c.on ? c.to : c.from;
+      a[c.field] = c.field === 'capo' ? (parseInt(v) || 0) : v;
+      if (c.field === 'category') a.number = null;
+    },
+    aiChangeCount(ai) {
+      return ai ? ai.edits.length + (ai.metaChanges || []).length : 0;
+    },
+    aiOnCount(ai) {
+      return ai ? ai.edits.filter(e => e.on).length + (ai.metaChanges || []).filter(c => c.on).length : 0;
+    },
+    setAllAi(ai, on) {
+      ai.edits.forEach(e => { e.on = on; });
+      (ai.metaChanges || []).forEach(c => { if (c.on !== on) this.toggleAiMeta(c); });
     },
     canCreateAddSong() {
       const a = this.addSong;
@@ -3591,7 +3776,7 @@ function app() {
           body: JSON.stringify({
             category: a.category, title: a.title.trim(), artist: (a.artist || '').trim(),
             key: (a.key || '').trim(), capo: parseInt(a.capo) || 0,
-            number: a.number || undefined, mode: 'import', content: a.preview.cho,
+            number: a.number || undefined, mode: 'import', content: this.addSongBodyCho(),
           }),
         });
         if (!r.ok) {
@@ -3599,6 +3784,12 @@ function app() {
           throw new Error(err.error || ('HTTP ' + r.status));
         }
         const { path } = await r.json();
+        try {
+          localStorage.setItem('cantoral.lastAddCategory', a.category);
+          // El texto pegado se guarda (en este navegador) para verlo luego en la
+          // pestaña 📄 Original del editor mientras se revisa la canción.
+          localStorage.setItem('cantoral.original:' + path, JSON.stringify({ text: a.text, at: Date.now() }));
+        } catch (e) { /* sin localStorage: no pasa nada */ }
         this.addSong = { open: false };
         await this.loadCatalog();
         await this.openEditor(path);
@@ -3695,6 +3886,25 @@ function app() {
 
 // Parse full ChordPro content into a list of line-objects.
 // Types: 'directive' (incl. {comment}), 'soc', 'eoc', 'blank', 'lyric'.
+// Aplica los cambios de la IA ({find, replace}): línea entera (sin espacios
+// finales), en todas sus copias. Misma regla que ai_review.apply_edits en Python.
+function applyAiEdits(cho, edits) {
+  let lines = cho.split('\n');
+  for (const e of edits) {
+    const find = e.find.replace(/\s+$/, '');
+    const out = [];
+    for (const ln of lines) {
+      if (ln.replace(/\s+$/, '') === find) {
+        if (e.replace !== '') out.push(...e.replace.split('\n'));
+      } else {
+        out.push(ln);
+      }
+    }
+    lines = out;
+  }
+  return lines.join('\n');
+}
+
 function parseCho(content) {
   const lines = content.split('\n');
   return lines.map(raw => {

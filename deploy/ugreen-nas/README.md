@@ -39,13 +39,13 @@ es que la política del tailnet aún no lo permite: ábrela, acepta, y repite
 
 ## Revisión con IA
 
-El botón **🤖 Revisar con IA** de «✨ Añadir canción» necesita la clave de la API
+La corrección con IA de «✨ Añadir canción» y del editor necesita la clave de la API
 de Anthropic. Por SSH en el NAS:
 
 ```sh
 # 1) Añadir la clave al fichero de variables del contenedor (no va al repo)
 sudo sh -c 'echo "ANTHROPIC_API_KEY=sk-ant-..." >> /volume1/docker/cantoral-admin/cantoral-admin.env'
-# opcional, para gastar menos:  CANTORAL_AI_MODEL=claude-sonnet-5-5
+# (el modelo y el esfuerzo se eligen luego en el admin: Otros → ⚙️ Ajustes)
 
 # 2) Reconstruir y relanzar: trae el paquete «anthropic» y lee el .env nuevo
 sh /volume1/docker/cantoral-admin/run-cantoral.sh
