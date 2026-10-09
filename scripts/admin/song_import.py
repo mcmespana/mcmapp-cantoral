@@ -756,15 +756,32 @@ def map_line_chords(src: Line, dst_text: str) -> List[Tuple[int, str]]:
     return out
 
 
-def _apply_template(dst: Block, tpl: Block) -> bool:
+def _syllable_count(text: str) -> int:
+    return len(syllable_starts(_REPEAT_TAIL_RX.sub("", text).rstrip()))
+
+
+def _apply_template(dst: Block, tpl: Block) -> int:
+    """Copia los acordes línea a línea. Devuelve cuántas líneas se han saltado.
+
+    Una línea con muchas más o muchas menos sílabas que la de la plantilla no
+    lleva la misma melodía: meterle los acordes los amontona o los desparrama.
+    Esa línea se queda sin acordes (y se avisa) en vez de inventar.
+    """
     t_lines = tpl.lyric_lines()
     d_lines = dst.lyric_lines()
-    if not t_lines or not d_lines:
-        return False
+    skipped = 0
     for i, ln in enumerate(d_lines):
         src = t_lines[i % len(t_lines)]
-        ln.chords = map_line_chords(src, ln.text) if src.chords else []
-    return True
+        if not src.chords:
+            ln.chords = []
+            continue
+        a, b = _syllable_count(src.text), _syllable_count(ln.text)
+        if a and b and not (0.6 <= b / a <= 1.67):
+            ln.chords = []
+            skipped += 1
+            continue
+        ln.chords = map_line_chords(src, ln.text)
+    return skipped
 
 
 def _deduce(blocks: List[Block], notes: List[Note]) -> None:
@@ -805,8 +822,13 @@ def _deduce(blocks: List[Block], notes: List[Note]) -> None:
 
         j = min(cands, key=score)
         tpl = blocks[j]
-        if _apply_template(b, tpl):
+        skipped = _apply_template(b, tpl)
+        if b.has_chords():
             b.deduced_from = j + 1
+            if skipped:
+                notes.append(Note("warn", f"👁 «{_short(b.lyric_lines()[0].text)}»: {skipped} línea(s) "
+                                          "sin acordes porque no cuadran en largo con la estrofa de "
+                                          "la que se deducen. ¿Será otra melodía (un puente)?"))
             tn = len(tpl.lyric_lines())
             what = "del estribillo" if b.chorus else "de la estrofa"
             where = "de arriba" if j < i else "de más abajo"
@@ -830,8 +852,8 @@ def _short(s: str, n: int = 32) -> str:
 def _check_partial(blocks: List[Block], notes: List[Note]) -> None:
     for b in blocks:
         lyr = b.lyric_lines()
-        if not b.has_chords() or len(lyr) < 2:
-            continue
+        if not b.has_chords() or len(lyr) < 2 or b.deduced_from:
+            continue  # (las deducidas ya llevan su propio aviso)
         missing = [ln for ln in lyr if not ln.chords]
         if missing and len(missing) < len(lyr):
             notes.append(Note("info", f"«{_short(lyr[0].text)}»: {len(missing)} de {len(lyr)} líneas "

@@ -1258,6 +1258,17 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .add-song-preview { overflow-x: auto; }
 .add-song-cho { margin: 0; padding: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
   font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+/* Estrofa con acordes deducidos en el editor visual: aviso con botón y acordes
+   en ámbar hasta que se da por buena. */
+.ed-deduced-line {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px 28px;
+  padding: 4px 10px; font-size: 12px; color: #92400e; background: rgba(245, 158, 11, 0.16);
+  border-left: 3px solid #f59e0b; border-radius: 3px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.theme-dark .ed-deduced-line { color: #fcd34d; }
+.ed-deduced-line .btn-mini { margin: 0; }
+.ed-line.in-deduced .ed-chord { background: rgba(217, 119, 6, 0.95); }
+.ed-line.in-deduced .ed-chord.selected { background: var(--todo); }
 /* Estrofa con acordes deducidos (marca {x_acordes_deducidos}) en la vista previa */
 .preview-render .pv-deduced {
   margin: 14px 0 -10px; padding: 3px 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

@@ -2055,6 +2055,7 @@ function app() {
       const cls = ['ed-line', 'ed-' + ln.type];
       if (this.visualSelectedLines.has(idx)) cls.push('selected');
       if (ln._inChorus) cls.push('in-chorus');
+      if (ln._deduced) cls.push('in-deduced');
       const drag = this.lineDragClass(idx);
       if (drag) cls.push(drag);
       return cls.join(' ');
@@ -2517,12 +2518,37 @@ function app() {
     },
     markChorusFlags() {
       // Anota _inChorus en líneas que estén entre {soc}/{eoc}
+      // y _deduced en las de la estrofa que sigue a una marca 👁 (hasta la
+      // siguiente línea en blanco: la marca va justo antes de la estrofa).
       let inside = false;
+      let deduced = false;
       for (const ln of this.editor.parsed) {
+        if (ln.type === 'deduced') { deduced = true; ln._deduced = false; continue; }
+        if (ln.type === 'blank') deduced = false;
+        ln._deduced = deduced;
         if (ln.type === 'soc') { inside = true; ln._inChorus = false; continue; }
         if (ln.type === 'eoc') { inside = false; ln._inChorus = false; continue; }
         ln._inChorus = inside;
       }
+    },
+    // «✓ Dar por buena»: quita la marca 👁 de una estrofa ya revisada.
+    acceptDeduced(idx) {
+      if (this.editor.parsed[idx]?.type !== 'deduced') return;
+      this.editor.parsed.splice(idx, 1);
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
+    },
+    deducedCount() {
+      return (this.editor.parsed || []).filter(l => l.type === 'deduced').length;
+    },
+    acceptAllDeduced() {
+      const n = this.deducedCount();
+      if (!n || !confirm(`¿Dar por buenas las ${n} estrofas con acordes deducidos?`)) return;
+      this.editor.parsed = this.editor.parsed.filter(l => l.type !== 'deduced');
+      this.commitParsed();
+      this.markChorusFlags();
+      this.$nextTick(() => this.layoutChords());
     },
 
     // Devuelve [{startIdx, endIdx, lines}] de cada bloque de estribillo (entre soc/eoc).
@@ -3655,6 +3681,9 @@ function parseCho(content) {
       const text = t.replace(/^\{arr\s*:\s*/i, '').replace(/\}\s*$/, '');
       return { type: 'arr', raw, text };
     }
+    // Marca del importador: la estrofa que sigue trae acordes deducidos de otra.
+    const dd = t.match(/^\{x_acordes_deducidos\s*(?::\s*(.*?))?\s*\}$/i);
+    if (dd) return { type: 'deduced', raw, text: dd[1] || '' };
     // Comentarios editables: {comment: ...} y su forma corta {c: ...}
     const cm = t.match(/^\{(comment|c)\s*:\s*(.*?)\s*\}$/i);
     if (cm) return { type: 'comment', raw, tag: cm[1].toLowerCase(), text: cm[2] };

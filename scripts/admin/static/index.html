@@ -2012,6 +2012,10 @@
                     @click="cancelChordClipboard()" title="Cancelar el patrón copiado">✕ cancelar copia</button>
           </div>
 
+          <div class="copypaste-banner cp-ready" x-show="deducedCount() > 0" x-cloak>
+            <span class="cp-text" x-text="'👁 ' + deducedCount() + (deducedCount() > 1 ? ' estrofas con acordes deducidos' : ' estrofa con acordes deducidos') + ' (en ámbar): repásalas y dalas por buenas.'"></span>
+            <button class="link-mini" x-show="deducedCount() > 1" @click="acceptAllDeduced()">✓ Dar todas por buenas</button>
+          </div>
           <div class="visual-doc" :class="{ dense: visualDense }"
                @click="onVisualClick($event)"
                @keydown="onVisualKeydown($event)"
@@ -2049,6 +2053,14 @@
                 </template>
                 <template x-if="ln.type === 'directive'">
                   <div class="ed-meta-line" x-text="ln.raw"></div>
+                </template>
+                <!-- 👁 Estrofa con acordes deducidos por el importador -->
+                <template x-if="ln.type === 'deduced'">
+                  <div class="ed-deduced-line">
+                    <span>👁 Acordes deducidos<span x-show="ln.text" x-text="' ' + ln.text"></span> · revísala</span>
+                    <button class="btn-mini" @click.stop="acceptDeduced(idx)"
+                            title="Quita la marca: los acordes de esta estrofa ya están revisados">✓ Dar por buena</button>
+                  </div>
                 </template>
                 <template x-if="ln.type === 'comment'">
                   <div class="ed-comment-line">
