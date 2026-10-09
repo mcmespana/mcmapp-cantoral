@@ -1269,6 +1269,41 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .ai-sev { font-weight: 700; }
 .ai-line { display: block; margin: 3px 0; padding: 3px 6px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
 .ai-sug { margin-top: 3px; color: var(--fg-2); }
+/* 🤖 Franja de corrección con IA (modal Añadir canción y editor) */
+.ai-strip { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(124, 58, 237, 0.30);
+  background: rgba(124, 58, 237, 0.07); font-size: 13px; }
+.ai-strip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ai-strip-row + .ai-strip-row { margin-top: 6px; }
+.ai-count { font-size: 12px; color: var(--fg-3); }
+.ai-actions { margin-left: auto; display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.ai-spin { display: inline-block; animation: ai-pulse 1s ease-in-out infinite alternate; }
+@keyframes ai-pulse { from { opacity: 0.35; } to { opacity: 1; } }
+.ai-changes { list-style: none; margin: 8px 0 0; padding: 0; }
+.ai-changes li { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; border-top: 1px solid var(--border); }
+.ai-changes li.off { opacity: 0.5; }
+.ai-changes li.off .ai-to { text-decoration: line-through; }
+.ai-changes .btn-mini { flex: none; margin: 0; }
+.ai-why { font-weight: 600; }
+.ai-changes code { display: block; margin-top: 2px; padding: 2px 6px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.ai-from { background: rgba(220, 38, 38, 0.08); text-decoration: line-through; color: var(--fg-3); }
+.ai-to { background: rgba(22, 163, 74, 0.10); }
+.ai-off { margin: 0 0 10px; }
+
+.editor-ai { margin: 8px 20px 0; }
+.original-pre { margin: 0; padding: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; white-space: pre; overflow-x: auto; }
+
+/* ⚙️ Ajustes */
+.settings-card { max-width: 720px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+.settings-card h3 { margin: 0 0 6px; }
+.settings-status { margin: 12px 0; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+.settings-status.ok { background: rgba(22, 163, 74, 0.10); }
+.settings-status.off { background: rgba(234, 88, 12, 0.10); }
+.settings-label { display: block; font-size: 11px; text-transform: uppercase; color: var(--fg-2); margin: 16px 0 4px; }
+.settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.settings-row select { flex: 1 1 280px; min-width: 0; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); color: var(--fg); font-size: 14px; }
+.settings-check { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 14px; cursor: pointer; }
+
 /* Estrofa con acordes deducidos en el editor visual: aviso con botón y acordes
    en ámbar hasta que se da por buena. */
 .ed-deduced-line {
@@ -1412,6 +1447,7 @@ table.songs tr.row-archived td { opacity: 0.55; }
   .preview-render { overflow-x: auto; }
 
   .numpick-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); }
+  .editor-ai { margin: 6px 8px 0; }
 
   /* Añadir canción: entrada arriba, resultado debajo, un solo scroll */
   .add-song-body { display: flex; flex-direction: column; overflow-y: auto; }

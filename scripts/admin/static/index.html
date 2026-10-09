@@ -31,7 +31,7 @@
     <a :class="{active: view === 'tags'}" @click.prevent="goTags(null)" href="#">🏷 Etiquetas</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
     <!-- Lo que casi nunca se usa, plegado al final para no llenar el menú -->
-    <a class="nav-group" :class="{active: ['latex','peticiones','backups'].includes(view)}"
+    <a class="nav-group" :class="{active: ['latex','peticiones','backups','settings'].includes(view)}"
        @click.prevent="otrosOpen = !otrosOpen" href="#">
       <span x-text="otrosOpen ? '▾' : '▸'"></span> Otros
     </a>
@@ -40,6 +40,7 @@
         <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
         <a :class="{active: view === 'peticiones'}" @click.prevent="goPeticiones()" href="#">🙋 Peticiones</a>
         <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
+        <a :class="{active: view === 'settings'}" @click.prevent="goSettings()" href="#">⚙️ Ajustes</a>
       </div>
     </template>
   </nav>
@@ -1716,6 +1717,63 @@
     </div>
   </section>
 
+  <!-- ⚙️ AJUSTES: por ahora, la IA (modelo, esfuerzo, automático). Se guarda
+       en el servidor (scripts/admin/.admin-settings.json, fuera de git). -->
+  <section x-show="view === 'settings'" x-cloak>
+    <h1>⚙️ Ajustes</h1>
+    <div class="settings-card">
+      <h3>🤖 Corrección con IA (Claude)</h3>
+      <p class="muted">Al añadir una canción, Claude compara lo pegado con lo convertido y arregla lo
+        que no cuadre: acordes perdidos o movidos, estribillos sin marcar, estrofas deducidas raras…
+        Cada cambio se puede deshacer. Cuesta céntimos por canción.</p>
+
+      <div class="settings-status" :class="aiStatus.enabled ? 'ok' : 'off'">
+        <span x-show="aiStatus.enabled">✅ Activa: hay clave de la API en el servidor.</span>
+        <span x-show="!aiStatus.enabled">⛔ Sin clave. Añade <code>ANTHROPIC_API_KEY=…</code> al
+          <code>cantoral-admin.env</code> del NAS y relanza con <code>run-cantoral.sh</code>
+          (detalles en <code>deploy/ugreen-nas/README.md</code>).</span>
+      </div>
+
+      <label class="settings-label">Modelo</label>
+      <div class="settings-row">
+        <select :disabled="!aiStatus.enabled || settings.saving" :value="settingsModelValue()"
+                @change="saveAiSettings({ model: $event.target.value })">
+          <option value="" x-text="'Por defecto (' + (aiStatus.default_model || '') + ')'"></option>
+          <template x-for="m in settings.models" :key="m.id">
+            <option :value="m.id" :disabled="!m.structured"
+                    x-text="m.name + ' · ' + m.id + (m.structured ? '' : ' (no vale)')"></option>
+          </template>
+          <!-- el guardado aunque ya no salga en la lista -->
+          <template x-if="aiStatus.model && aiStatus.model !== aiStatus.default_model && !settings.models.some(m => m.id === aiStatus.model)">
+            <option :value="aiStatus.model" x-text="aiStatus.model"></option>
+          </template>
+        </select>
+        <button class="btn-mini" :disabled="!aiStatus.enabled || settings.loadingModels" @click="loadAiModels(true)"
+                x-text="settings.loadingModels ? 'Cargando…' : '↻ Actualizar lista'"></button>
+      </div>
+      <p class="muted small">La lista sale de tu cuenta de Anthropic, así que los modelos nuevos aparecen
+        solos. Los más nuevos van arriba. Opus corrige mejor; Sonnet y Haiku gastan menos.</p>
+      <p class="error small" x-show="settings.error" x-text="settings.error"></p>
+
+      <label class="settings-label">Esfuerzo</label>
+      <div class="settings-row">
+        <select :disabled="!aiStatus.enabled || settings.saving" :value="aiStatus.effort"
+                @change="saveAiSettings({ effort: $event.target.value })">
+          <template x-for="e in (aiStatus.efforts || [])" :key="e">
+            <option :value="e" x-text="{low: 'Bajo (rápido, barato)', medium: 'Medio', high: 'Alto (recomendado)', xhigh: 'Muy alto', max: 'Máximo (lento)'}[e] || e"></option>
+          </template>
+        </select>
+      </div>
+
+      <label class="settings-check">
+        <input type="checkbox" :disabled="!aiStatus.enabled || settings.saving" :checked="aiStatus.auto"
+               @change="saveAiSettings({ auto: $event.target.checked })" />
+        Corregir automáticamente al pegar una canción
+      </label>
+      <p class="muted small" x-show="settings.savedAt" x-text="'✓ Guardado'"></p>
+    </div>
+  </section>
+
   <section x-show="view === 'backups'" x-cloak>
     <h1>🗂 Gestión de backups</h1>
     <p class="muted">Cada vez que alguien guarda o borra una canción, se guarda antes una
@@ -1811,6 +1869,9 @@
                uno dice QUÉ guarda, que si no nadie sabe cuál pulsar. -->
           <button class="btn primary" :disabled="!editor.dirty" @click="saveSong()"
                   title="Guarda la letra, los acordes y los metadatos de aquí al lado · Ctrl+S">💾 Guardar canción</button>
+          <button class="btn" x-show="aiStatus.enabled" :disabled="editorAi && editorAi.running" @click="aiCorrectEditor()"
+                  :title="'Claude repasa la canción' + (editor.original ? ' frente al texto original pegado' : '') + ' y corrige lo que no cuadre. Se deshace con ↶ o Ctrl+Z.'"
+                  x-text="editorAi && editorAi.running ? '🤖 …' : '🤖 Corregir'"></button>
           <button class="btn" @click="downloadCho()"
                   title="Bajarte el .cho tal y como está ahora, por si algo falla al guardar">⬇</button>
           <button class="btn" @click="closeEditor()">
@@ -1819,10 +1880,49 @@
         </div>
       </div>
 
+      <!-- 🤖 Resultado de «Corregir» en el editor -->
+      <div class="ai-strip editor-ai" x-show="editorAi && (editorAi.running || editorAi.done || editorAi.error)" x-cloak>
+        <div class="ai-strip-row" x-show="editorAi?.running"><span class="ai-spin">🤖</span> Corrigiendo con IA…</div>
+        <div class="ai-strip-row" x-show="editorAi?.error">
+          <span class="error small" x-text="editorAi?.error"></span>
+          <button class="btn-mini" @click="editorAi = null">✕</button>
+        </div>
+        <template x-if="editorAi && editorAi.done">
+          <div>
+            <div class="ai-strip-row">
+              <span>🤖 <strong x-text="editorAi.summary || 'Revisada'"></strong></span>
+              <span class="ai-count" x-show="editorAi.edits.length"
+                    x-text="editorAi.edits.filter(e => e.on).length + '/' + editorAi.edits.length + ' cambios'"></span>
+              <span class="ai-actions">
+                <button class="btn-mini" x-show="editorAi.edits.some(e => e.on)" @click="setEditorAiAll(false)">↶ Deshacer todo</button>
+                <button class="btn-mini" x-show="editorAi.edits.length && !editorAi.edits.some(e => e.on)" @click="setEditorAiAll(true)">↷ Rehacer</button>
+                <button class="btn-mini" x-show="editorAi.edits.length" @click="editorAi.open = !editorAi.open"
+                        x-text="editorAi.open ? 'Ocultar' : 'Ver cambios'"></button>
+                <button class="btn-mini" @click="editorAi = null" title="Cerrar (los cambios se quedan)">✕</button>
+              </span>
+            </div>
+            <ul class="ai-changes" x-show="editorAi.open">
+              <template x-for="(e, i) in editorAi.edits" :key="i">
+                <li :class="{ off: !e.on }">
+                  <button class="btn-mini" @click="toggleEditorAiEdit(e)" x-text="e.on ? '↶' : '↷'"></button>
+                  <div>
+                    <span class="ai-why" x-text="e.why + (e.matches > 1 ? ' (×' + e.matches + ')' : '')"></span>
+                    <code class="ai-from" x-text="e.find"></code>
+                    <code class="ai-to" x-text="e.replace === '' ? '(borrada)' : e.replace"></code>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </template>
+      </div>
+
       <div class="editor-tabs">
         <button :class="{active: editor.tab === 'visual'}" @click="setEditorTab('visual')">🎨 Visual</button>
         <button :class="{active: editor.tab === 'raw'}" @click="setEditorTab('raw')">📝 Raw</button>
         <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
+        <button x-show="editor.original" :class="{active: editor.tab === 'original'}" @click="setEditorTab('original')"
+                title="El texto tal y como lo pegaste en ✨ Añadir canción">📄 Original</button>
         <button :class="{active: editor.tab === 'media'}" @click="setEditorTab('media')">
           🎬 Audio / Vídeo
           <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) + (editor.meta.spotify_count || 0) + (editor.meta.drive_count || 0) + (editor.meta.other_count || 0) > 0"
@@ -2155,6 +2255,11 @@
         </div>
 
         <!-- PREVIEW -->
+        <div class="editor-pane original-pane" x-show="editor.tab === 'original'" x-cloak>
+          <p class="muted small">Lo que pegaste al crearla (guardado solo en este navegador). Para comparar
+            mientras revisas; no se guarda en la canción.</p>
+          <pre class="original-pre" x-text="editor.original"></pre>
+        </div>
         <div class="editor-pane preview" x-show="editor.tab === 'preview'" x-cloak>
           <div class="preview-render" x-html="renderPreviewHtml(editor.content)"></div>
         </div>
@@ -2592,12 +2697,13 @@
        corrigen los metadatos antes de crear el archivo. -->
   <div class="editor-overlay" x-show="addSong.open" @click.self="closeAddSong()" x-cloak
        @keydown.escape.window="addSong.open && closeAddSong()">
-    <div class="editor-modal add-song-modal">
+    <div class="editor-modal add-song-modal"
+         @keydown.ctrl.enter.prevent="createFromAddSong()" @keydown.meta.enter.prevent="createFromAddSong()">
       <div class="editor-header">
         <h2>✨ Añadir canción</h2>
         <div class="editor-actions">
           <button class="btn primary" :disabled="!canCreateAddSong()"
-                  @click="createFromAddSong()"
+                  @click="createFromAddSong()" title="Ctrl/Cmd+Enter"
                   x-text="addSong.creating ? 'Creando…' : 'Crear y abrir editor'"></button>
           <button class="btn" @click="closeAddSong()">✕ Cerrar</button>
         </div>
@@ -2648,6 +2754,56 @@
                 </template>
               </div>
 
+              <!-- 🤖 Corrección con IA: se aplica sola (si está en automático) y
+                   cada cambio se deshace con un toque. Ver ai_review.py. -->
+              <div class="ai-strip" x-show="aiStatus.enabled">
+                <div class="ai-strip-row" x-show="addSong.aiRunning">
+                  <span class="ai-spin">🤖</span> <span>Corrigiendo con IA…</span>
+                </div>
+                <template x-if="addSong.ai && !addSong.aiRunning">
+                  <div>
+                    <div class="ai-strip-row">
+                      <span>🤖 <strong x-text="addSong.ai.summary || 'Revisada'"></strong></span>
+                      <span class="ai-count" x-show="aiChangeCount(addSong.ai)"
+                            x-text="aiOnCount(addSong.ai) + '/' + aiChangeCount(addSong.ai) + ' cambios'"></span>
+                      <span class="ai-actions">
+                        <button class="btn-mini" x-show="aiOnCount(addSong.ai)" @click="setAllAi(addSong.ai, false)">↶ Deshacer todo</button>
+                        <button class="btn-mini" x-show="aiChangeCount(addSong.ai) && !aiOnCount(addSong.ai)" @click="setAllAi(addSong.ai, true)">↷ Rehacer</button>
+                        <button class="btn-mini" x-show="aiChangeCount(addSong.ai)" @click="addSong.aiOpen = !addSong.aiOpen"
+                                x-text="addSong.aiOpen ? 'Ocultar' : 'Ver cambios'"></button>
+                      </span>
+                    </div>
+                    <ul class="ai-changes" x-show="addSong.aiOpen">
+                      <template x-for="(c, i) in addSong.ai.metaChanges" :key="'m' + i">
+                        <li :class="{ off: !c.on }">
+                          <button class="btn-mini" @click="toggleAiMeta(c)" x-text="c.on ? '↶' : '↷'" :title="c.on ? 'Deshacer este cambio' : 'Volver a aplicarlo'"></button>
+                          <span class="ai-why" x-text="c.label + ': ' + (c.from || '—') + ' → ' + c.to"></span>
+                        </li>
+                      </template>
+                      <template x-for="(e, i) in addSong.ai.edits" :key="i">
+                        <li :class="{ off: !e.on }">
+                          <button class="btn-mini" @click="e.on = !e.on" x-text="e.on ? '↶' : '↷'" :title="e.on ? 'Deshacer este cambio' : 'Volver a aplicarlo'"></button>
+                          <div>
+                            <span class="ai-why" x-text="e.why + (e.matches > 1 ? ' (×' + e.matches + ')' : '')"></span>
+                            <code class="ai-from" x-text="e.find"></code>
+                            <code class="ai-to" x-text="e.replace === '' ? '(borrada)' : e.replace"></code>
+                          </div>
+                        </li>
+                      </template>
+                    </ul>
+                  </div>
+                </template>
+                <div class="ai-strip-row" x-show="!addSong.aiRunning && (!addSong.ai || addSong.aiError)">
+                  <button class="btn-mini" @click="runAiCorrect()"
+                          x-text="addSong.aiError ? '🤖 Reintentar' : '🤖 Corregir con IA'"></button>
+                  <span class="error small" x-show="addSong.aiError" x-text="addSong.aiError"></span>
+                  <span class="muted small" x-show="!addSong.aiError && !aiStatus.auto">(automático desactivado en ⚙️ Ajustes)</span>
+                </div>
+              </div>
+              <div class="muted small ai-off" x-show="!aiStatus.enabled">
+                🤖 Corrección con IA sin configurar · <a href="#" @click.prevent="closeAddSong(); goSettings()">ver cómo</a>
+              </div>
+
               <div class="add-song-meta">
                 <label>Título</label>
                 <input type="text" x-model="addSong.title" @input="addSong.metaTouched = true" placeholder="Título de la canción" />
@@ -2677,32 +2833,6 @@
                   <li :class="n.level" x-text="n.msg"></li>
                 </template>
               </ul>
-
-              <!-- Segunda mirada con Claude: compara original y resultado y avisa -->
-              <div class="add-song-ai">
-                <button class="btn" :disabled="!aiStatus.enabled || addSong.reviewing" @click="reviewAddSong()"
-                        :title="aiStatus.enabled ? 'Claude compara el original con el resultado y señala lo que no cuadre (' + aiStatus.model + ')' : 'Desactivado: falta ANTHROPIC_API_KEY en el servidor'"
-                        x-text="addSong.reviewing ? '🤖 Revisando…' : (addSong.review ? '🤖 Revisar otra vez' : '🤖 Revisar con IA')"></button>
-                <span class="muted small" x-show="!aiStatus.enabled">Sin configurar: falta la clave de la API en el servidor.</span>
-                <span class="error small" x-show="addSong.reviewError" x-text="addSong.reviewError"></span>
-              </div>
-              <template x-if="addSong.review">
-                <div class="add-song-review">
-                  <p class="add-song-review-sum" x-text="(addSong.review.issues.length ? '🤖 ' : '🤖 ✅ ') + addSong.review.summary"></p>
-                  <template x-for="(it, i) in addSong.review.issues" :key="i">
-                    <div class="ai-issue" :class="'sev-' + it.severity">
-                      <div class="ai-issue-head">
-                        <span class="ai-sev" x-text="it.severity"></span>
-                        <span class="ai-kind" x-text="it.kind.replace(/_/g, ' ')"></span>
-                      </div>
-                      <code class="ai-line" x-show="it.line" x-text="it.line"></code>
-                      <div x-text="it.problem"></div>
-                      <div class="ai-sug" x-show="it.suggestion"><strong>→</strong> <span x-text="it.suggestion"></span></div>
-                    </div>
-                  </template>
-                  <p class="muted small">Son avisos: no se ha cambiado nada. Corrige en el editor lo que veas.</p>
-                </div>
-              </template>
 
               <div class="add-song-view-tabs">
                 <button :class="{active: addSong.view === 'preview'}" @click="addSong.view = 'preview'">👁 Vista</button>

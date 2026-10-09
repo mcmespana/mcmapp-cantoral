@@ -2,6 +2,7 @@ acceso-firebase.json
 
 # Admin local
 .claude/
+scripts/admin/.admin-settings.json
 scripts/cache_doceacordes/
 
 

@@ -87,7 +87,8 @@ coloreado. No hecho todavía:
 ## ✨ Añadir canción — siguientes pasos
 
 Hecho: texto pegado (acordes encima / ChordPro / letra sola), estribillos,
-deducción de acordes con marca 👁, revisor IA. Falta:
+deducción de acordes con marca 👁, corrección con IA (automática y
+deshacible, también en el editor) y ⚙️ Ajustes con el modelo. Falta:
 
 - **Capturas / fotos**: Claude lee la imagen y devuelve cada acorde **anclado a
   la sílaba** donde va («el Re sobre el *Se* de *Señor*»), no por columnas; el
@@ -99,8 +100,10 @@ deducción de acordes con marca 👁, revisor IA. Falta:
   sacar el texto y pasarlo por el mismo importador.
 - **«(x2)» al final de un estribillo**: hoy se deja escrito. Se podría ofrecer
   «escribirlo dos veces» con un botón, para que quede tal cual se canta.
-- **Revisor IA también en el editor**, para canciones que ya están en el repo
-  (sin texto original: solo coherencia de acordes entre estrofas).
+- **Corregir con IA en lote**: pasar 🤖 Corregir a todas las canciones con
+  `TO DO` de una categoría y dejar los cambios para revisar.
+- **El original en el servidor** en vez de en el navegador, para verlo desde
+  otro dispositivo (hoy la pestaña 📄 Original solo sale donde se creó).
 - **Compartir al admin desde el móvil**: en Android, «Compartir → Cantoral»
   (Web Share Target, requiere instalar la web como app); en iPhone, un Atajo
   que mande el texto o la captura.
