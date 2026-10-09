@@ -1258,6 +1258,17 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .add-song-preview { overflow-x: auto; }
 .add-song-cho { margin: 0; padding: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
   font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+.add-song-ai { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
+.add-song-review { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); }
+.add-song-review-sum { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.ai-issue { padding: 7px 10px; margin-bottom: 6px; border-radius: 6px; font-size: 13px; background: var(--bg); border-left: 3px solid var(--border-strong); }
+.ai-issue.sev-alta { border-left-color: var(--danger); }
+.ai-issue.sev-media { border-left-color: #f59e0b; }
+.ai-issue.sev-baja { border-left-color: var(--info); }
+.ai-issue-head { display: flex; gap: 8px; font-size: 11px; text-transform: uppercase; color: var(--fg-3); margin-bottom: 3px; }
+.ai-sev { font-weight: 700; }
+.ai-line { display: block; margin: 3px 0; padding: 3px 6px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.ai-sug { margin-top: 3px; color: var(--fg-2); }
 /* Estrofa con acordes deducidos en el editor visual: aviso con botón y acordes
    en ámbar hasta que se da por buena. */
 .ed-deduced-line {

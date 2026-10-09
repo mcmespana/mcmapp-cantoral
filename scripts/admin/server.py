@@ -62,6 +62,7 @@ import latex_import as lx  # noqa: E402
 import doceacordes_import as da  # noqa: E402
 import chordpro as cp  # noqa: E402  (módulo común: parseo campos ↔ directivas)
 import song_import as si  # noqa: E402  (canciones sueltas: texto pegado → .cho)
+import ai_review  # noqa: E402  (segunda mirada con Claude: señala, no reescribe)
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -1050,6 +1051,32 @@ def api_song_import_preview():
         except Exception:  # el índice de doceacordes es opcional aquí
             res["doce"] = []
     return jsonify(res)
+
+
+@app.route("/api/ai/status")
+def api_ai_status():
+    """¿Está la revisión con IA disponible? (hace falta ANTHROPIC_API_KEY)."""
+    return jsonify({"enabled": ai_review.is_configured(), "model": ai_review.model_name()})
+
+
+@app.route("/api/song/import/review", methods=["POST"])
+def api_song_import_review():
+    """Claude compara el texto original con el .cho y devuelve avisos.
+
+    Body: {text, cho, notes?}. No toca ningún archivo.
+    """
+    if not ai_review.is_configured():
+        abort(503, "La revisión con IA no está configurada: falta ANTHROPIC_API_KEY.")
+    body = request.get_json(silent=True) or {}
+    text = body.get("text") or ""
+    cho = body.get("cho") or ""
+    if len(text) + len(cho) > 120000:
+        abort(413, "Demasiado largo para una canción")
+    notes = [str(n) for n in (body.get("notes") or [])][:40]
+    try:
+        return jsonify(ai_review.review(text, cho, notes))
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
 
 
 @app.route("/api/song", methods=["DELETE"])

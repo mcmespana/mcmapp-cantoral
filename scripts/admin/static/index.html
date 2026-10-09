@@ -2678,6 +2678,32 @@
                 </template>
               </ul>
 
+              <!-- Segunda mirada con Claude: compara original y resultado y avisa -->
+              <div class="add-song-ai">
+                <button class="btn" :disabled="!aiStatus.enabled || addSong.reviewing" @click="reviewAddSong()"
+                        :title="aiStatus.enabled ? 'Claude compara el original con el resultado y señala lo que no cuadre (' + aiStatus.model + ')' : 'Desactivado: falta ANTHROPIC_API_KEY en el servidor'"
+                        x-text="addSong.reviewing ? '🤖 Revisando…' : (addSong.review ? '🤖 Revisar otra vez' : '🤖 Revisar con IA')"></button>
+                <span class="muted small" x-show="!aiStatus.enabled">Sin configurar: falta la clave de la API en el servidor.</span>
+                <span class="error small" x-show="addSong.reviewError" x-text="addSong.reviewError"></span>
+              </div>
+              <template x-if="addSong.review">
+                <div class="add-song-review">
+                  <p class="add-song-review-sum" x-text="(addSong.review.issues.length ? '🤖 ' : '🤖 ✅ ') + addSong.review.summary"></p>
+                  <template x-for="(it, i) in addSong.review.issues" :key="i">
+                    <div class="ai-issue" :class="'sev-' + it.severity">
+                      <div class="ai-issue-head">
+                        <span class="ai-sev" x-text="it.severity"></span>
+                        <span class="ai-kind" x-text="it.kind.replace(/_/g, ' ')"></span>
+                      </div>
+                      <code class="ai-line" x-show="it.line" x-text="it.line"></code>
+                      <div x-text="it.problem"></div>
+                      <div class="ai-sug" x-show="it.suggestion"><strong>→</strong> <span x-text="it.suggestion"></span></div>
+                    </div>
+                  </template>
+                  <p class="muted small">Son avisos: no se ha cambiado nada. Corrige en el editor lo que veas.</p>
+                </div>
+              </template>
+
               <div class="add-song-view-tabs">
                 <button :class="{active: addSong.view === 'preview'}" @click="addSong.view = 'preview'">👁 Vista</button>
                 <button :class="{active: addSong.view === 'cho'}" @click="addSong.view = 'cho'">📝 ChordPro</button>

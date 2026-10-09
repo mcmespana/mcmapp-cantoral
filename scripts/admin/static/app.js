@@ -323,6 +323,7 @@ function app() {
                number: null, mode: 'blank', content: '', creating: false },
     // ✨ Añadir canción (texto pegado → .cho con song_import.py)
     addSong: { open: false },
+    aiStatus: { enabled: false, model: '' },   // revisión con Claude (ai_review.py)
     // Selector visual de número de canción.
     // {category, categoryTitle, numbers, suggested, selected, target, loading}
     numberPicker: null,
@@ -352,6 +353,8 @@ function app() {
 
     // ─────────── Lifecycle ───────────
     async boot() {
+      fetch('/api/ai/status').then(r => r.ok ? r.json() : null)
+        .then(j => { if (j) this.aiStatus = j; }).catch(() => {});
       this.$watch('editor.dirty', (v) => {
         if (v) this.setSaveIndicator('dirty', '● Sin guardar — pulsa 💾');
       });
@@ -3471,6 +3474,7 @@ function app() {
       this.addSong = {
         open: true, text: '', format: '', preview: null, loading: false, error: '',
         title: '', artist: '', key: '', capo: 0, metaTouched: false,
+        review: null, reviewing: false, reviewError: '',
         category: this.categoryFilter || '', number: null, creating: false,
         view: 'preview', _timer: null, _seq: 0,
       };
@@ -3513,6 +3517,7 @@ function app() {
         if (seq !== a._seq || !this.addSong.open) return;  // llegó una más nueva
         a.preview = j;
         a.error = '';
+        a.review = null;   // la revisión era de la versión anterior
         // Los datos detectados rellenan el formulario hasta que el usuario toque algo.
         if (!a.metaTouched) {
           a.title = j.meta.title || '';
@@ -3551,6 +3556,26 @@ function app() {
     },
     formatLabel(f) {
       return { chords_above: 'acordes encima', chordpro: 'ChordPro', lyrics: 'letra sola' }[f] || f || '';
+    },
+    async reviewAddSong() {
+      const a = this.addSong;
+      if (!a.preview || a.reviewing) return;
+      a.reviewing = true;
+      a.reviewError = '';
+      try {
+        const r = await fetch('/api/song/import/review', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: a.text, cho: this.addSongCho(),
+                                 notes: a.preview.notes.map(n => n.msg) }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (this.addSong === a) a.review = j;
+      } catch (e) {
+        a.reviewError = e.message;
+      } finally {
+        a.reviewing = false;
+      }
     },
     canCreateAddSong() {
       const a = this.addSong;
