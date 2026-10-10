@@ -8,5 +8,14 @@
       "clasicos",
       "grandes-clasicas"
     ]
+  },
+  "consolacion": {
+    "label": "Consolación"
+  },
+  "cuaresma-sin-aleluya": {
+    "label": "Cuaresma sin aleluya"
+  },
+  "lemas-pastoral": {
+    "label": "Lemas pastorales"
   }
 }
