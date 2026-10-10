@@ -17,5 +17,41 @@
   },
   "lemas-pastoral": {
     "label": "Lemas pastorales"
+  },
+  "adviento": {
+    "label": "Adviento"
+  },
+  "bodas": {
+    "label": "Bodas"
+  },
+  "catala": {
+    "label": "Català"
+  },
+  "domingo-de-ramos": {
+    "label": "Domingo de Ramos"
+  },
+  "envio": {
+    "label": "Envío"
+  },
+  "espiritu-santo": {
+    "label": "Espíritu Santo"
+  },
+  "hakuna": {
+    "label": "Hakuna"
+  },
+  "maria": {
+    "label": "María"
+  },
+  "melodias-conocidas": {
+    "label": "Melodías conocidas"
+  },
+  "navidad": {
+    "label": "Navidad"
+  },
+  "semana-santa": {
+    "label": "Semana Santa"
+  },
+  "taize": {
+    "label": "Taizé"
   }
 }
