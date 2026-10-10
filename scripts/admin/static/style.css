@@ -1455,3 +1455,37 @@ table.songs tr.row-archived td { opacity: 0.55; }
   .add-song-input textarea { min-height: 38dvh; flex: none; }
   .add-song-result { overflow: visible; padding: 12px; flex: none; }
 }
+
+/* ─────── Vista previa «como en la app» (static/mcm-sheet.js) ───────
+   El iframe tiene el tamaño de verdad del aparato (la hoja decide cortes y
+   columnas con él) y se escala para caber; el alto del escenario lo pone
+   fitAppPreview() en app.js. */
+.app-pv-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  margin: 0 0 10px; font-size: 12px; color: var(--fg-2);
+}
+.app-pv-bar label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.app-pv-bar select { font-size: 12px; padding: 3px 4px; border: 1px solid var(--border-strong);
+  border-radius: 4px; background: var(--bg-2); color: var(--fg); }
+.app-pv-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.app-pv-seg button { border: 0; background: var(--bg-2); color: var(--fg-2); padding: 4px 10px;
+  font-size: 12px; cursor: pointer; }
+.app-pv-seg button + button { border-left: 1px solid var(--border-strong); }
+.app-pv-seg button.on { background: var(--accent); color: var(--accent-fg); }
+.app-pv-note { margin-left: auto; color: var(--fg-3); font-size: 11px; }
+.app-pv-stage { position: relative; margin: 0 auto; overflow: hidden; }
+.app-pv-stage.dev-phone { max-width: 390px; }
+.app-pv-frame {
+  display: block; border: 0; background: #fff; transform-origin: 0 0;
+  border-radius: 18px; box-shadow: 0 0 0 1px var(--border-strong), 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+.app-pv-stage.dev-ipad .app-pv-frame,
+.app-pv-stage.dev-ipadv .app-pv-frame { border-radius: 14px; }
+/* Raw + móvil al lado: se escribe a la izquierda y se ve a la derecha. */
+.editor-pane.raw.with-side { flex-direction: row; gap: 16px; }
+.editor-pane.raw .raw-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.editor-pane.raw .raw-side { flex: 0 0 400px; overflow-y: auto; min-height: 0; }
+.app-pv-bar.mini { gap: 4px 10px; }
+.raw-legend .btn-mini.on { border-color: var(--accent); color: var(--accent); }
+.app-pv-host { padding: 8px 0; }
+
