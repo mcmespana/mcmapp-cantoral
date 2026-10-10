@@ -2012,7 +2012,10 @@
         </div>
 
         <!-- VISUAL -->
-        <div class="editor-pane visual" x-show="editor.tab === 'visual'" x-cloak>
+        <div class="editor-pane visual" x-show="editor.tab === 'visual'" x-cloak
+             :class="{ 'with-side': appPv.side && appPreviewOn() }"
+             @scroll="syncSidePreview($el)">
+          <div class="visual-main">
           <div class="visual-toolbar">
             <button class="btn-mini" @click="visualAddMode = !visualAddMode"
                     :class="{primary: visualAddMode}">
@@ -2099,6 +2102,10 @@
                     :title="visualDense ? 'Vista compacta activa — click para volver a la cómoda' : 'Vista compacta: menos aire entre líneas, se ve más canción de una vez'">
               <span x-text="visualDense ? '↕ Compacta' : '↕ Cómoda'"></span>
             </button>
+            <button class="btn-mini" x-show="appPreviewOn()" @click="appPv.side = !appPv.side"
+                    :class="{ primary: appPv.side }"
+                    title="Ver al lado cómo queda en el móvil mientras editas"
+                    x-text="appPv.side ? '📱 Ocultar móvil' : '📱 Ver en el móvil'"></button>
 
             <button class="btn-mini help-mini" @click="showHelp = true" title="Ayuda">❓</button>
           </div>
@@ -2190,12 +2197,12 @@
                   </div>
                 </template>
                 <template x-if="ln.type === 'soc'">
-                  <div class="ed-marker chorus-start">▶ Inicio estribillo
+                  <div class="ed-marker chorus-start" title="{soc} · inicio del estribillo">Estribillo
                     <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
                   </div>
                 </template>
                 <template x-if="ln.type === 'eoc'">
-                  <div class="ed-marker chorus-end">◀ Fin estribillo
+                  <div class="ed-marker chorus-end" title="{eoc} · fin del estribillo">fin del estribillo
                     <button class="link-mini" @click.stop="removeChorusMarkerAt(idx)">✕</button>
                   </div>
                 </template>
@@ -2224,12 +2231,33 @@
                          visuales. Por eso van todas pegadas sin espacios ni saltos. -->
                     <div class="ed-lyric-row" x-show="!ln._editing"
                          @dblclick.stop="startLyricEdit(idx)"
-                    ><template x-for="(ch, i) in ln.lyric" :key="i"><span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span></template><span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span></div>
+                    ><template x-for="(ch, i) in lyricChars(ln)" :key="i"><span class="ed-char" :data-idx="i" x-text="ch === ' ' ? ' ' : ch"></span></template><span class="ed-char ed-end" :data-idx="ln.lyric.length">⏎</span></div>
                   </div>
                 </template>
               </div>
             </template>
           </div>
+          </div>
+          <!-- El móvil al lado: lo que se va editando, pintado con la hoja de
+               la app. Baja a la par que el editor (syncSidePreview). -->
+          <template x-if="appPv.side && appPreviewOn()">
+            <div class="visual-side">
+              <div class="app-pv-bar mini">
+                <label><input type="checkbox" x-model="appPv.chords"> Acordes</label>
+                <label title="Estribillos repetidos plegados"><input type="checkbox" x-model="appPv.compact"> Compacta</label>
+                <select x-model="appPv.notation" title="Notación">
+                  <option value="ES">DO</option>
+                  <option value="EN">C</option>
+                </select>
+                <span class="app-pv-note" title="La hoja de la app (static/mcm-sheet.js). Más opciones en 👁 Preview">📱 = la app</span>
+              </div>
+              <div class="app-pv-stage dev-phone">
+                <iframe class="app-pv-frame" title="Así se verá en el móvil"
+                        x-init="watchAppPreview($el)"
+                        x-effect="editor.tab === 'visual' && paintAppPreview($el, editor.content, 'phone')"></iframe>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- RAW -->
@@ -2636,6 +2664,7 @@
 
           <h3>Editor visual</h3>
           <table class="kbd-help">
+            <tr><th>📱 Ver en el móvil</th><td>Pone al lado la canción pintada con la hoja de la app y la baja a la par que el editor. El propio editor ya se parece a la app: acordes en azul, el estribillo con la raya amarilla y en negrita, las intros como fila de acordes y los comentarios en cursiva.</td></tr>
             <tr><th>Arrastrar acorde</th><td>Mueve el acorde. Durante el drag verás en azul la letra donde caerá y una etiqueta del modo (PALABRA/SÍLABA/LIBRE).</td></tr>
             <tr><th>(sin modificador)</th><td>Snap al inicio de <strong>sílaba</strong> más cercano (silabeado español).</td></tr>
             <tr><th><kbd>Shift</kbd> al soltar</th><td>Snap a inicio de <strong>palabra</strong>.</td></tr>

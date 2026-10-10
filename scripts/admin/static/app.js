@@ -1870,11 +1870,16 @@ function app() {
           groups.get(p).push({ ch, chordIdx });
         });
 
-        groups.forEach((arr, pos) => {
+        // Ningún acorde pisa al anterior: si dos caen demasiado juntos («[DO][FA]
+        // [DO]» sobre «lad, con»), el segundo se corre a la derecha, como en la
+        // app, que separa los que chocarían.
+        let lastRight = -Infinity;
+        [...groups.keys()].sort((a, b) => a - b).forEach((pos) => {
+          const arr = groups.get(pos);
           const target = chars[Math.min(pos, chars.length - 1)] || chars[chars.length - 1];
           if (!target) return;
           const baseLeft = target.getBoundingClientRect().left - lyricRect.left;
-          let cumX = baseLeft;
+          let cumX = Math.max(baseLeft, lastRight + 4);
           arr.forEach(({ ch, chordIdx }) => {
             const el = document.createElement('span');
             el.className = 'ed-chord';
@@ -1891,6 +1896,7 @@ function app() {
             layer.appendChild(el);
             // Avanzar para el siguiente acorde del mismo grupo (+gap pequeño)
             const w = el.offsetWidth;
+            lastRight = cumX + w;
             cumX += w + 3;
           });
         });
@@ -2145,8 +2151,20 @@ function app() {
       this.refreshMetaFromRaw();
     },
 
+    // La letra como lista de caracteres para el x-for. NO se puede iterar la
+    // cadena tal cual: Alpine toma por número una cadena que «parece» número
+    // ("", "   ", "12") y pinta el rango 1…n. Así salían las intros
+    // («[DO] [FA] [DO] [FA]», letra de espacios) como un «1» con los acordes
+    // amontonados encima.
+    lyricChars(ln) {
+      return (ln.lyric || '').split('');
+    },
     lineCssClass(ln, idx) {
       const cls = ['ed-line', 'ed-' + ln.type];
+      // Intro / instrumental: solo acordes, como una fila de acordes en la app.
+      if (ln.type === 'lyric' && !(ln.lyric || '').trim() && ln.chords && ln.chords.length) {
+        cls.push('ed-chordonly');
+      }
       if (this.visualSelectedLines.has(idx)) cls.push('selected');
       if (ln._inChorus) cls.push('in-chorus');
       if (ln._deduced) cls.push('in-deduced');
@@ -3932,6 +3950,23 @@ function app() {
       frame.style.height = h + 'px';
       frame.style.transform = s < 1 ? 'scale(' + s + ')' : '';
       box.style.height = Math.ceil(h * s) + 'px';
+    },
+    // El móvil al lado del editor visual baja a la par: misma proporción de
+    // scroll. No es línea a línea (la hoja parte y pliega distinto), pero deja
+    // a la vista la parte que se está tocando.
+    syncSidePreview(pane) {
+      if (!this.appPv.side || pane._pvSyncing) return;
+      pane._pvSyncing = true;
+      requestAnimationFrame(() => {
+        pane._pvSyncing = false;
+        const frame = pane.querySelector('.visual-side .app-pv-frame');
+        const win = frame && frame.contentWindow;
+        if (!win || !win.document || !win.document.documentElement) return;
+        const max = pane.scrollHeight - pane.clientHeight;
+        const ratio = max > 0 ? pane.scrollTop / max : 0;
+        const doc = win.document.documentElement;
+        try { win.scrollTo(0, ratio * Math.max(0, doc.scrollHeight - win.innerHeight)); } catch (_) { /* nada */ }
+      });
     },
     // Al cambiar el hueco (abrir la pestaña, redimensionar la ventana).
     watchAppPreview(frame) {
