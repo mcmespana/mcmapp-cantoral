@@ -1489,3 +1489,63 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .raw-legend .btn-mini.on { border-color: var(--accent); color: var(--accent); }
 .app-pv-host { padding: 8px 0; }
 
+/* ─────── El Visual, parecido a la app (2026-10-10) ───────
+   Lo que pinta la hoja de la app (mcmapp: utils/songSheetLayout.ts, colores
+   de SongSheetColors): acordes azules en negrita, estribillo con la raya
+   amarilla a la izquierda y la letra en negrita (la variante de serie),
+   intros como una fila de acordes y comentarios en cursiva gris. Los acordes
+   siguen siendo asas para arrastrar, pero ya no son pastillas macizas. */
+.visual-doc {
+  --app-chord: #007bff; --app-chord-bg: rgba(0, 123, 255, 0.09);
+  --app-chorus-bar: #f4c11e; --app-chorus-bg: rgba(244, 193, 30, 0.07);
+  --app-muted: #6c757d; --app-label: #5B6270;
+}
+.theme-dark .visual-doc {
+  --app-chord: #64B5F6; --app-chord-bg: rgba(100, 181, 246, 0.12);
+  --app-chorus-bg: rgba(244, 193, 30, 0.08);
+  --app-muted: #98989D; --app-label: #AEAEB2;
+}
+.ed-chord {
+  background: var(--app-chord-bg); color: var(--app-chord);
+  font-family: "Carlito", "Calibri", "Segoe UI", sans-serif; font-size: 14px;
+  line-height: 16px; padding: 0 4px;
+}
+.ed-chord:hover, .ed-chord.selected, .ed-chord.dragging,
+.ed-line.in-deduced .ed-chord { color: #fff; }
+/* Estribillo: raya en el margen (la letra no se mueve, como en la app), un
+   fondo que apenas se nota y la letra en negrita. Las marcas {soc}/{eoc}
+   cierran la raya por arriba y por abajo. */
+.ed-line.in-chorus, .ed-line.ed-soc, .ed-line.ed-eoc { background: var(--app-chorus-bg); }
+.ed-line.in-chorus::after, .ed-line.ed-soc::after, .ed-line.ed-eoc::after {
+  content: ''; position: absolute; left: 21px; top: 0; bottom: 0; width: 3px;
+  background: var(--app-chorus-bar); pointer-events: none;
+}
+.ed-line.ed-soc::after { top: 4px; border-radius: 2px 2px 0 0; }
+.ed-line.ed-eoc::after { bottom: 4px; border-radius: 0 0 2px 2px; }
+.ed-line.ed-lyric.in-chorus .ed-lyric-row,
+.theme-dark .ed-line.ed-lyric.in-chorus .ed-lyric-row { background-image: none; font-weight: 700; }
+.ed-marker {
+  background: none; color: var(--app-label); font-weight: 700; font-size: 9.5px;
+  letter-spacing: 0.08em; margin: 2px 0 0 28px; padding: 0;
+}
+.ed-marker.chorus-end { color: var(--app-label); opacity: 0.45; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.ed-line:hover .ed-marker.chorus-end { opacity: 1; }
+/* Intro / instrumental: solo la fila de acordes, sin el renglón vacío. */
+.ed-line.ed-chordonly .ed-lyric-row { font-size: 8px; line-height: 8px; }
+.ed-line.ed-chordonly .ed-char.ed-end { visibility: hidden; }
+/* Comentarios ({c:}): cursiva gris y pequeña, alineados con la letra. */
+.ed-comment-line { padding-left: 28px; margin: 4px 0; }
+.ed-comment-view, .theme-dark .ed-comment-view {
+  background: none; border-left: 0; padding: 0; border-radius: 0;
+  font-family: inherit; font-size: 13px; color: var(--app-muted);
+}
+.ed-comment-icon { opacity: 0.5; font-size: 10px; }
+
+/* Visual + móvil al lado (como en Raw). El móvil se queda quieto mientras el
+   editor baja, y baja con él (syncSidePreview). */
+.editor-pane.visual.with-side { display: flex; gap: 16px; align-items: flex-start; }
+.editor-pane.visual .visual-main { flex: 1; min-width: 0; }
+.editor-pane.visual .visual-side { flex: 0 0 400px; position: sticky; top: 0; }
+/* La barra se pega al borde de verdad del panel: con el padding del panel
+   asomaba una línea de letra por encima. */
+.editor-pane.visual .visual-toolbar { top: -16px; }
