@@ -1223,7 +1223,12 @@
       <div class="editor-body doce-preview-body" x-show="docePreview">
         <div class="chordpro-pane">
           <h4 style="margin:0 0 8px;font-size:12px;color:var(--fg-3);text-transform:uppercase;letter-spacing:0.04em">.cho adaptado (estilo MCM)</h4>
-          <div class="preview-render" x-html="docePreview ? renderPreviewHtml(docePreview.content) : ''"></div>
+          <div class="preview-render" x-show="!appPreviewOn()" x-html="docePreview && !appPreviewOn() ? renderPreviewHtml(docePreview.content) : ''"></div>
+          <div class="app-pv-stage dev-phone" x-show="appPreviewOn()">
+            <iframe class="app-pv-frame" title="Así se verá en el móvil"
+                    x-init="watchAppPreview($el)"
+                    x-effect="docePreview && paintAppPreview($el, docePreview.content, 'phone')"></iframe>
+          </div>
         </div>
         <div class="meta-pane">
           <!-- CONFLICTO DE TONO ── el cantoral y doceacordes traen tonos distintos -->
@@ -2228,7 +2233,8 @@
         </div>
 
         <!-- RAW -->
-        <div class="editor-pane raw" x-show="editor.tab === 'raw'" x-cloak>
+        <div class="editor-pane raw" :class="{ 'with-side': appPv.side && appPreviewOn() }" x-show="editor.tab === 'raw'" x-cloak>
+          <div class="raw-main">
           <!-- Resaltado: un <pre> pintado justo detrás de un textarea con el
                texto transparente. Ambas capas comparten fuente, tamaño,
                interlineado, padding y modo de salto de línea; si se toca uno
@@ -2251,7 +2257,30 @@
             <span class="muted" style="margin-left:auto"
                   x-show="unknownChordCount() > 0"
                   x-text="'⚠️ ' + unknownChordCount() + ' corchete(s) que no parecen un acorde'"></span>
+            <button class="btn-mini" x-show="appPreviewOn()" @click="appPv.side = !appPv.side"
+                    :class="{ on: appPv.side }"
+                    title="Ver al lado cómo queda en el móvil mientras escribes"
+                    x-text="appPv.side ? '📱 Ocultar móvil' : '📱 Ver en el móvil'"></button>
           </div>
+          </div>
+          <template x-if="appPv.side && appPreviewOn()">
+            <div class="raw-side">
+              <div class="app-pv-bar mini" x-show="appPreviewOn()">
+                <label><input type="checkbox" x-model="appPv.chords"> Acordes</label>
+                <label title="Estribillos repetidos plegados"><input type="checkbox" x-model="appPv.compact"> Compacta</label>
+                <select x-model="appPv.notation" title="Notación">
+                  <option value="ES">DO</option>
+                  <option value="EN">C</option>
+                </select>
+                <span class="app-pv-note" title="La hoja de la app (static/mcm-sheet.js). Más opciones en 👁 Preview">📱 = la app</span>
+              </div>
+              <div class="app-pv-stage dev-phone">
+                <iframe class="app-pv-frame" title="Así se verá en el móvil"
+                        x-init="watchAppPreview($el)"
+                        x-effect="editor.tab === 'raw' && paintAppPreview($el, editor.content, 'phone')"></iframe>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- PREVIEW -->
@@ -2261,7 +2290,32 @@
           <pre class="original-pre" x-text="editor.original"></pre>
         </div>
         <div class="editor-pane preview" x-show="editor.tab === 'preview'" x-cloak>
-          <div class="preview-render" x-html="renderPreviewHtml(editor.content)"></div>
+          <div class="app-pv-bar" x-show="appPreviewOn()">
+            <div class="app-pv-seg" role="radiogroup" aria-label="Aparato">
+              <button :class="{on: appPv.device === 'phone'}" @click="appPv.device = 'phone'">📱 Móvil</button>
+              <button :class="{on: appPv.device === 'ipad'}" @click="appPv.device = 'ipad'">iPad ⬌</button>
+              <button :class="{on: appPv.device === 'ipadv'}" @click="appPv.device = 'ipadv'">iPad ⬍</button>
+            </div>
+            <label><input type="checkbox" x-model="appPv.chords"> Acordes</label>
+            <label title="Estribillos repetidos plegados en una línea"><input type="checkbox" x-model="appPv.compact"> Compacta</label>
+            <select x-model="appPv.notation" title="Notación de los acordes">
+              <option value="ES">DO RE MI</option>
+              <option value="EN">C D E</option>
+            </select>
+            <select x-model="appPv.chorusStyle" title="Cómo se marca el estribillo">
+              <template x-for="c in appPreviewChorusStyles()" :key="c.id">
+                <option :value="c.id" x-text="'Estribillo: ' + c.name"></option>
+              </template>
+            </select>
+            <label><input type="checkbox" x-model="appPv.dark"> Oscuro</label>
+            <span class="app-pv-note" title="static/mcm-sheet.js: la hoja de la app empaquetada">= la app</span>
+          </div>
+          <div class="app-pv-stage" :class="'dev-' + appPv.device" x-show="appPreviewOn()">
+            <iframe class="app-pv-frame" title="Vista previa: así se verá en la app"
+                    x-init="watchAppPreview($el)"
+                    x-effect="editor.tab === 'preview' && paintAppPreview($el, editor.content)"></iframe>
+          </div>
+          <div class="preview-render" x-show="!appPreviewOn()" x-html="appPreviewOn() ? '' : renderPreviewHtml(editor.content)"></div>
         </div>
 
         <!-- AUDIO / VÍDEO -->
@@ -2839,8 +2893,15 @@
                 <button :class="{active: addSong.view === 'cho'}" @click="addSong.view = 'cho'">📝 ChordPro</button>
                 <span class="muted small" x-text="addSongStatsText()"></span>
               </div>
-              <div class="add-song-preview preview-render" x-show="addSong.view === 'preview'"
-                   x-html="renderPreviewHtml(addSongCho())"></div>
+              <div class="add-song-preview preview-render" x-show="addSong.view === 'preview' && !appPreviewOn()"
+                   x-html="appPreviewOn() ? '' : renderPreviewHtml(addSongCho())"></div>
+              <div class="add-song-preview app-pv-host" x-show="addSong.view === 'preview' && appPreviewOn()">
+                <div class="app-pv-stage dev-phone">
+                  <iframe class="app-pv-frame" title="Así se verá en el móvil"
+                          x-init="watchAppPreview($el)"
+                          x-effect="addSong.view === 'preview' && paintAppPreview($el, addSongCho(), 'phone')"></iframe>
+                </div>
+              </div>
               <pre class="add-song-cho" x-show="addSong.view === 'cho'" x-text="addSongCho()"></pre>
             </div>
           </template>
@@ -2929,6 +2990,9 @@
 
 </main>
 
+<!-- La hoja de la app empaquetada (generada en mcmapp con
+     «npm run build:sheet-bundle»): la vista previa pinta igual que el móvil. -->
+<script src="mcm-sheet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

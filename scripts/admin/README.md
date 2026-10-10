@@ -173,9 +173,30 @@ caer sobre la letra que se está escribiendo. Detalles que importan:
   en la capa de color descuadraría el cursor, ya que el textarea no puede estilar
   partes de su propio texto.
 
-#### 👁 Preview
-Render limpio sin botones — como se verá en la app móvil. Los acordes salen
-en color sobre la letra, **sin corchetes**.
+#### 👁 Preview — como en la app
+La canción pintada con **el mismo código que la app** (`static/mcm-sheet.js`,
+la hoja de `mcmapp` empaquetada): mismos cortes de línea, estribillos,
+números de estrofa, plegado de repeticiones y columnas en iPad. Se elige el
+aparato (📱 móvil 390 px, iPad horizontal o vertical, a su tamaño real y
+escalado para caber), acordes sí/no, vista completa o compacta, DO RE MI / C D
+E, el estilo del estribillo y el modo oscuro. Las opciones se recuerdan en el
+navegador.
+
+En **📝 Raw**, el botón «📱 Ver en el móvil» pone el móvil al lado del texto:
+se escribe a la izquierda y se ve a la derecha cómo queda (se repinta al dejar
+de escribir y conserva el scroll). Sale encendido de serie si la ventana es
+ancha. La misma vista previa se usa al ✨ añadir canción y al importar de
+doceacordes.
+
+Como `crear_songs_json.py`, quita del cuerpo las directivas que no llegan a
+la app (`/api/app-preview/config` → `cp.MEDIA_DIRECTIVES` y la marca de
+acordes deducidos) y pasa aparte autor, tono y cejilla.
+
+`static/mcm-sheet.js` es **generado**: cuando cambie la hoja de la app, en
+`mcmapp/mcm-app` `npm run build:sheet-bundle` (lo escribe aquí si los dos
+repos están uno al lado del otro) y commitearlo. Un test de la app comprueba
+que pinta byte a byte lo mismo que el WebView. Sin el fichero, la vista previa
+vuelve al render sencillo de antes.
 
 ### Etiquetas (🏷)
 

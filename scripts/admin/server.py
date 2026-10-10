@@ -1015,6 +1015,21 @@ def api_song_new():
     })
 
 
+@app.route("/api/app-preview/config")
+def api_app_preview_config():
+    """Lo que necesita la vista previa «como en la app» (static/mcm-sheet.js).
+
+    `strip`: directivas que `crear_songs_json.py` saca del cuerpo antes de
+    mandarlo a la app (multimedia, etiquetas y marcas del admin, ver
+    cp.strip_media). La vista previa las quita igual para pintar lo mismo.
+    """
+    sheet = SCRIPT_DIR / "static" / "mcm-sheet.js"
+    return jsonify({
+        "strip": list(cp.MEDIA_DIRECTIVES) + [cp.DEDUCED_DIRECTIVE],
+        "sheet": sheet.exists(),
+    })
+
+
 @app.route("/api/song/import/preview", methods=["POST"])
 def api_song_import_preview():
     """Texto pegado → .cho + avisos, sin escribir nada.

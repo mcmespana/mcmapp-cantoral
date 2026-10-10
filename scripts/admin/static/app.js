@@ -288,6 +288,12 @@ function app() {
     reorderOriginal: '',
     reorderDragIdx: null,
 
+    // Vista previa «como en la app»: el mismo código que pinta la canción en
+    // el móvil (static/mcm-sheet.js, generado desde el repo mcmapp). Las
+    // opciones se recuerdan en este navegador.
+    appPv: loadAppPreviewOptions(),
+    appPvStrip: null,   // RegExp de directivas que no llegan a la app
+
     // Editor
     editor: {
       path: null,
@@ -356,6 +362,15 @@ function app() {
     // ─────────── Lifecycle ───────────
     async boot() {
       this.pruneOriginals();
+      fetch('/api/app-preview/config').then(r => r.ok ? r.json() : null).then(j => {
+        if (j && j.strip && j.strip.length) {
+          this.appPvStrip = new RegExp(
+            '^[ \\t]*\\{\\s*(?:' + j.strip.join('|') + ')\\s*(?::[^}]*)?\\}[ \\t]*\\r?\\n?', 'gim');
+        }
+      }).catch(() => {});
+      this.$watch('appPv', (v) => {
+        try { localStorage.appPreview = JSON.stringify(v); } catch (_) { /* privado */ }
+      });
       fetch('/api/ai/status').then(r => r.ok ? r.json() : null)
         .then(j => { if (j) this.aiStatus = j; }).catch(() => {});
       this.$watch('editor.dirty', (v) => {
@@ -3837,7 +3852,100 @@ function app() {
       }
     },
 
-    // ─────────── Preview HTML render ───────────
+    // ─────────── Vista previa «como en la app» ───────────
+    // Pinta el .cho con static/mcm-sheet.js, que es la hoja de la app
+    // empaquetada (mcmapp: utils/songDocument.ts). Lo que se ve aquí es lo que
+    // se verá en el móvil: mismos cortes de línea, estribillos, numeración,
+    // plegado, columnas en iPad… Sin el fichero, cae al render simple de abajo.
+    appPreviewOn() {
+      return typeof window.MCMSheet !== 'undefined';
+    },
+    appPreviewChorusStyles() {
+      return this.appPreviewOn() ? window.MCMSheet.chorusStyles : [];
+    },
+    // El documento HTML de la app para un .cho. Como `crear_songs_json.py`:
+    // el cuerpo sin las directivas multimedia/meta, y autor/tono/cejilla
+    // aparte (la app los recibe como campos del JSON).
+    appPreviewHtml(cho) {
+      const get = (name) => {
+        const m = cho.match(new RegExp('^\\s*\\{\\s*' + name + '\\s*:\\s*(.*?)\\s*\\}', 'im'));
+        return m ? m[1] : '';
+      };
+      const capo = get('capo');
+      const body = this.appPvStrip ? cho.replace(this.appPvStrip, '') : cho;
+      const o = this.appPv;
+      return window.MCMSheet.render(body, {
+        notation: o.notation,
+        chordsVisible: o.chords,
+        compact: o.compact,
+        chorusStyle: o.chorusStyle,
+        dark: o.dark,
+        author: get('artist') || get('author') || undefined,
+        key: get('key') || undefined,
+        capo: /^\d+$/.test(capo) ? Number(capo) : 0,
+      }).html;
+    },
+    // Uso: <iframe x-effect="paintAppPreview($el, editor.content)"
+    //              x-init="watchAppPreview($el)">. x-effect vuelve a pintar
+    // al cambiar el texto o cualquier opción; se espera a que se deje de
+    // escribir y se conserva el scroll.
+    paintAppPreview(frame, cho, device) {
+      const o = this.appPv;
+      const dev = device || o.device;
+      // Dependencias reactivas: cualquier cambio de opción repinta.
+      const key = [o.chords, o.compact, o.notation, o.chorusStyle, o.dark, dev].join('|');
+      frame._pvCho = cho;
+      frame._pvDevice = dev;
+      this.fitAppPreview(frame, dev);
+      if (!this.appPreviewOn() || frame.offsetParent === null) return;  // oculto
+      clearTimeout(frame._pvTimer);
+      const first = frame._pvHtml === undefined;
+      frame._pvTimer = setTimeout(() => {
+        let html = '';
+        try {
+          html = cho ? this.appPreviewHtml(cho) : '';
+        } catch (e) {
+          html = '<p style="font:14px sans-serif;color:#b91c1c;padding:16px">Error en la vista previa: ' +
+            String(e && e.message || e).replace(/[<>&]/g, '') + '</p>';
+        }
+        if (html === frame._pvHtml && key === frame._pvKey) return;
+        let y = 0;
+        try { y = frame.contentWindow ? frame.contentWindow.scrollY : 0; } catch (_) { /* nada */ }
+        frame._pvHtml = html;
+        frame._pvKey = key;
+        frame.onload = () => {
+          try { frame.contentWindow.scrollTo(0, y); } catch (_) { /* nada */ }
+        };
+        frame.srcdoc = html;
+      }, first ? 0 : 250);
+    },
+    // Tamaño de verdad del aparato (la maquetación decide columnas y cortes
+    // con él) y escalado para que quepa en el hueco.
+    fitAppPreview(frame, device) {
+      const sizes = { phone: [390, 844], ipad: [1180, 820], ipadv: [820, 1180] };
+      const [w, h] = sizes[device] || sizes.phone;
+      const box = frame.parentElement;
+      const avail = box ? box.clientWidth : 0;
+      if (avail <= 0) return;
+      const s = Math.min(1, avail / w);
+      frame.style.width = w + 'px';
+      frame.style.height = h + 'px';
+      frame.style.transform = s < 1 ? 'scale(' + s + ')' : '';
+      box.style.height = Math.ceil(h * s) + 'px';
+    },
+    // Al cambiar el hueco (abrir la pestaña, redimensionar la ventana).
+    watchAppPreview(frame) {
+      if (typeof ResizeObserver === 'undefined' || !frame.parentElement) return;
+      let lastW = -1;
+      new ResizeObserver(() => {
+        const w = frame.parentElement.clientWidth;
+        if (w === lastW) return;
+        lastW = w;
+        this.paintAppPreview(frame, frame._pvCho, frame._pvDevice);
+      }).observe(frame.parentElement);
+    },
+
+    // ─────────── Preview HTML render (sencillo, sin mcm-sheet.js) ───────────
     renderPreviewHtml(cho) {
       if (!cho) return '';
       const esc = (s) => String(s).replace(/[&<>"']/g, c => ({
@@ -3880,6 +3988,27 @@ function app() {
       return out.join('\n');
     },
   };
+}
+
+// Opciones de la vista previa «como en la app», recordadas en el navegador.
+// De serie, lo que trae la app (MCMSheet.defaults).
+function loadAppPreviewOptions() {
+  const d = (window.MCMSheet && window.MCMSheet.defaults) || {};
+  const base = {
+    device: 'phone',
+    chords: d.chordsVisible !== false,
+    compact: !!d.compact,
+    notation: d.notation || 'ES',
+    chorusStyle: d.chorusStyle || 'negrita',
+    dark: false,
+    // Al lado del Raw solo si hay sitio para las dos cosas.
+    side: window.innerWidth >= 1280,
+  };
+  try {
+    return { ...base, ...JSON.parse(localStorage.appPreview || '{}') };
+  } catch (_) {
+    return base;
+  }
 }
 
 // ─────────── ChordPro parsing helpers (visual editor) ───────────
