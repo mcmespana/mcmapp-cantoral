@@ -1,5 +1,10 @@
 name: Genera songs.json y sube Firebase
 
+# Los songs-vX.json NO se commitean desde aquí: en CI el fichero generado solo
+# vive en el runner y se sube a Firebase (única fuente de verdad para la app).
+# Si quieres guardar una versión en el repo, hazlo desde el admin
+# (Otros > JSON de canciones > «Guardar versión nueva en el repo»).
+
 on:
   push:
     branches: [main]
@@ -7,25 +12,26 @@ on:
       - 'songs/**'
       - '!songs/songs-v*.json'
 
+permissions:
+  contents: read
+
+# Mismo grupo que «Sincroniza cambios en Firebase»: dos subidas seguidas (o una
+# subida y un sync) no se pisan escribiendo 'songs/data' a la vez. Sin cancelar
+# la que está en curso, para no dejar una subida a medias.
+concurrency:
+  group: songs-sync
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
       - name: Generate songs JSON
         run: python scripts/crear_songs_json.py
-      - name: Commit songs JSON
-        run: |
-          if ! git diff --quiet; then
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add songs/songs-v*.json
-            git commit -m "chore: update songs JSON"
-            git push
-          fi
       - name: Upload to Firebase
         env:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
