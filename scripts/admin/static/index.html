@@ -31,7 +31,7 @@
     <a :class="{active: view === 'tags'}" @click.prevent="goTags(null)" href="#">🏷 Etiquetas</a>
     <a :class="{active: view === 'reorder'}" @click.prevent="view = 'reorder'" href="#">🔀 Reordenar</a>
     <!-- Lo que casi nunca se usa, plegado al final para no llenar el menú -->
-    <a class="nav-group" :class="{active: ['latex','peticiones','backups','settings'].includes(view)}"
+    <a class="nav-group" :class="{active: ['latex','peticiones','songsjson','backups','settings'].includes(view)}"
        @click.prevent="otrosOpen = !otrosOpen" href="#">
       <span x-text="otrosOpen ? '▾' : '▸'"></span> Otros
     </a>
@@ -39,6 +39,7 @@
       <div class="nav-sub">
         <a :class="{active: view === 'latex'}" @click.prevent="view = 'latex'; loadLatex()" href="#">📐 Importar de LaTeX</a>
         <a :class="{active: view === 'peticiones'}" @click.prevent="goPeticiones()" href="#">🙋 Peticiones</a>
+        <a :class="{active: view === 'songsjson'}" @click.prevent="goSongsJson()" href="#">📦 JSON de canciones</a>
         <a :class="{active: view === 'backups'}" @click.prevent="view = 'backups'; loadBackups()" href="#">🗂 Backups</a>
         <a :class="{active: view === 'settings'}" @click.prevent="goSettings()" href="#">⚙️ Ajustes</a>
       </div>
@@ -1777,6 +1778,34 @@
       </label>
       <p class="muted small" x-show="settings.savedAt" x-text="'✓ Guardado'"></p>
     </div>
+  </section>
+
+  <section x-show="view === 'songsjson'" x-cloak>
+    <h1>📦 JSON de canciones</h1>
+    <p class="muted">El JSON que lee la app (<code>songs/data</code> en Firebase) se genera
+       solo al subir cambios a GitHub, y <strong>ya no se guarda en el repo</strong>.
+       Desde aquí puedes sacar una copia del estado actual de los <code>.cho</code>
+       o dejar una versión guardada en el repo.</p>
+
+    <div class="filter-bar" style="justify-content: flex-start;">
+      <button class="btn primary" @click="exportSongsJson()">⬇ Exportar JSON actual</button>
+      <button class="btn" @click="saveSongsJsonVersion()" :disabled="songsJson.saving">
+        <span x-text="songsJson.saving ? 'Guardando…' : '💾 Guardar versión nueva en el repo'"></span>
+      </button>
+    </div>
+    <p class="muted small" x-show="songsJson.latest !== undefined">
+      Última versión en el repo:
+      <strong x-text="songsJson.latest || 'ninguna'"></strong>
+      · la siguiente será <strong x-text="songsJson.next"></strong>.
+    </p>
+    <p class="muted small">
+      <strong>Exportar</strong> solo descarga el fichero (no toca el repo).
+      <strong>Guardar versión</strong> escribe el siguiente <code>songs-vX.json</code>
+      en la carpeta <code>songs/</code>; luego aparece en los cambios sin subir y
+      se sube con el botón de la barra lateral.
+    </p>
+    <p x-show="songsJson.message" x-text="songsJson.message"
+       :style="songsJson.error ? 'color: var(--danger)' : ''"></p>
   </section>
 
   <section x-show="view === 'backups'" x-cloak>

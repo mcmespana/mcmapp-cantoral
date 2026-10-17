@@ -340,6 +340,7 @@ function app() {
 
     // Backups
     backups: { sessions: [], total_size_bytes: 0, loading: false, keepLast: 5 },
+    songsJson: { latest: undefined, next: '', saving: false, message: '', error: false },
 
     // Peticiones de la gente (solicitudes de canciones + fallitos desde Firebase)
     peticiones: {
@@ -3440,6 +3441,49 @@ function app() {
         alert('Error moviendo: ' + e.message);
       } finally {
         this.bulkMoving = false;
+      }
+    },
+
+    // ─────────── JSON de canciones ───────────
+    async goSongsJson() {
+      this.view = 'songsjson';
+      this.otrosOpen = true;
+      this.songsJson.message = '';
+      try {
+        const r = await fetch('/api/songs-json/info');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        this.songsJson.latest = d.latest;
+        this.songsJson.next = d.next;
+      } catch (e) {
+        this.songsJson.error = true;
+        this.songsJson.message = 'No se pudo leer la versión actual: ' + e.message;
+      }
+    },
+    exportSongsJson() {
+      // El servidor responde con Content-Disposition: attachment, así que el
+      // navegador descarga sin salir de la página.
+      window.location.href = '/api/songs-json/export';
+    },
+    async saveSongsJsonVersion() {
+      if (this.songsJson.saving) return;
+      if (!confirm(`¿Guardar ${this.songsJson.next || 'una versión nueva'} en el repo con el estado actual de las canciones?`)) return;
+      this.songsJson.saving = true;
+      this.songsJson.message = '';
+      this.songsJson.error = false;
+      try {
+        const r = await fetch('/api/songs-json/save-version', { method: 'POST' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) throw new Error(d.error || 'HTTP ' + r.status);
+        this.songsJson.latest = d.latest;
+        this.songsJson.next = d.next;
+        this.songsJson.message = `✓ Guardado ${d.filename} (${d.songs} canciones, ${this.formatBytes(d.size_bytes)}). Aparece en los cambios sin subir.`;
+        this.loadGitStatus(false);
+      } catch (e) {
+        this.songsJson.error = true;
+        this.songsJson.message = 'Error guardando la versión: ' + e.message;
+      } finally {
+        this.songsJson.saving = false;
       }
     },
 

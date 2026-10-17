@@ -17,6 +17,9 @@ Endpoints (ver /api/health para listado):
   POST /api/docx/import             → body: {ids: [N,...]} importa con TO DO
   POST /api/reorder                 → body: {category, order: [filename,...]}
   POST /api/build-json              → ejecuta crear_songs_json.py
+  GET  /api/songs-json/info         → última versión songs-vX.json del repo y la siguiente
+  GET  /api/songs-json/export       → descarga el JSON actual (no escribe en el repo)
+  POST /api/songs-json/save-version → escribe songs-v<N+1>.json en el repo
 """
 from __future__ import annotations
 
@@ -61,6 +64,7 @@ import docx2chordpro as d2c  # noqa: E402
 import latex_import as lx  # noqa: E402
 import doceacordes_import as da  # noqa: E402
 import chordpro as cp  # noqa: E402  (módulo común: parseo campos ↔ directivas)
+import crear_songs_json as csj  # noqa: E402  (generador del songs-vX.json)
 import song_import as si  # noqa: E402  (canciones sueltas: texto pegado → .cho)
 import ai_review  # noqa: E402  (segunda mirada con Claude: señala, no reescribe)
 
@@ -2226,6 +2230,63 @@ def api_build_json():
         "stdout": proc.stdout,
         "stderr": proc.stderr,
         "returncode": proc.returncode,
+    })
+
+
+# ─────────── API: JSON de canciones (exportar / guardar versión) ─────────── #
+# Los songs-vX.json son SOLO Firebase: el CI sube el generado sin commitearlo.
+# Aquí se puede (a) descargar el JSON del estado actual de los .cho, o (b)
+# guardarlo como versión nueva en el repo. Ambos usan crear_songs_json (la misma
+# lógica que el CI), sin lanzar subprocesos.
+
+def _quiet(*_args, **_kwargs) -> None:
+    return None
+
+
+def _songs_json_versions() -> dict:
+    major, minor = csj.find_latest_version(str(SONGS_DIR))
+    latest_file = f"songs-v{csj.format_version(major, minor)}.json"
+    has_latest = (SONGS_DIR / latest_file).exists()
+    nmajor, nminor = csj.bump_version(major, minor)
+    return {
+        "latest": latest_file if has_latest else None,
+        "next": f"songs-v{csj.format_version(nmajor, nminor)}.json",
+    }
+
+
+@app.route("/api/songs-json/info")
+def api_songs_json_info():
+    return jsonify({"ok": True, **_songs_json_versions()})
+
+
+@app.route("/api/songs-json/export")
+def api_songs_json_export():
+    """Descarga el JSON de canciones del estado actual, sin tocar el repo."""
+    result, _tag_counts, _catalog = csj.build_songs(str(SONGS_DIR), log=_quiet)
+    body = json.dumps(result, ensure_ascii=False, indent=2)
+    fname = "songs-export-" + datetime.now().strftime("%Y%m%d-%H%M") + ".json"
+    return Response(
+        body,
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.route("/api/songs-json/save-version", methods=["POST"])
+def api_songs_json_save_version():
+    """Escribe songs-v<N+1>.json en el repo (queda sin commitear)."""
+    try:
+        result, _tag_counts, _catalog = csj.build_songs(str(SONGS_DIR), log=_quiet)
+        fname, path = csj.write_next_version(str(SONGS_DIR), result)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({
+        "ok": True,
+        "filename": fname,
+        "categories": len(result),
+        "songs": sum(len(c["songs"]) for c in result.values()),
+        "size_bytes": os.path.getsize(path),
+        **_songs_json_versions(),
     })
 
 
