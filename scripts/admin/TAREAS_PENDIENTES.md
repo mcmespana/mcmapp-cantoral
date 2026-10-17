@@ -2,6 +2,9 @@
 
 Lista viva — añadir/quitar según se haga.
 
+Otra lista de pendientes, de contenido (no del admin): las dudas de acordes a
+oído en [`docs/REVISION_OIDO.md`](../../docs/REVISION_OIDO.md).
+
 ## Pendiente de la ronda de rendimiento / UX de imports
 
 Cosas detectadas al arreglar la lentitud (ver sección "Rendimiento" del README)

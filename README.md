@@ -3,33 +3,54 @@
 [![Canciones subidas a la app](https://github.com/mcmespana/mcmapp-cantoral/actions/workflows/sincroniza-cambios-firebase.yml/badge.svg)](https://github.com/mcmespana/mcmapp-cantoral/actions/workflows/sincroniza-cambios-firebase.yml)
 
 Incluye...
-* Todas las canciones del Cantoral MCM en formato Chord Pro
-* Generador del songs.json y un uploader automático a la MCM App
+* Todas las canciones del Cantoral MCM en formato Chord Pro (`songs/`)
+* Generador del `songs-vX.json` y un uploader automático a la MCM App
+* Admin local para editar, importar y revisar canciones (`scripts/admin/`)
 * Conversor de acordes en formato tabulado a formato Chord Pro
-## Automatizaci\xC3\xB3n de songs.json
+
+Más documentación: [`AGENTS.md`](AGENTS.md) (estructura y comandos),
+[`docs/CAMPOS_CANCIONES.md`](docs/CAMPOS_CANCIONES.md) (contrato de campos
+y directivas), [`scripts/admin/README.md`](scripts/admin/README.md) (admin),
+[`deploy/ugreen-nas/README.md`](deploy/ugreen-nas/README.md) (admin en el NAS)
+y [`docs/REVISION_OIDO.md`](docs/REVISION_OIDO.md) (pendientes de revisión de
+acordes a oído).
+
+## Automatización de songs.json
 
 Este repositorio incluye un flujo de trabajo de GitHub Actions que genera
-autom\xC3\xA1ticamente la \xC3\xBAltima versi\xC3\xB3n de `songs.json` y la publica en Firebase.
-Cada vez que se hace push a la rama `main` se ejecutan las siguientes acciones:
+automáticamente la última versión de `songs.json` y la publica en Firebase.
+Cada vez que se hace push a la rama `main` con cambios en la carpeta `songs`
+se ejecutan las siguientes acciones:
 
 1. Se ejecuta `scripts/crear_songs_json.py` para crear un nuevo archivo
-   `songs-vX.json` en la carpeta `songs`.
-2. Si se ha generado un nuevo archivo, se confirma y sube el cambio al repositorio.
-3. El archivo resultante se env\xC3\xADa a la base de datos de Firebase y se
+   `songs-vX.json` en la carpeta `songs` (solo dentro del runner).
+2. El archivo resultante se envía a la base de datos de Firebase y se
    actualiza el campo `songs/updatedAt` con la marca de tiempo actual.
 
-Para que la publicaci\xC3\xB3n en Firebase funcione es necesario definir dos
+Los `songs-vX.json` **ya no se commitean desde el workflow**: la fuente de
+verdad es Firebase. El repo conserva únicamente la última versión como punto
+de partida de la numeración. Desde el admin (**Otros > JSON de canciones**) se
+puede descargar el JSON actual o guardar una versión nueva en el repo.
+
+Para que la publicación en Firebase funcione es necesario definir dos
 **Secrets** en el repositorio de GitHub:
 
 - `FIREBASE_URL`: URL base de la Realtime Database (por ejemplo
   `https://tu-proyecto.firebaseio.com`).
 - `FIREBASE_TOKEN`: token con permisos de escritura en la base de datos.
 
-Una vez configurados, cualquier push a `main` crear\xC3\xA1 la nueva versi\xC3\xB3n de
-`songs.json`, la subir\xC3\xA1 al repositorio y actualizar\xC3\xA1 Firebase de forma
-autom\xC3\xA1tica.
+## Otros flujos
 
-El flujo solo se ejecuta cuando se env\xC3\xADan cambios a la carpeta `songs` en la rama `main`. Cuando esto ocurre se realizan las siguientes acciones:
+- **Sincronización de ediciones desde la app**: un workflow
+  (`sincroniza-cambios-firebase.yml`) corre cada 2 días y baja a los `.cho` las
+  ediciones que los administradores hacen en la app (`scripts/sincronizaCambiosDeFirebase.py`).
+- **Admin local** (`scripts/admin/`): editor y catálogo de canciones, importadores
+  (docx, LaTeX, doceacordes.es), etiquetas y revisión; también corre en un NAS
+  (`deploy/ugreen-nas/`).
+- **`peticiones/`**: histórico de las peticiones de canciones y reportes que la
+  gente envía desde la app; lo escribe el botón *Consultar peticiones* del admin.
+- **`songs-backup-edits/`**: copias de seguridad previas a cada edición. Las crean
+  el admin y el sync, pero git las ignora (el historial ya guarda cada `.cho`).
 
 ## Campos de canción en `songs-vX.json`
 

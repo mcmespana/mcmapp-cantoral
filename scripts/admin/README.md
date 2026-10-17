@@ -529,6 +529,12 @@ git push
 
 Un GitHub Action regenera `songs-vX.json` y lo sube a Firebase automáticamente.
 No necesitas regenerar el JSON tú.
+El workflow **no commitea** ese JSON: vive solo en Firebase. Si quieres una copia:
+
+- **Otros → 📦 JSON de canciones → Exportar JSON actual**: descarga el JSON del
+  estado actual de los `.cho` (no toca el repo).
+- **Guardar versión nueva en el repo**: escribe el siguiente `songs-vX.json` en
+  `songs/` (misma lógica que `crear_songs_json.py`); queda como cambio sin subir.
 
 El indicador del topbar muestra el estado: `Sin cambios` / `● Sin guardar` /
 `Guardando…` / `✓ Guardado · haz commit cuando termines`.
@@ -546,7 +552,7 @@ pulsa **"✓ Revisada"** en el editor y se elimina la línea.
 
 Cada edición / borrado / reordenación deja una copia en
 `songs-backup-edits/<timestamp>/`. La carpeta crece — borra contenido antiguo
-de vez en cuando.
+de vez en cuando (vista **Otros → Backups**). Git la ignora: no se sube al repo.
 
 ## Rendimiento (por qué va rápido y qué no tocar)
 
