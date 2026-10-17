@@ -4,3 +4,18 @@ __pycache__
 *.pyc
 .DS_Store
 node_modules
+
+# Credenciales locales: nunca dentro de la imagen
+.env
+.env.*
+acceso-firebase.json
+
+# Salida de runtime y material que el admin no lee
+songs-backup-edits
+scripts/cache_doceacordes
+scripts/staging_docx2cho
+_para-borrar
+deploy
+
+# PDF del cantoral (el admin solo necesita el .docx de Castellon y fuente.ttf)
+scripts/*.pdf
