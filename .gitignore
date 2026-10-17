@@ -205,6 +205,11 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .DS_Store
-songs/.DS_Store
-songs/.DS_Store
+
+# Locks temporales de LibreOffice
+.~lock.*#
+
+# Backups que crean el admin local y el sync de Firebase antes de cada edicion
+# (el historial de git ya guarda cada version del .cho)
+songs-backup-edits/
 scripts/staging_docx2cho/
