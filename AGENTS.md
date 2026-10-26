@@ -31,6 +31,7 @@
 - Validate parsing: open random entries to confirm `title`, `author`, `key`, and `capo` populated.
 - Shared ChordPro/sync logic has tests: `python scripts/test_sync.py` (no deps needed; also works under pytest). Extend it when touching `scripts/chordpro.py`.
 - The admin song importer has tests: `python scripts/admin/test_song_import.py` (real songs in `scripts/admin/fixtures_import/`) and `python scripts/admin/test_ai_review.py` (fake client, no API calls). Extend them when touching `song_import.py` / `ai_review.py`.
+- Photo/PDF reading and link import («✨ Añadir canción»): `python scripts/admin/test_song_reader.py` (fake client; a real cantoral page in `scripts/admin/fixtures_read/` with the JSON Claude should return) and `python scripts/admin/test_web_import.py` (no network). Extend them when touching `song_reader.py` / `web_import.py`. Don't put copyrighted lyrics in fixtures beyond what the repo already has: use traditional songs or invented lines.
 - Optional: add minimal unit tests under `scripts/` with `pytest` if present; name tests `test_*.py`.
 
 ## Commit & Pull Request Guidelines

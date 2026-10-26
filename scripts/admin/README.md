@@ -435,6 +435,58 @@ Toda la conversión vive en `scripts/admin/song_import.py`, es determinista y no
 cuesta nada. Tests: `python scripts/admin/test_song_import.py`, con cuatro
 canciones reales en `fixtures_import/`.
 
+#### 📷 Desde una foto o un PDF
+Con la IA activada, **📷 Foto o PDF** (o arrastrar el archivo a la caja, o
+pegar una captura con `Ctrl+V`, o **📋 Pegar** con una imagen copiada) lee la
+página con Claude. Vale una foto del móvil, una captura o un PDF; hasta 6 a la
+vez si la canción ocupa varias páginas (van en orden).
+
+- Claude **transcribe** lo que pone el papel, no lo «mejora»: cada acorde
+  **anclado a la sílaba** sobre la que está escrito (`[Sol]Feliz Navi[Do]dad`),
+  no por columnas, así que da igual que la letra sea proporcional, esté
+  centrada o vaya a dos columnas. Junta los versos que la columna partió,
+  pasa las MAYÚSCULAS a minúsculas normales (§4.6 de
+  `docs/CAMPOS_CANCIONES.md`), quita la numeración a mano y deja las notas
+  («se repite dos veces») como `{c: …}`.
+- Las estrofas que en la hoja vuelven sin acordes se transcriben **sin
+  acordes**: luego el conversor de siempre las rellena con la marca 👁, igual
+  que con un texto pegado. Un «Estribillo» suelto se escribe entero.
+- «c/2» escrito a mano junto al título es **cejilla 2**. Si en la página asoma
+  otra canción cortada, no se añade (y se dice). Si hay **varias canciones
+  enteras**, se elige cuál; las demás esperan en ✨ (una hora) para no volver a
+  leer la foto.
+- Lo leído entra en la **caja** como ChordPro, con los acordes tal y como
+  venían (Sol, Do…): se puede retocar ahí y el resto es el camino de siempre.
+  Arriba del resultado salen las **🔎 dudas** de la lectura (acorde ilegible,
+  sílaba dudosa…): es lo primero que hay que mirar. El botón de la miniatura
+  enseña la **foto en lugar del texto**, para compararla con el resultado.
+- Lo leído no se vuelve a corregir solo con 🤖 (ya lo ha hecho la IA); el botón
+  sigue ahí por si se quiere.
+- La foto se reduce en el propio navegador antes de subirla (≤ 2576 px, lo que
+  aprovecha el modelo) y se guarda en el servidor, en `scripts/admin/.uploads/`
+  (fuera de git, 60 días), para verla en **📄 Original** del editor.
+
+Código: `song_reader.py` (las instrucciones a Claude, el JSON que devuelve y
+cómo se monta el ChordPro); tests en `test_song_reader.py`, con una página real
+de cantoral en `fixtures_read/`.
+
+#### 🔗 Desde un enlace
+Pegar un enlace solo en la caja lo trae:
+
+| enlace | qué pasa |
+| --- | --- |
+| **LaCuerda**, **Ultimate Guitar**, o cualquier web con la canción en un `<pre>` (Cifra Club, blogs…) | la canción sale del HTML con sus acordes encima, título, autor, tono y cejilla, y va a la caja como si la pegaras. Sin IA y gratis. |
+| **Google Docs** compartido | su texto, a la caja. |
+| **Foto o PDF** (directo, de **Google Drive** o de **Dropbox**) | lo lee la IA, como una foto subida. |
+| **doceacordes** | se abre en 🎸 Importar de doceacordes, que ya lo hace bien. |
+| cualquier otra web | la IA busca la canción en el texto de la página; sin IA, el texto a la caja para que dejes solo la canción. |
+
+Drive y Docs tienen que estar compartidos como «Cualquier persona con el
+enlace». Algunas webs no dejan que el servidor traiga la página (sale un 403):
+entonces, copiar y pegar o una captura. Por seguridad solo se traen direcciones
+públicas: nada de la red de casa ni del propio NAS. Código en `web_import.py`;
+tests (sin red) en `test_web_import.py`.
+
 #### 🤖 Corrección con IA
 Con la IA activada, en cuanto dejas de pegar/escribir (1 s), Claude compara el
 texto original con el resultado y **lo corrige solo**: recoloca acordes, añade
@@ -464,7 +516,8 @@ uno, y queda además como un paso de **Ctrl+Z**. No guarda: guardas tú.
 
 **📄 Original**: al crear con ✨, el texto pegado se queda guardado en el
 navegador (60 días) y el editor enseña una pestaña **📄 Original** para
-compararlo mientras revisas.
+compararlo mientras revisas. Si salió de una foto o un PDF, la pestaña la
+enseña también (desde el servidor, 60 días).
 
 #### ⚙️ Ajustes (Otros → Ajustes)
 - **Modelo**: la lista se pide en directo a la API de Anthropic (Models API),
@@ -482,6 +535,7 @@ y manda sobre las variables de entorno. La **clave** no va ahí nunca:
 | variable de entorno | |
 | --- | --- |
 | `ANTHROPIC_API_KEY` | la clave. Sin ella la IA sale desactivada. Ver [deploy/ugreen-nas](../../deploy/ugreen-nas/README.md#revisión-con-ia). |
+| *(paquete `anthropic`)* | va en `requirements.txt`. Si hay clave pero falta el paquete (imagen de Docker sin reconstruir), ⚙️ Ajustes lo dice y la IA sale desactivada hasta reconstruir. |
 | `CANTORAL_AI_MODEL` / `CANTORAL_AI_EFFORT` | opcionales: valores por defecto si no se ha elegido nada en Ajustes. |
 
 Código en `scripts/admin/ai_review.py`; tests (con un cliente falso, sin llamar
