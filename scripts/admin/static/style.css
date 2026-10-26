@@ -1272,7 +1272,7 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .add-song-row { display: flex; gap: 10px; align-items: flex-end; }
 .add-song-row > * { flex: 1; min-width: 0; }
 .add-song-row .numpick-open { flex: none; }
-.add-song-notes { list-style: none; padding: 0; margin: 0 0 12px; font-size: 13px; }
+.add-song-notes, .editor-modal ul.add-song-notes { list-style: none; padding: 0; margin: 0 0 12px; font-size: 13px; }
 .add-song-notes li { padding: 5px 10px; border-radius: 4px; margin-bottom: 3px; background: var(--bg-3); color: var(--fg-2); }
 .add-song-notes li.warn { background: rgba(202, 138, 4, 0.13); color: var(--fg); }
 .add-song-view-tabs { display: flex; gap: 4px; align-items: center; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
@@ -1280,6 +1280,24 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .add-song-view-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .add-song-view-tabs .muted { margin-left: auto; }
 .add-song-preview { overflow-x: auto; }
+.add-song-row3 { gap: 8px; }
+.add-song-row3 > div:last-child { flex: 1.4; }
+.add-song-num { display: flex; gap: 4px; }
+.add-song-num input { min-width: 0; }
+.add-song-num .numpick-open { flex: none; padding: 0 8px; }
+/* Pantalla ancha: datos a la izquierda, vista previa a la derecha, cada una
+   con su scroll. Así la vista previa no queda debajo de todo el formulario. */
+@media (min-width: 1100px) {
+  .add-song-body { grid-template-columns: minmax(320px, 1fr) 2fr; }
+  .add-song-result { display: flex; flex-direction: column; overflow: hidden; }
+  .add-song-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 18px; }
+  .add-song-side, .add-song-main { min-height: 0; overflow-y: auto; }
+  .add-song-side { padding-right: 4px; }
+  .add-song-side .add-song-meta { margin-top: 0; }
+  .add-song-side .add-song-meta label { margin-top: 6px; }
+  .add-song-side .add-song-notes { font-size: 12px; }
+  .add-song-main .add-song-view-tabs { position: sticky; top: 0; background: var(--bg); z-index: 1; }
+}
 .add-song-cho { margin: 0; padding: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
   font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-x: auto; }
 .add-song-ai { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
