@@ -475,7 +475,8 @@ def read_files(files: List[Tuple[bytes, str]], categories: Optional[List[str]] =
     parts.append("Transcribe la canción.")
     content.append({"type": "text", "text": "\n\n".join(parts)})
     res = _ask(content, client)
-    res["uploads"] = [save_upload(d, mt) for d, mt in files] if save else []
+    # La misma foto dos veces es el mismo archivo: un id solo una vez.
+    res["uploads"] = list(dict.fromkeys(save_upload(d, mt) for d, mt in files)) if save else []
     return res
 
 

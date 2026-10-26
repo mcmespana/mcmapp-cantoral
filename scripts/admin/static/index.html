@@ -130,8 +130,9 @@
       <div class="peticiones-banner-text">
         <h3>✨ Añadir canción</h3>
         <p class="muted">Pega una canción como te venga —con acordes encima, en ChordPro o la letra
-           sola— y sale lista para el cantoral, con los estribillos marcados y los acordes que falten
-           deducidos (y señalados para revisarlos).</p>
+           sola—, un enlace (LaCuerda, Ultimate Guitar, Drive…) o una foto o PDF del cancionero, y sale
+           lista para el cantoral, con los estribillos marcados y los acordes que falten deducidos (y
+           señalados para revisarlos).</p>
       </div>
       <button class="btn primary big" @click="openAddSong()">✨ Añadir canción</button>
     </div>
@@ -1929,8 +1930,8 @@
         <button :class="{active: editor.tab === 'visual'}" @click="setEditorTab('visual')">🎨 Visual</button>
         <button :class="{active: editor.tab === 'raw'}" @click="setEditorTab('raw')">📝 Raw</button>
         <button :class="{active: editor.tab === 'preview'}" @click="setEditorTab('preview')">👁 Preview</button>
-        <button x-show="editor.original" :class="{active: editor.tab === 'original'}" @click="setEditorTab('original')"
-                title="El texto tal y como lo pegaste en ✨ Añadir canción">📄 Original</button>
+        <button x-show="editor.original || (editor.originalFiles || []).length" :class="{active: editor.tab === 'original'}" @click="setEditorTab('original')"
+                title="Lo que pegaste (o la foto de la que se leyó) en ✨ Añadir canción">📄 Original</button>
         <button :class="{active: editor.tab === 'media'}" @click="setEditorTab('media')">
           🎬 Audio / Vídeo
           <span class="tab-badge" x-show="(editor.meta.youtube_count || 0) + (editor.meta.audio_count || 0) + (editor.meta.spotify_count || 0) + (editor.meta.drive_count || 0) + (editor.meta.other_count || 0) > 0"
@@ -2316,9 +2317,20 @@
 
         <!-- PREVIEW -->
         <div class="editor-pane original-pane" x-show="editor.tab === 'original'" x-cloak>
-          <p class="muted small">Lo que pegaste al crearla (guardado solo en este navegador). Para comparar
-            mientras revisas; no se guarda en la canción.</p>
-          <pre class="original-pre" x-text="editor.original"></pre>
+          <p class="muted small">Lo que pegaste al crearla (guardado solo en este navegador; las fotos, 60 días
+            en el servidor). Para comparar mientras revisas; no se guarda en la canción.</p>
+          <div class="original-files" x-show="(editor.originalFiles || []).length">
+            <template x-for="id in (editor.originalFiles || [])" :key="id">
+              <div class="original-file">
+                <a :href="'/api/upload/' + id" target="_blank" rel="noopener" class="small"
+                   x-text="id.endsWith('.pdf') ? '📄 Abrir el PDF ↗' : '📷 Abrir la foto ↗'"></a>
+                <img x-show="!id.endsWith('.pdf')" :src="editor.tab === 'original' ? '/api/upload/' + id : ''" alt="Original">
+                <iframe x-show="id.endsWith('.pdf')" :src="editor.tab === 'original' && id.endsWith('.pdf') ? '/api/upload/' + id : 'about:blank'" title="PDF original"></iframe>
+              </div>
+            </template>
+            <h4 x-show="editor.original">Lo que leyó la IA</h4>
+          </div>
+          <pre class="original-pre" x-show="editor.original" x-text="editor.original"></pre>
         </div>
         <div class="editor-pane preview" x-show="editor.tab === 'preview'" x-cloak>
           <div class="app-pv-bar" x-show="appPreviewOn()">
@@ -2795,15 +2807,57 @@
         </div>
       </div>
       <div class="add-song-body">
-        <!-- Entrada -->
-        <div class="add-song-input">
+        <!-- Entrada: texto, enlace o foto/PDF (se arrastra, se pega o con 📷). -->
+        <div class="add-song-input" :class="{ dragging: addSong.drag }"
+             @dragover.prevent="addSong.drag = true" @dragleave.self="addSong.drag = false"
+             @drop.prevent="onAddSongDrop($event)">
           <div class="add-song-input-head">
             <strong>Pega la canción</strong>
-            <button class="btn-mini" @click="pasteIntoAddSong()" title="Pegar lo que tengas copiado">📋 Pegar</button>
-            <button class="btn-mini" x-show="addSong.text" @click="addSong.text = ''; addSong.preview = null">Vaciar</button>
+            <button class="btn-mini" @click="pasteIntoAddSong()" title="Pegar lo que tengas copiado (texto, enlace o captura)">📋 Pegar</button>
+            <button class="btn-mini" @click="$refs.addSongFile.click()" :disabled="addSong.reading"
+                    :title="aiStatus.enabled ? 'Foto, captura o PDF de un cancionero: la lee la IA' : aiMissingText()">📷 Foto o PDF</button>
+            <input type="file" x-ref="addSongFile" accept="image/*,application/pdf" multiple hidden
+                   @change="readAddSongFiles($event.target.files); $event.target.value = ''">
+            <button class="btn-mini" x-show="addSong.text || (addSong.photos || []).length" @click="clearAddSong()">Vaciar</button>
           </div>
-          <textarea x-model="addSong.text" @input="scheduleAddSongPreview()" spellcheck="false"
-                    placeholder="Con acordes encima, en ChordPro o la letra sola. Título, «Cejilla 2», «Autor: …» y «Estribillo» sueltos se entienden solos."></textarea>
+
+          <div class="add-song-leftovers" x-show="leftoverSongs().length && !addSong.text && !addSong.reading">
+            <span>📷 De la última foto quedan:</span>
+            <template x-for="(s, i) in leftoverSongs()" :key="i">
+              <button class="btn-mini" @click="useLeftover(i)" x-text="s.title || ('Canción ' + (i + 1))"></button>
+            </template>
+          </div>
+          <!-- Lo que se está leyendo / se ha leído: para comparar con el resultado -->
+          <div class="add-song-photos" x-show="(addSong.photos || []).length">
+            <template x-for="(ph, i) in (addSong.photos || [])" :key="ph.url">
+              <button class="add-song-thumb" :class="{ on: addSong.showPhoto && addSong.photoIdx === i }"
+                      @click="addSong.photoIdx = i; addSong.showPhoto = !(addSong.showPhoto && addSong.photoIdx === i)"
+                      :title="ph.pdf ? 'Ver el PDF' : 'Ver la foto'">
+                <img x-show="!ph.pdf" :src="ph.url" alt="">
+                <span x-show="ph.pdf">📄 PDF</span>
+              </button>
+            </template>
+            <button class="btn-mini" x-show="addSong.text" @click="addSong.showPhoto = !addSong.showPhoto"
+                    x-text="addSong.showPhoto ? '📝 Ver el texto leído' : ((addSong.photos || [])[addSong.photoIdx]?.pdf ? '📄 Ver el PDF' : '📷 Ver la foto')"></button>
+          </div>
+          <div class="add-song-reading" x-show="addSong.reading || addSong.fetching">
+            <span class="ai-spin" x-text="addSong.reading ? '📷' : '🔗'"></span>
+            <span x-text="addSong.reading ? 'Leyendo con IA… suele tardar entre 20 segundos y un minuto.' : 'Trayendo el enlace…'"></span>
+          </div>
+          <div class="error small" x-show="addSong.readError" x-text="addSong.readError"></div>
+
+          <div class="add-song-photo-big" x-show="addSong.showPhoto && (addSong.photos || []).length">
+            <template x-if="addSong.showPhoto && (addSong.photos || [])[addSong.photoIdx]">
+              <div>
+                <img x-show="!(addSong.photos || [])[addSong.photoIdx].pdf" :src="(addSong.photos || [])[addSong.photoIdx].url" alt="Foto de la canción">
+                <iframe x-show="(addSong.photos || [])[addSong.photoIdx].pdf" :src="(addSong.photos || [])[addSong.photoIdx].pdf ? (addSong.photos || [])[addSong.photoIdx].url : 'about:blank'" title="PDF de la canción"></iframe>
+              </div>
+            </template>
+          </div>
+          <textarea x-show="!addSong.showPhoto || !(addSong.photos || []).length" x-model="addSong.text"
+                    @input="scheduleAddSongPreview()" @paste="onAddSongPaste($event)" spellcheck="false"
+                    placeholder="Con acordes encima, en ChordPro o la letra sola. Título, «Cejilla 2», «Autor: …» y «Estribillo» sueltos se entienden solos.&#10;&#10;También vale un enlace (LaCuerda, Ultimate Guitar, Google Drive…) o una foto o PDF del cancionero: arrástrala aquí, pégala con Ctrl+V o usa 📷."></textarea>
+          <div class="add-song-drop-hint" x-show="addSong.drag">Suelta aquí la foto o el PDF</div>
           <div class="add-song-format" x-show="addSong.preview">
             <span class="muted small">Formato:</span>
             <select x-model="addSong.format" @change="refreshAddSongPreview()">
@@ -2819,14 +2873,49 @@
 
         <!-- Resultado -->
         <div class="add-song-result">
-          <div class="add-song-empty muted" x-show="!addSong.preview && !addSong.loading">
+          <div class="add-song-empty muted" x-show="!addSong.preview && !addSong.loading && !addSong.reading && !addSong.fetching">
             Aquí verás la canción convertida mientras pegas.
+          </div>
+          <div class="add-song-empty muted" x-show="addSong.reading">
+            Claude está leyendo la página: los acordes van a su sílaba y las estrofas que se repiten sin
+            acordes se rellenan después (con 👁 para que las revises).
           </div>
           <div class="loading" x-show="addSong.loading && !addSong.preview">Convirtiendo…</div>
           <div class="error" x-show="addSong.error" x-text="addSong.error"></div>
 
           <template x-if="addSong.preview">
             <div>
+              <!-- De dónde sale: foto/PDF leído con IA o enlace. Las dudas de la
+                   lectura van primero: es lo que hay que mirar contra la foto. -->
+              <div class="add-song-source" x-show="addSong.source">
+                <div class="add-song-source-row">
+                  <strong x-text="addSongSourceText()"></strong>
+                  <a x-show="addSong.source?.url" :href="addSong.source?.url" target="_blank" rel="noopener" class="small">abrir ↗</a>
+                  <span class="muted small" x-show="addSong.fromAi">· revisa los acordes contra el original</span>
+                </div>
+                <div class="add-song-pick" x-show="(addSong.read?.songs || []).length > 1">
+                  <span class="small">Hay <span x-text="addSong.read?.songs.length"></span> canciones. Añadir:</span>
+                  <template x-for="(s, i) in (addSong.read?.songs || [])" :key="i">
+                    <button class="btn-mini" :class="{ active: addSong.read?.idx === i }" @click="pickReadSong(i)"
+                            x-text="s.title || ('Canción ' + (i + 1))"></button>
+                  </template>
+                  <span class="muted small">(al crear esta, las demás te esperan en ✨ sin volver a leer la foto)</span>
+                </div>
+                <ul class="add-song-notes" x-show="(readSong()?.doubts || []).length">
+                  <template x-for="(d, i) in (readSong()?.doubts || [])" :key="'d' + i">
+                    <li class="warn" x-text="'🔎 ' + d"></li>
+                  </template>
+                </ul>
+                <ul class="add-song-notes" x-show="(readSong()?.notes || []).length + (addSong.read?.ignored || []).length">
+                  <template x-for="(n, i) in (readSong()?.notes || [])" :key="'n' + i">
+                    <li x-text="n"></li>
+                  </template>
+                  <template x-for="(n, i) in (addSong.read?.ignored || [])" :key="'i' + i">
+                    <li x-text="'No se añade: ' + n"></li>
+                  </template>
+                </ul>
+              </div>
+              <div class="add-song-alert warn" x-show="addSong.warn" x-text="addSong.warn"></div>
               <div class="add-song-alert warn" x-show="addSong.preview.duplicate">
                 ⚠️ Ya hay una canción con este título:
                 <a href="#" @click.prevent="closeAddSong(); openEditor(addSong.preview.duplicate.path)"
@@ -2883,7 +2972,8 @@
                   <button class="btn-mini" @click="runAiCorrect()"
                           x-text="addSong.aiError ? '🤖 Reintentar' : '🤖 Corregir con IA'"></button>
                   <span class="error small" x-show="addSong.aiError" x-text="addSong.aiError"></span>
-                  <span class="muted small" x-show="!addSong.aiError && !aiStatus.auto">(automático desactivado en ⚙️ Ajustes)</span>
+                  <span class="muted small" x-show="!addSong.aiError && !aiStatus.auto && !addSong.fromAi">(automático desactivado en ⚙️ Ajustes)</span>
+                  <span class="muted small" x-show="!addSong.aiError && addSong.fromAi">(ya la ha leído la IA: corregirla otra vez es opcional)</span>
                 </div>
               </div>
               <div class="muted small ai-off" x-show="!aiStatus.enabled">
@@ -2900,10 +2990,12 @@
                   <div><label>Cejilla</label><input type="number" min="0" x-model="addSong.capo" @input="addSong.metaTouched = true" /></div>
                 </div>
                 <label>Categoría</label>
+                <!-- :selected además del x-model: el select nace (x-if) antes que sus
+                     opciones (x-for) y sin esto se queda en «Elige» con categoría puesta. -->
                 <select x-model="addSong.category" @change="addSong.number = null">
                   <option value="">— Elige —</option>
                   <template x-for="cat in (data ? data?.categories : [])" :key="cat.letter">
-                    <option :value="cat.letter" x-text="cat.title"></option>
+                    <option :value="cat.letter" x-text="cat.title" :selected="cat.letter === addSong.category"></option>
                   </template>
                 </select>
                 <label>Número</label>
