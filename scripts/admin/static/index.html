@@ -1734,9 +1734,12 @@
 
       <div class="settings-status" :class="aiStatus.enabled ? 'ok' : 'off'">
         <span x-show="aiStatus.enabled">✅ Activa: hay clave de la API en el servidor.</span>
-        <span x-show="!aiStatus.enabled">⛔ Sin clave. Añade <code>ANTHROPIC_API_KEY=…</code> al
+        <span x-show="!aiStatus.enabled && aiStatus.missing !== 'package'">⛔ Sin clave. Añade <code>ANTHROPIC_API_KEY=…</code> al
           <code>cantoral-admin.env</code> del NAS y relanza con <code>run-cantoral.sh</code>
           (detalles en <code>deploy/ugreen-nas/README.md</code>).</span>
+        <span x-show="aiStatus.missing === 'package'">⛔ La clave está, pero al servidor le falta el paquete
+          <code>anthropic</code>. En el NAS, reconstruye el contenedor:
+          <code>sh /volume1/docker/cantoral-admin/run-cantoral.sh</code> (un <code>docker restart</code> no basta).</span>
       </div>
 
       <label class="settings-label">Modelo</label>

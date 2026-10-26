@@ -1089,7 +1089,7 @@ def api_ai_settings():
 def api_ai_models():
     """Modelos de Claude disponibles en la cuenta (Models API), más nuevos primero."""
     if not ai_review.is_configured():
-        abort(503, "Falta ANTHROPIC_API_KEY en el servidor.")
+        abort(503, ai_review.not_configured_message())
     try:
         return jsonify({"models": ai_review.list_models(force=request.args.get("force") == "1")})
     except ai_review.ReviewError as e:
@@ -1105,7 +1105,7 @@ def api_song_ai_correct():
       - categories: true para que proponga también la categoría.
     """
     if not ai_review.is_configured():
-        abort(503, "La IA no está configurada: falta ANTHROPIC_API_KEY.")
+        abort(503, ai_review.not_configured_message())
     body = request.get_json(silent=True) or {}
     text = body.get("text") or ""
     cho = body.get("cho") or ""

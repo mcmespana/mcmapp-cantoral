@@ -240,6 +240,9 @@ def _snap_to_syllable(pos: int, lyric: str, max_dist: int = 2) -> int:
 
 _BRACKET_RX = re.compile(r"\[([^\]\n]+)\]")
 _DIRECTIVE_LINE_RX = re.compile(r"^\s*\{[^}]*\}\s*$")
+_CHORDPRO_DIRECTIVE_RX = re.compile(
+    r"^\s*\{\s*(?:title|t|artist|key|capo|soc|start_of_chorus|eoc|end_of_chorus|chorus|c|comment)"
+    r"\s*(?::[^}]*)?\}\s*$", re.IGNORECASE)
 
 
 def _tokens_with_cols(line: str) -> List[Tuple[int, str]]:
@@ -314,6 +317,10 @@ def detect_format(text: str) -> str:
         if found:
             inline += 1
     if inline >= 2 or (inline >= 1 and len(lines) <= 3):
+        return "chordpro"
+    # ChordPro sin un solo acorde (letra sola leída de una foto, por ejemplo):
+    # sus {title:} y {soc} no pueden acabar convertidos en versos.
+    if any(_CHORDPRO_DIRECTIVE_RX.match(ln) for ln in lines):
         return "chordpro"
     if any(classify_chord_line(ln) for ln in lines):
         return "chords_above"
