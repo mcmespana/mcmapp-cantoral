@@ -329,6 +329,7 @@ function app() {
                number: null, mode: 'blank', content: '', creating: false },
     // ✨ Añadir canción (texto pegado → .cho con song_import.py)
     addSong: { open: false },
+    readLeftovers: null,  // canciones de la última foto que quedan por añadir
     editorAi: null,   // resultado de 🤖 Corregir en el editor
     aiStatus: { enabled: false, model: '', effort: 'high', auto: true, efforts: [] },  // ai_review.py
     settings: { models: [], loadingModels: false, saving: false, error: '', savedAt: 0 },
@@ -1661,6 +1662,7 @@ function app() {
           meta: { ...json.meta },
           parsed: [],
           original: this.loadOriginal(json.path),
+          originalFiles: this.loadOriginalFiles(json.path),
         };
         this.editorAi = null;
         this.visualSelectedLines = new Set();
@@ -1681,6 +1683,14 @@ function app() {
         const v = JSON.parse(localStorage.getItem('cantoral.original:' + path) || 'null');
         return v && v.text ? v.text : '';
       } catch (e) { return ''; }
+    },
+    // Fotos / PDF de los que se leyó (guardados en el servidor, ver /api/upload).
+    loadOriginalFiles(path) {
+      try {
+        const v = JSON.parse(localStorage.getItem('cantoral.original:' + path) || 'null');
+        const ids = (v && Array.isArray(v.files) ? v.files : []).filter(id => /^[0-9a-f]{24}\.(jpg|pdf)$/.test(id));
+        return [...new Set(ids)];
+      } catch (e) { return []; }
     },
     // Los originales caducan a los 60 días: son para la revisión de recién creada.
     pruneOriginals() {
@@ -3631,6 +3641,10 @@ function app() {
         ai: null, aiRunning: false, aiError: '', aiOpen: false, _aiTimer: null,
         category: this.categoryFilter || this.lastAddCategory(), number: null, creating: false,
         view: 'preview', _timer: null, _seq: 0,
+        // 📷 Foto / PDF / 🔗 enlace (song_reader.py, web_import.py)
+        photos: [], uploads: [], showPhoto: false, photoIdx: 0, drag: false,
+        reading: false, readError: '', read: null, fromAi: false, warn: '',
+        fetching: false, urlFetched: '', source: null,
       };
       this.$nextTick(() => document.querySelector('.add-song-input textarea')?.focus());
     },
@@ -3639,12 +3653,25 @@ function app() {
           && !confirm('¿Cerrar sin crear la canción? Se pierde lo pegado.')) return;
       clearTimeout(this.addSong._timer);
       clearTimeout(this.addSong._aiTimer);
+      this.dropAddSongPhotos();
       this.addSong = { open: false };
     },
     lastAddCategory() {
       try { return localStorage.getItem('cantoral.lastAddCategory') || ''; } catch (e) { return ''; }
     },
     async pasteIntoAddSong() {
+      // Primero una imagen (una captura copiada); si no, el texto.
+      try {
+        if (navigator.clipboard.read) {
+          for (const item of await navigator.clipboard.read()) {
+            const type = item.types.find(t => t.startsWith('image/'));
+            if (type) {
+              const blob = await item.getType(type);
+              return this.readAddSongFiles([new File([blob], 'captura.' + type.split('/')[1], { type })]);
+            }
+          }
+        }
+      } catch (e) { /* sin permiso para imágenes: se prueba con el texto */ }
       try {
         const t = await navigator.clipboard.readText();
         if (t) { this.addSong.text = t; this.refreshAddSongPreview(); }
@@ -3660,6 +3687,13 @@ function app() {
     async refreshAddSongPreview() {
       const a = this.addSong;
       if (!a.text || !a.text.trim()) { a.preview = null; a.error = ''; return; }
+      const url = a.text.trim();
+      if (/^https?:\/\/\S+$/i.test(url)) {
+        // Un enlace solo: se trae lo que haya detrás (una vez por enlace).
+        a.preview = null; a.error = '';
+        if (url !== a.urlFetched) this.fetchAddSongUrl(url);
+        return;
+      }
       const seq = ++a._seq;
       a.loading = true;
       try {
@@ -3687,7 +3721,9 @@ function app() {
         a.ai = null;
         a.aiError = '';
         clearTimeout(a._aiTimer);
-        if (this.aiStatus.enabled && this.aiStatus.auto && j.cho && a.text.trim().length > 30) {
+        // Lo leído de una foto ya lo ha hecho la IA: corregirlo otra vez solo
+        // gastaría. Queda el botón 🤖 por si se quiere.
+        if (this.aiStatus.enabled && this.aiStatus.auto && j.cho && a.text.trim().length > 30 && !a.fromAi) {
           a._aiTimer = setTimeout(() => this.runAiCorrect(), 1200);
         }
       } catch (e) {
@@ -3752,7 +3788,7 @@ function app() {
         a.aiRunning = false;
         // El texto cambió mientras corregía: la de la versión nueva se pidió y
         // se ignoró (había una en marcha). Se lanza ahora.
-        if (seq !== a._seq && this.addSong.open && this.aiStatus.auto && a.preview?.cho && !a.ai) {
+        if (seq !== a._seq && this.addSong.open && this.aiStatus.auto && a.preview?.cho && !a.ai && !a.fromAi) {
           clearTimeout(a._aiTimer);
           a._aiTimer = setTimeout(() => this.runAiCorrect(), 300);
         }
@@ -3795,6 +3831,192 @@ function app() {
       ai.edits.forEach(e => { e.on = on; });
       (ai.metaChanges || []).forEach(c => { if (c.on !== on) this.toggleAiMeta(c); });
     },
+    // ─── 📷 Foto / PDF y 🔗 enlace ───
+    // La IA transcribe lo que pone el papel (acordes anclados a su sílaba, como
+    // estén escritos) y esa transcripción entra en la caja: desde ahí sigue el
+    // camino de siempre (conversor → vista previa → crear). Ver song_reader.py.
+    aiMissingText() {
+      return this.aiStatus.missing === 'package'
+        ? 'A la IA le falta el paquete «anthropic» en el servidor. En el NAS, reconstruye el contenedor: sh /volume1/docker/cantoral-admin/run-cantoral.sh'
+        : 'Leer fotos y PDF necesita la IA: añade ANTHROPIC_API_KEY al servidor (mira ⚙️ Ajustes).';
+    },
+    dropAddSongPhotos() {
+      for (const ph of (this.addSong.photos || [])) if (ph.local) URL.revokeObjectURL(ph.url);
+    },
+    clearAddSong() {
+      const a = this.addSong;
+      this.dropAddSongPhotos();
+      Object.assign(a, { text: '', preview: null, error: '', ai: null, aiError: '', photos: [], uploads: [],
+                         showPhoto: false, read: null, readError: '', fromAi: false, warn: '',
+                         urlFetched: '', source: null, metaTouched: false });
+    },
+    // Foto del móvil (12 MP, 5 MB, girada por EXIF) → JPEG derecho de como mucho
+    // 2576 px y ~3,7 MP: lo más que aprovecha el modelo. Sube en un segundo.
+    async shrinkImage(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const w = img.naturalWidth, h = img.naturalHeight;
+        const k = Math.min(1, 2576 / Math.max(w, h), Math.sqrt(3.7e6 / (w * h)));
+        if (k === 1 && file.type === 'image/jpeg' && file.size < 4e6) return file;
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.floor(w * k)); c.height = Math.max(1, Math.floor(h * k));
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);  // PNG transparente → blanco
+        g.drawImage(img, 0, 0, c.width, c.height);
+        const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.88));
+        return blob ? new File([blob], (file.name || 'foto').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
+      } catch (e) {
+        return file;  // el navegador no la sabe abrir (HEIC en Chrome…): que lo intente el servidor
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    async readAddSongFiles(fileList) {
+      const a = this.addSong;
+      const files = Array.from(fileList || []).filter(f => f && (f.type.startsWith('image/') || f.type === 'application/pdf'
+                                                                 || /\.(pdf|jpe?g|png|heic|heif|webp|gif)$/i.test(f.name || '')));
+      if (!files.length) { a.readError = 'Eso no es una foto ni un PDF.'; return; }
+      if (!this.aiStatus.enabled) { a.readError = this.aiMissingText(); return; }
+      if (files.length > 6) { a.readError = 'Como mucho 6 fotos o PDF a la vez (páginas seguidas de la misma canción).'; return; }
+      if (a.reading) return;
+      if (a.text.trim().length > 40 && !a.fromAi && !confirm('Se va a cambiar lo que hay en la caja por lo que se lea de la foto. ¿Seguir?')) return;
+      this.clearAddSong();
+      a.reading = true;
+      try {
+        const ready = await Promise.all(files.map(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '') ? f : this.shrinkImage(f)));
+        a.photos = ready.map(f => {
+          const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+          return { url: URL.createObjectURL(f), local: true, pdf, name: f.name || (pdf ? 'documento.pdf' : 'foto.jpg') };
+        });
+        a.photoIdx = 0;
+        const fd = new FormData();
+        ready.forEach(f => fd.append('files', f, f.name || 'foto.jpg'));
+        const r = await fetch('/api/song/read', { method: 'POST', body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || (r.status === 413 ? 'Pesa demasiado.' : 'HTTP ' + r.status));
+        if (!this.addSong.open) return;
+        this.loadReadResult(j, { kind: 'photo' });
+      } catch (e) {
+        a.readError = 'No se ha podido leer: ' + e.message;
+      } finally {
+        a.reading = false;
+      }
+    },
+    // La canción leída que está ahora en la caja.
+    readSong() {
+      const r = this.addSong.read;
+      return r && r.songs ? r.songs[r.idx] || null : null;
+    },
+    loadReadResult(j, source) {
+      const a = this.addSong;
+      a.uploads = [...new Set(j.uploads || [])];  // la misma foto dos veces = el mismo archivo
+      a.source = source;
+      a.read = { songs: j.songs || [], ignored: j.ignored || [], idx: 0 };
+      if (!a.read.songs.length) {
+        a.readError = 'No he encontrado ninguna canción entera' + (a.read.ignored.length ? ': ' + a.read.ignored.join(' · ') : '.');
+        return;
+      }
+      this.pickReadSong(0);
+    },
+    // En una página puede haber varias canciones: se elige cuál se añade.
+    pickReadSong(i) {
+      const a = this.addSong;
+      const s = a.read?.songs?.[i];
+      if (!s) return;
+      a.read.idx = i;
+      a.text = s.text;
+      a.format = '';
+      a.metaTouched = false;
+      a.fromAi = true;
+      a.ai = null;
+      a.showPhoto = false;
+      const cats = (this.data?.categories || []).map(c => c.letter);
+      if (s.category && cats.includes(s.category) && (!a.category || a.read.autoCategory === a.category)) {
+        a.category = s.category;
+        a.read.autoCategory = s.category;  // si la cambias a mano, la siguiente no la pisa
+        a.number = null;
+      }
+      this.refreshAddSongPreview();
+    },
+    async fetchAddSongUrl(url) {
+      const a = this.addSong;
+      a.urlFetched = url;
+      a.fetching = true;
+      a.readError = '';
+      a.warn = '';
+      try {
+        const r = await fetch('/api/song/fetch-url', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (!this.addSong.open || a.text.trim() !== url) return;  // ha cambiado la caja mientras tanto
+        if (j.kind === 'doce') {
+          this.addSong.text = '';
+          this.closeAddSong();
+          this.view = 'doce';
+          await this.loadDoce();
+          this.previewDoce(j.id);
+          return;
+        }
+        const source = { kind: 'url', url: j.url || url, name: j.source || (new URL(j.url || url)).hostname };
+        if (j.kind === 'songs') {
+          a.photos = (j.uploads || []).map(id => ({ url: '/api/upload/' + id, pdf: id.endsWith('.pdf'), local: false, name: id }));
+          this.loadReadResult(j, source);
+          return;
+        }
+        // Texto (LaCuerda, Ultimate Guitar, Docs…): como si se hubiera pegado.
+        a.text = j.text;
+        a.source = source;
+        a.warn = j.warn || '';
+        a.fromAi = false;
+        a.read = null;
+        this.refreshAddSongPreview();
+      } catch (e) {
+        if (a.text.trim() === url) a.readError = 'No se ha podido traer el enlace: ' + e.message;
+      } finally {
+        a.fetching = false;
+      }
+    },
+    leftoverSongs() {
+      const L = this.readLeftovers;
+      return L && Date.now() - L.at < 3600e3 ? L.songs : [];
+    },
+    useLeftover(i) {
+      const L = this.readLeftovers;
+      const a = this.addSong;
+      this.clearAddSong();
+      a.photos = (L.uploads || []).map(id => ({ url: '/api/upload/' + id, pdf: id.endsWith('.pdf'), local: false, name: id }));
+      this.loadReadResult({ songs: L.songs, ignored: [], uploads: L.uploads }, L.source);
+      this.pickReadSong(i);
+    },
+    onAddSongPaste(ev) {
+      const files = Array.from(ev.clipboardData?.files || []).filter(f => f.type.startsWith('image/'));
+      if (files.length) {
+        ev.preventDefault();
+        this.readAddSongFiles(files);
+      }
+    },
+    onAddSongDrop(ev) {
+      this.addSong.drag = false;
+      const files = ev.dataTransfer?.files;
+      if (files && files.length) return this.readAddSongFiles(files);
+      const t = ev.dataTransfer?.getData('text/uri-list') || ev.dataTransfer?.getData('text/plain');
+      if (t) { this.addSong.text = t.trim(); this.refreshAddSongPreview(); }
+    },
+    addSongSourceText() {
+      const a = this.addSong;
+      if (!a.source) return '';
+      if (a.source.kind === 'photo') {
+        const n = a.photos.length;
+        const what = a.photos.every(p => p.pdf) ? 'del PDF' : (n > 1 ? `de las ${n} fotos` : 'de la foto');
+        return `📷 Leída ${what} con IA`;
+      }
+      return (a.fromAi ? '🔗 Leída con IA de ' : '🔗 Traída de ') + a.source.name;
+    },
     canCreateAddSong() {
       const a = this.addSong;
       return !!(a.preview && a.preview.cho && a.title && a.title.trim() && a.category && !a.creating);
@@ -3817,12 +4039,18 @@ function app() {
           throw new Error(err.error || ('HTTP ' + r.status));
         }
         const { path } = await r.json();
+        // Si en la foto había más canciones, quedan a mano para la siguiente
+        // vez que se abra ✨ (sin volver a leerla). Una hora, por si acaso.
+        const left = (a.read?.songs || []).filter((_, i) => i !== a.read.idx);
+        this.readLeftovers = left.length ? { songs: left, uploads: a.uploads || [], source: a.source, at: Date.now() } : null;
         try {
           localStorage.setItem('cantoral.lastAddCategory', a.category);
           // El texto pegado se guarda (en este navegador) para verlo luego en la
           // pestaña 📄 Original del editor mientras se revisa la canción.
-          localStorage.setItem('cantoral.original:' + path, JSON.stringify({ text: a.text, at: Date.now() }));
+          localStorage.setItem('cantoral.original:' + path, JSON.stringify({
+            text: a.text, files: a.uploads || [], url: a.source?.url || '', at: Date.now() }));
         } catch (e) { /* sin localStorage: no pasa nada */ }
+        this.dropAddSongPhotos();
         this.addSong = { open: false };
         await this.loadCatalog();
         await this.openEditor(path);

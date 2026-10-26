@@ -140,9 +140,21 @@ def test_settings_roundtrip_and_priority():
                 continue
             raise AssertionError(f"debería rechazar {bad}")
         os.environ.pop("ANTHROPIC_API_KEY", None)
-        assert not ai_review.is_configured()
+        assert not ai_review.is_configured() and ai_review.status()["missing"] == "key"
+        assert "ANTHROPIC_API_KEY" in ai_review.not_configured_message()
         os.environ["ANTHROPIC_API_KEY"] = "sk-x"
-        assert ai_review.is_configured()
+        assert ai_review.has_key()
+        # Con clave pero sin el paquete (la imagen de Docker vieja): se dice qué hacer.
+        real = ai_review.has_package
+        try:
+            ai_review.has_package = lambda: False
+            st = ai_review.status()
+            assert not st["enabled"] and st["missing"] == "package"
+            assert "run-cantoral.sh" in ai_review.not_configured_message()
+            ai_review.has_package = lambda: True
+            assert ai_review.is_configured() and ai_review.status()["missing"] == ""
+        finally:
+            ai_review.has_package = real
     finally:
         os.environ.clear()
         os.environ.update(old)

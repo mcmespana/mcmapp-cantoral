@@ -25,5 +25,6 @@ ENV CANTORAL_ADMIN_HOST=0.0.0.0
 ENV CANTORAL_ADMIN_PORT=8765
 EXPOSE 8765
 
+# Timeout largo: leer una foto con la IA puede pasar del minuto.
 CMD ["gunicorn", "--chdir", "scripts/admin", "--bind", "0.0.0.0:8765", \
-     "--workers", "2", "--timeout", "120", "server:app"]
+     "--workers", "2", "--timeout", "300", "server:app"]

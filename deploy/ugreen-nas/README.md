@@ -55,6 +55,17 @@ Un `docker restart` **no basta**: las variables del `--env-file` solo se leen al
 crear el contenedor, y el paquete nuevo hay que instalarlo en la imagen.
 Conviene poner un límite de gasto mensual en la consola de Anthropic.
 
+**«La IA ha fallado: Falta el paquete «anthropic»»** (o en ⚙️ Ajustes: «la clave
+está, pero al servidor le falta el paquete»): es eso mismo, la imagen es de
+antes de que se añadiera el paquete. `sh /volume1/docker/cantoral-admin/run-cantoral.sh`
+y listo. Pasa cada vez que cambie `scripts/admin/requirements.txt` o el
+`Dockerfile`: el `git pull` trae el código, pero los paquetes y el timeout van
+en la imagen.
+
+Con la IA también se leen **fotos y PDF** de cancioneros en «✨ Añadir
+canción». Esos originales se guardan en `repo/scripts/admin/.uploads/` (fuera de
+git; se borran solos a los 60 días).
+
 ## Mantenimiento
 
 - **Actualizar el admin**: `sudo docker exec cantoral-admin git -C /app pull`

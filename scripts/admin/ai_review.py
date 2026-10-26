@@ -185,20 +185,46 @@ def auto_enabled() -> bool:
     return True if v is None else bool(v)
 
 
-def is_configured() -> bool:
+def has_key() -> bool:
     return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
 
 
+def has_package() -> bool:
+    try:
+        import anthropic  # noqa: F401  (aquí dentro: el admin funciona sin el paquete)
+    except ImportError:
+        return False
+    return True
+
+
+# En el NAS el paquete va dentro de la imagen de Docker: con un `git pull` y un
+# `docker restart` el código nuevo lo pide pero la imagen vieja no lo tiene.
+MISSING_PACKAGE = ("Falta el paquete «anthropic» en el servidor. En el NAS: "
+                   "sh /volume1/docker/cantoral-admin/run-cantoral.sh (reconstruye el contenedor); "
+                   "en local: pip install -r scripts/admin/requirements.txt")
+
+
+def is_configured() -> bool:
+    return has_key() and has_package()
+
+
 def status() -> Dict[str, object]:
-    return {"enabled": is_configured(), "model": model_name(), "effort": effort(),
+    missing = "" if is_configured() else ("key" if not has_key() else "package")
+    return {"enabled": is_configured(), "missing": missing, "model": model_name(), "effort": effort(),
             "auto": auto_enabled(), "default_model": DEFAULT_MODEL, "efforts": EFFORTS}
+
+
+def not_configured_message() -> str:
+    if not has_key():
+        return "La IA no está configurada: falta ANTHROPIC_API_KEY en el servidor."
+    return MISSING_PACKAGE
 
 
 def _client():
     try:
         import anthropic  # aquí dentro: el admin funciona sin el paquete
     except ImportError as e:  # pragma: no cover
-        raise ReviewError("Falta el paquete «anthropic» (pip install anthropic).") from e
+        raise ReviewError(MISSING_PACKAGE) from e
     return anthropic.Anthropic()
 
 
@@ -322,13 +348,23 @@ def build_user_message(original: str, cho: str, notes: Optional[List[str]] = Non
     return "\n\n".join(parts)
 
 
-def _call(client, model: str, user_msg: str):
+def _send(client, kwargs: dict, stream: bool):
+    if stream:
+        # Leer una foto puede pasar del minuto: en streaming no hay timeout de
+        # HTTP que corte una respuesta larga.
+        with client.beta.messages.stream(**kwargs) as s:
+            return s.get_final_message()
+    return client.beta.messages.create(**kwargs)
+
+
+def _call(client, model: str, content, system: str = SYSTEM, schema: dict = SCHEMA,
+          stream: bool = False, max_tokens: int = 16000):
     kwargs = dict(
         model=model,
-        max_tokens=16000,
-        system=SYSTEM,
-        messages=[{"role": "user", "content": user_msg}],
-        output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": content}],
+        output_config={"format": {"type": "json_schema", "schema": schema}},
     )
     eff = effort()
     supported = _model_efforts(model)
@@ -340,7 +376,7 @@ def _call(client, model: str, user_msg: str):
         kwargs["betas"] = ["server-side-fallback-2026-07-01"]
         kwargs["fallbacks"] = "default"
     try:
-        return client.beta.messages.create(**kwargs)
+        return _send(client, kwargs, stream)
     except Exception as e:
         # Un modelo elegido en Ajustes puede no admitir el esfuerzo o el
         # reintento: se prueba una vez más sin esos extras.
@@ -348,26 +384,30 @@ def _call(client, model: str, user_msg: str):
             kwargs["output_config"].pop("effort", None)
             kwargs.pop("fallbacks", None)
             kwargs.pop("betas", None)
-            return client.beta.messages.create(**kwargs)
+            return _send(client, kwargs, stream)
         raise
 
 
-def correct(original: str, cho: str, notes: Optional[List[str]] = None,
-            categories: Optional[List[str]] = None, client=None) -> Dict[str, object]:
-    """Pide la corrección. Devuelve {summary, edits, meta, model, dropped}."""
-    if not cho.strip():
-        raise ReviewError("No hay nada que corregir.")
+def ask_json(content, *, system: str, schema: dict, what: str, client=None,
+             stream: bool = False, max_tokens: int = 16000):
+    """Una petición a Claude con salida JSON. Devuelve (datos, modelo).
+
+    `content`: el mensaje del usuario (texto, o bloques de imagen/documento y
+    texto). `what` es lo que se pide, para los mensajes de error («la
+    corrección», «la lectura»). Cualquier fallo sale como ReviewError con un
+    mensaje que se puede enseñar tal cual.
+    """
     client = client or _client()
     model = model_name()
     try:
-        resp = _call(client, model, build_user_message(original, cho, notes, categories))
+        resp = _call(client, model, content, system, schema, stream, max_tokens)
     except ReviewError:
         raise
     except Exception as e:  # errores de red/API: se enseñan tal cual
         raise ReviewError(f"La API ha fallado: {getattr(e, 'message', None) or e}") from e
 
     if getattr(resp, "stop_reason", None) == "refusal":
-        raise ReviewError("El modelo ha rechazado la corrección. Prueba otra vez o revísala a mano.")
+        raise ReviewError(f"El modelo ha rechazado {what}. Prueba otra vez o hazlo a mano.")
     if getattr(resp, "stop_reason", None) == "max_tokens":
         raise ReviewError("La respuesta se ha cortado (demasiado larga).")
     text = next((b.text for b in resp.content if getattr(b, "type", "") == "text"), "")
@@ -375,6 +415,18 @@ def correct(original: str, cho: str, notes: Optional[List[str]] = None,
         data = json.loads(text)
     except (TypeError, ValueError) as e:
         raise ReviewError("La respuesta no se ha podido leer.") from e
+    if not isinstance(data, dict):
+        raise ReviewError("La respuesta no se ha podido leer.")
+    return data, getattr(resp, "model", model) or model
+
+
+def correct(original: str, cho: str, notes: Optional[List[str]] = None,
+            categories: Optional[List[str]] = None, client=None) -> Dict[str, object]:
+    """Pide la corrección. Devuelve {summary, edits, meta, model, dropped}."""
+    if not cho.strip():
+        raise ReviewError("No hay nada que corregir.")
+    data, model = ask_json(build_user_message(original, cho, notes, categories), system=SYSTEM,
+                           schema=SCHEMA, what="la corrección", client=client)
     raw = data.get("edits") or []
     edits = validate_edits(cho, raw)
     meta = data.get("meta") or {}
@@ -390,5 +442,5 @@ def correct(original: str, cho: str, notes: Optional[List[str]] = None,
         "edits": edits,
         "meta": clean_meta,
         "dropped": max(0, len(raw) - len(edits)),
-        "model": getattr(resp, "model", model) or model,
+        "model": model,
     }

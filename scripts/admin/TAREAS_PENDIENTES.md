@@ -88,16 +88,22 @@ coloreado. No hecho todavía:
 
 Hecho: texto pegado (acordes encima / ChordPro / letra sola), estribillos,
 deducción de acordes con marca 👁, corrección con IA (automática y
-deshacible, también en el editor) y ⚙️ Ajustes con el modelo. Falta:
+deshacible, también en el editor), ⚙️ Ajustes con el modelo, **fotos y PDF**
+leídos con IA (acordes anclados a la sílaba) y **enlaces** (LaCuerda, Ultimate
+Guitar, `<pre>`, Drive, Docs, Dropbox; webs desconocidas por la IA). Falta:
 
-- **Capturas / fotos**: Claude lee la imagen y devuelve cada acorde **anclado a
-  la sílaba** donde va («el Re sobre el *Se* de *Señor*»), no por columnas; el
-  JSON entra en el mismo motor (`song_import.py`) para estribillos y deducción.
-  Hay que probarlo antes con capturas reales: dos columnas, texto centrado,
-  versos partidos por el ancho de la columna.
-- **Links**: LaCuerda / Ultimate Guitar / Cifra Club traen el texto bueno en el
-  HTML (`<pre>` o JSON con los acordes marcados) → Python. Webs desconocidas →
-  sacar el texto y pasarlo por el mismo importador.
+- **Medir la lectura de fotos con la API de verdad.** Está probada con lo que
+  Claude debería devolver (fixtures_read/), no contra el modelo: pasar un
+  puñado de páginas reales (dos columnas, texto centrado, versos partidos, foto
+  torcida, letra a mano) y ajustar las instrucciones de `song_reader.SYSTEM`
+  con lo que falle. Guardar cada caso como `fixtures_read/<nombre>.jpg` + el
+  JSON bueno, como Hacia Belén.
+- **Páginas muy densas**: si en alguna foto se lía con acordes muy juntos,
+  probar a darle una herramienta de recorte/zoom (lee mejor por trozos) antes
+  que subir el esfuerzo.
+- **Un cancionero entero en PDF**: hoy se limita a 12 páginas. Para importar
+  muchas de golpe haría falta ir por lotes (Batches API, mitad de precio) y una
+  cola de revisión.
 - **«(x2)» al final de un estribillo**: hoy se deja escrito. Se podría ofrecer
   «escribirlo dos veces» con un botón, para que quede tal cual se canta.
 - **Corregir con IA en lote**: pasar 🤖 Corregir a todas las canciones con
