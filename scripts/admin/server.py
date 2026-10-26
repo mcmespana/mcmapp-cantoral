@@ -63,6 +63,8 @@ import doceacordes_import as da  # noqa: E402
 import chordpro as cp  # noqa: E402  (módulo común: parseo campos ↔ directivas)
 import song_import as si  # noqa: E402  (canciones sueltas: texto pegado → .cho)
 import ai_review  # noqa: E402  (segunda mirada con Claude: señala, no reescribe)
+import song_reader as sr  # noqa: E402  (foto/PDF → canción, leída con Claude)
+import web_import as wi  # noqa: E402  (enlace → canción)
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -73,6 +75,9 @@ CHORD_REVIEW_COMMENT_LINE = "{comment: ♩ REVISAR ACORDES}"
 CHORD_REVIEW_REGEX = re.compile(r"♩\s*REVISAR\s*ACORDES", re.IGNORECASE)
 
 app = Flask(__name__, static_folder=str(SCRIPT_DIR / "static"), static_url_path="")
+# Fotos y PDF de «✨ Añadir canción»: el navegador ya las reduce, pero un PDF
+# escaneado o varias fotos juntas pesan. Por encima de esto, 413.
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 
 
 def _load_admin_users() -> Dict[str, str]:
@@ -1117,6 +1122,94 @@ def api_song_ai_correct():
         return jsonify(ai_review.correct(text, cho, notes, cats))
     except ai_review.ReviewError as e:
         abort(502, str(e))
+
+
+def _category_titles() -> List[str]:
+    return [c["title"] for c in list_categories()]
+
+
+@app.route("/api/song/read", methods=["POST"])
+def api_song_read():
+    """Foto(s), escaneo o PDF → canciones leídas con IA (no escribe en el repo).
+
+    multipart/form-data con `files` (hasta sr.MAX_FILES, páginas seguidas).
+    Devuelve lo de song_reader.read_files: {songs: [{title, text, category,
+    doubts, notes}], ignored, uploads, model}. El `text` de cada canción va a la
+    caja de ✨ Añadir canción, que lo convierte igual que lo pegado a mano.
+    """
+    if not ai_review.is_configured():
+        abort(503, ai_review.not_configured_message())
+    files = request.files.getlist("files")
+    try:
+        payload = [sr.prepare_upload(f.read(), f.mimetype or "", f.filename or "") for f in files]
+        return jsonify(sr.read_files(payload, categories=_category_titles()))
+    except sr.ReadError as e:
+        abort(400, str(e))
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
+
+
+@app.route("/api/song/fetch-url", methods=["POST"])
+def api_song_fetch_url():
+    """Enlace → canción. Body: {url}. Según lo que haya (ver web_import.from_url):
+
+      - {kind: "doce", id}: es de doceacordes → se abre en su pestaña.
+      - {kind: "text", text, source, warn?}: a la caja, como si se pegara.
+      - {kind: "songs", songs, ignored, uploads}: leída con IA (foto, PDF o una
+        web sin formato conocido), igual que /api/song/read.
+    """
+    body = request.get_json(silent=True) or {}
+    try:
+        got = wi.from_url(str(body.get("url") or ""))
+    except wi.FetchError as e:
+        abort(400, str(e))
+    if got["kind"] in ("doce", "text"):
+        return jsonify(got)
+    url = got["url"]
+    if got["kind"] == "media":
+        if not ai_review.is_configured():
+            abort(503, "Es una foto o un PDF: para leerlo hace falta la IA. "
+                       + ai_review.not_configured_message())
+        try:
+            res = sr.read_files([sr.prepare_upload(got["data"], got["content_type"], url)],
+                                categories=_category_titles())
+        except sr.ReadError as e:
+            abort(400, str(e))
+        except ai_review.ReviewError as e:
+            abort(502, str(e))
+        res.update(kind="songs", url=url)
+        return jsonify(res)
+    # Una web cualquiera: que la IA busque la canción. Sin IA (o si no la
+    # encuentra), el texto de la página a la caja para recortarlo a mano.
+    page_text = (got["title"] + "\n\n" if got.get("title") else "") + got["text"]
+    fallback = {"kind": "text", "text": page_text, "source": urllib.parse.urlsplit(url).netloc,
+                "url": url}
+    if not ai_review.is_configured():
+        fallback["warn"] = ("No reconozco el formato de esta web: te pongo su texto. "
+                            "Deja solo la canción (o activa la IA y la buscará ella).")
+        return jsonify(fallback)
+    try:
+        res = sr.read_page(got["text"], url, categories=_category_titles())
+    except (sr.ReadError, ai_review.ReviewError) as e:
+        abort(502, str(e))
+    if not res["songs"]:
+        why = "; ".join(res.get("ignored") or [])
+        fallback["warn"] = ("La IA no ha encontrado ninguna canción en la página"
+                            + (f" ({why})" if why else "") + ": te pongo su texto.")
+        return jsonify(fallback)
+    res.update(kind="songs", url=url)
+    return jsonify(res)
+
+
+@app.route("/api/upload/<uid>")
+def api_upload_get(uid):
+    """El original (foto o PDF) de una canción leída con IA: pestaña 📄 Original."""
+    p = sr.upload_path(uid)
+    if not p:
+        abort(404, f"Ya no está: los originales se guardan {sr.UPLOAD_DAYS} días.")
+    mimetype = "application/pdf" if p.suffix == ".pdf" else "image/jpeg"
+    # El id es el hash del contenido: no cambia nunca, se puede cachear.
+    return send_from_directory(str(p.parent), p.name, mimetype=mimetype, max_age=30 * 86400)
 
 
 @app.route("/api/song", methods=["DELETE"])

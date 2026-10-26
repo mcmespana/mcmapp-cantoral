@@ -358,7 +358,7 @@ def best_pre(page: str) -> Optional[str]:
 
 # ─────────────────────────── Entrada ─────────────────────────── #
 
-def from_url(url: str, fetcher=fetch) -> Dict[str, object]:
+def from_url(url: str, fetcher=None) -> Dict[str, object]:
     """Enlace → qué hacer con él. Devuelve un dict con `kind`:
 
       - doce:  {id}                    → abrir en la pestaña de doceacordes
@@ -374,7 +374,7 @@ def from_url(url: str, fetcher=fetch) -> Dict[str, object]:
     if m:
         return {"kind": "doce", "id": m.group(1), "url": url}
     target = rewrite(url)
-    got = fetcher(target)
+    got = (fetcher or fetch)(target)
     data: bytes = got["data"]
     ct = str(got.get("content_type") or "").lower()
     final = str(got.get("url") or target)
