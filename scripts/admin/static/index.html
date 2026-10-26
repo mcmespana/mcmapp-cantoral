@@ -2884,7 +2884,10 @@
           <div class="error" x-show="addSong.error" x-text="addSong.error"></div>
 
           <template x-if="addSong.preview">
-            <div>
+            <!-- En pantalla ancha, dos columnas: datos y avisos a la izquierda,
+                 la vista previa a la derecha con su propio scroll, siempre a la vista. -->
+            <div class="add-song-split">
+            <div class="add-song-side">
               <!-- De dónde sale: foto/PDF leído con IA o enlace. Las dudas de la
                    lectura van primero: es lo que hay que mirar contra la foto. -->
               <div class="add-song-source" x-show="addSong.source">
@@ -2985,10 +2988,6 @@
                 <input type="text" x-model="addSong.title" @input="addSong.metaTouched = true" placeholder="Título de la canción" />
                 <label>Autor / Artista</label>
                 <input type="text" x-model="addSong.artist" @input="addSong.metaTouched = true" />
-                <div class="add-song-row">
-                  <div><label>Tono</label><input type="text" x-model="addSong.key" @input="addSong.metaTouched = true" /></div>
-                  <div><label>Cejilla</label><input type="number" min="0" x-model="addSong.capo" @input="addSong.metaTouched = true" /></div>
-                </div>
                 <label>Categoría</label>
                 <!-- :selected además del x-model: el select nace (x-if) antes que sus
                      opciones (x-for) y sin esto se queda en «Elige» con categoría puesta. -->
@@ -2998,11 +2997,17 @@
                     <option :value="cat.letter" x-text="cat.title" :selected="cat.letter === addSong.category"></option>
                   </template>
                 </select>
-                <label>Número</label>
-                <div class="add-song-row">
-                  <input type="number" min="1" x-model.number="addSong.number" placeholder="auto" />
-                  <button class="numpick-open" :disabled="!addSong.category"
-                          @click="openNumberPicker(addSong.category, {kind:'add'}, addSong.number)">🔢 elegir…</button>
+                <div class="add-song-row add-song-row3">
+                  <div><label>Tono</label><input type="text" x-model="addSong.key" @input="addSong.metaTouched = true" /></div>
+                  <div><label>Cejilla</label><input type="number" min="0" x-model="addSong.capo" @input="addSong.metaTouched = true" /></div>
+                  <div>
+                    <label>Número</label>
+                    <div class="add-song-num">
+                      <input type="number" min="1" x-model.number="addSong.number" placeholder="auto" />
+                      <button class="numpick-open" :disabled="!addSong.category" title="Ver los números libres y elegir"
+                              @click="openNumberPicker(addSong.category, {kind:'add'}, addSong.number)">🔢</button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -3012,6 +3017,8 @@
                 </template>
               </ul>
 
+            </div>
+            <div class="add-song-main">
               <div class="add-song-view-tabs">
                 <button :class="{active: addSong.view === 'preview'}" @click="addSong.view = 'preview'">👁 Vista</button>
                 <button :class="{active: addSong.view === 'cho'}" @click="addSong.view = 'cho'">📝 ChordPro</button>
@@ -3027,6 +3034,7 @@
                 </div>
               </div>
               <pre class="add-song-cho" x-show="addSong.view === 'cho'" x-text="addSongCho()"></pre>
+            </div>
             </div>
           </template>
         </div>
