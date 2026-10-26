@@ -1,0 +1,59 @@
+{
+  "songs": [
+    {
+      "title": "HACIA BELEN",
+      "artist": "",
+      "key": "",
+      "capo": 2,
+      "category": "N",
+      "sections": [
+        {
+          "kind": "verse",
+          "label": "",
+          "lines": [
+            "[DO]Hacia Belén va una burra, Rin, Rin...",
+            "[Sol 7]yo me remendaba, yo me remendé,",
+            "yo me eché un remiendo, yo me lo quité,",
+            "cargada de chocola[Do]te.",
+            "Lleva su chocolatera, Rin, Rin...",
+            "[Sol7]yo me remendaba, yo me remendé,",
+            "yo me eché un remiendo, yo me lo quité,",
+            "su molinillo y su ana[Do]fre."
+          ]
+        },
+        {
+          "kind": "chorus",
+          "label": "",
+          "lines": [
+            "[Sol]María, [Do]María, ven [Sol]acá co[Do]rriendo,",
+            "que el chocola[Fa]tillo [Do]se lo es[Sol]tán co[Do]miendo.",
+            "[Sol]María, [Do]María, ven [Sol]acá vo[Do]lando,",
+            "que el chocola[Fa]tillo [Do]se lo es[Sol]tán lle[Do]vando."
+          ]
+        },
+        {
+          "kind": "verse",
+          "label": "",
+          "lines": [
+            "En el portal de Belén, Rin, Rin...",
+            "yo me remendaba, yo me remendé,",
+            "yo me eché un remiendo, yo me lo quité,",
+            "y al bueno de San José, Rin, Rin...",
+            "yo me remendaba, yo me remendé,",
+            "yo me eché un remiendo, yo me lo quité,",
+            "le han roído los calzones."
+          ]
+        },
+        {
+          "kind": "chorus_ref",
+          "label": "",
+          "lines": []
+        }
+      ],
+      "doubts": []
+    }
+  ],
+  "ignored": [
+    "«En el portal de Belén»: solo asoma el título abajo, sigue en otra página."
+  ]
+}

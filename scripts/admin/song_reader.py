@@ -215,7 +215,8 @@ def prepare_image(data: bytes) -> Tuple[bytes, str]:
     w, h = im.size
     scale = min(1.0, MAX_SIDE / max(w, h), (MAX_PIXELS / float(w * h)) ** 0.5)
     if scale < 1:
-        im = im.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+        # Hacia abajo: redondeando se pasaría un pelo del máximo de píxeles.
+        im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=88, optimize=True)
     return buf.getvalue(), "image/jpeg"
