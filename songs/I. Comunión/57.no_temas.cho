@@ -6,17 +6,19 @@
 {video: https://www.youtube.com/embed/CO-z-vko0Zs}
 {youtube: Video alternativo | https://www.youtube.com/embed/5s3X_yBhuiQ}
 
-[G]Si aún no lo [C]ves
-pron[G]to lo ve[D]rás
+{c: PARTE 1}
+[G]Si aún no lo [C]ves [G]pronto lo ve[D]rás
 [Em]todo un [C]Dios enamo[G]rado de [D]ti.
-[G]Habla bien de [C]Él,
-que [G]no menti[D]rás,
-[Em]todo lo hi[C]zo para ha[G]certe fe[D]liz
-Lo que [G]pasa es que el [C]mundo no [G]quiere es[D]cuchar,
-no va[Em]ya a ser que [C]vea, que entien[G]da y se em[D]pape
-de es[G]ta alegría[C] que nos qui[G]ere rega[D]lar.
-[Em]No vaya a ser que en[C]tienda, se convi[G]erta y se sa[D]ne.
+[G]Habla bien de [C]Él, que [G]no menti[D]rás,
+[Em]todo lo [C]hizo para ha[G]certe fe[D]liz
 
+{c: PARTE 2}
+Lo que [G]pasa es que el [C]mundo no [G]quiere escu[D]char,
+no [Em]vaya a ser que [C]vea, que en[G]tienda y se em[D]pape
+de [G]esta ale[C]gría que nos [G]quiere rega[D]lar.
+No [Em]vaya a ser que en[C]tienda, se con[G]vierta y se [D]sane.
+
+{c: PARTE 3}
 {soc}
 No [G]temas a la [C]luz,
 no [G]temas a la [D]paz,
@@ -25,7 +27,13 @@ no tengas [G]miedo a ser fe[D]liz.
 Porque [G]Él es el ca[C]mino
 que se ha a[G]bierto para [D]ti.
 Porque [Em]Él es "el que es",
-[C]ahora puedes ser fe[G]liz.
+a[C]hora puedes [G]ser feliz[D].
 {eoc}
 
-{comment: en la segunda vuelta, mientras las estrofas las hace una voz, otra canta el estribillo y se solapan todas las voces.}
+{arr: 1 vez las tres partes}
+{arr: Se repite 2 veces PARTE 3}
+{arr: Mientras coro canta PARTE 3 - Solista canta PARTE 1}
+{arr: TODOS: Suave parte 2}
+{arr: Se repite en bucle parte 3 - Solista PARTE 1}
+
+{arr: Final "porque él es el que es ahora x2"}
