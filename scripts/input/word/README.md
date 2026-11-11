@@ -16,7 +16,7 @@ Detalles en `scripts/admin/README.md` («Words sueltos»).
 | 4 | 70 veces 7 | Belén Raigal | Pendiente de importar |
 | 5 | A tu modo | Letra: María Teresa Collado · Música: Alejandro Balfagó | Pendiente de importar |
 | 6 | Sin palabras | Marisa Arrufat | Pendiente de importar |
-| 7 | El amor no tiene fronteras | Inma Vírseda | Ya está: `songs/I. Comunión/36. El amor no tiene fronteras.cho` (no sale para importar; pendiente de comparar con esta versión) |
+| 7 | El amor no tiene fronteras | Inma Vírseda | Ya está: `songs/I. Comunión/36. El amor no tiene fronteras.cho`. Actualizada con los acordes de este Word (LA en vez de SOL, FA#, sin Mi7, intro/interludio) y el texto del cantoral; marcada «♩ Revisar acordes» hasta comprobarla de oído |
 | 8 | La fuerza del Evangelio | Paula Marán | Pendiente de importar |
 
 Para verlas desde la terminal: `python scripts/docx_extra.py list` y
