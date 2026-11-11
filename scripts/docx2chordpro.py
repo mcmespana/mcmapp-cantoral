@@ -568,6 +568,33 @@ def inject_chords(lyric_text: str, char_positions: List[float],
                   chord_positions: List[Tuple[float, str]]) -> str:
     """Inserta los acordes traducidos en la letra. Conserva el texto tal cual.
 
+    La política de anclaje está en `chord_anchor_map` (la usa también el
+    importador de villancicos, que intercala además el marcado <i>/<u>).
+    """
+    if not chord_positions:
+        return lyric_text
+    if not lyric_text.strip():
+        chunks = []
+        for _, tok in chord_positions:
+            chords = translate_chord_token(tok) or [tok]
+            chunks.append("".join(f"[{c}]" for c in chords))
+        return " ".join(chunks)
+    insertions = chord_anchor_map(lyric_text, char_positions, chord_positions)
+    out: List[str] = []
+    for i, ch in enumerate(lyric_text):
+        if i in insertions:
+            out.extend(insertions[i])
+        out.append(ch)
+    if len(lyric_text) in insertions:
+        out.extend(insertions[len(lyric_text)])
+    return "".join(out)
+
+
+def chord_anchor_map(lyric_text: str, char_positions: List[float],
+                     chord_positions: List[Tuple[float, str]],
+                     translate=None) -> Dict[int, List[str]]:
+    """{índice de carácter: ["[C]", …]} — dónde va cada acorde en la letra.
+
     Política:
       - Híbrido palabra/sílaba: por defecto prefiere inicio de PALABRA; solo
         usa inicio de sílaba (mid-word) cuando el acorde cae claramente dentro
@@ -580,15 +607,7 @@ def inject_chords(lyric_text: str, char_positions: List[float],
         sílabas contiguas para no perder información.
       - Los acordes de un token con guiones ("DO-mim-lam") se apilan siempre.
     """
-    if not chord_positions:
-        return lyric_text
-    if not lyric_text.strip():
-        chunks = []
-        for _, tok in chord_positions:
-            chords = translate_chord_token(tok) or [tok]
-            chunks.append("".join(f"[{c}]" for c in chords))
-        return " ".join(chunks)
-
+    translate = translate or translate_chord_token
     word_anchors = sorted(set(word_start_indices(lyric_text) + [0, len(lyric_text)]))
     syl_anchors = syllable_anchor_indices(lyric_text)
 
@@ -612,7 +631,7 @@ def inject_chords(lyric_text: str, char_positions: List[float],
     insertions: Dict[int, List[str]] = {}
     claimed_x: Dict[int, float] = {}  # ancla → x del primer acorde que la ocupó
     for x, tok in sorted(chord_positions, key=lambda p: p[0]):
-        chords = translate_chord_token(tok) or [tok]
+        chords = translate(tok) or [tok]
         idx = pick_anchor(x, forbidden=set())
         if idx in claimed_x:
             # Ya ocupada: apilar si están juntos, si no, repartir
@@ -622,15 +641,7 @@ def inject_chords(lyric_text: str, char_positions: List[float],
                 idx = pick_anchor(x, forbidden=set(claimed_x.keys()))
         claimed_x.setdefault(idx, x)
         insertions.setdefault(idx, []).extend(f"[{c}]" for c in chords)
-
-    out: List[str] = []
-    for i, ch in enumerate(lyric_text):
-        if i in insertions:
-            out.extend(insertions[i])
-        out.append(ch)
-    if len(lyric_text) in insertions:
-        out.extend(insertions[len(lyric_text)])
-    return "".join(out)
+    return insertions
 
 
 # ─────────── Procesado de una canción completa ─────────── #
