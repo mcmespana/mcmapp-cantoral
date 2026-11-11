@@ -232,6 +232,7 @@ function appBase() {
     importCommonTags: [],     // etiquetas a aplicar a todo lo que se importe
     importTagsById: {},       // docx_id → etiquetas elegidas para esa canción
     importSuggestions: {},    // docx_id → sugerencias del backend
+    importLetterById: {},     // docx_id → categoría elegida (Words sueltos, sin sección)
 
     // Editor multimedia tab
     mediaForm: { rhythm: '', album: '', liturgicalTime: '', source: '', videoEmbed: '',
@@ -666,12 +667,27 @@ function appBase() {
     filteredMissing() {
       if (!this.data) return [];
       let list = this.data.missing_from_repo;
-      if (this.importSectionFilter) list = list.filter(m => m.section_letter === this.importSectionFilter);
+      if (this.importSectionFilter === '__suelto__') list = list.filter(m => m.source);
+      else if (this.importSectionFilter) list = list.filter(m =>
+        (m.section_letter || this.importLetterById[m.docx_id]) === this.importSectionFilter);
       if (this.importSearch) {
         const q = this.normalizeSearch(this.importSearch);
-        list = list.filter(m => this.normalizeSearch(m.title).includes(q));
+        list = list.filter(m => this.normalizeSearch(m.title).includes(q) ||
+                                this.normalizeSearch(m.artist).includes(q));
       }
       return list;
+    },
+    // Las canciones de Words sueltos (scripts/input/word/) no traen sección:
+    // la categoría se elige en la propia fila antes de importar.
+    setImportLetter(id, letter) {
+      const next = { ...this.importLetterById };
+      if (letter) next[id] = letter; else delete next[id];
+      this.importLetterById = next;
+    },
+    importSongsWithoutLetter(ids) {
+      const want = new Set(ids);
+      return (this.data?.missing_from_repo || [])
+        .filter(m => want.has(m.docx_id) && !m.section_letter && !this.importLetterById[m.docx_id]);
     },
     toggleImport(id) {
       if (this.selectedImports.has(id)) this.selectedImports.delete(id);
@@ -730,6 +746,12 @@ function appBase() {
     async doImport() {
       if (this.selectedImports.size === 0) return;
       const ids = [...this.selectedImports];
+      const sinCategoria = this.importSongsWithoutLetter(ids);
+      if (sinCategoria.length) {
+        alert('Elige antes la categoría (columna «Sección») de:\n\n' +
+              sinCategoria.map(m => '· ' + m.title).join('\n'));
+        return;
+      }
       // Sin catálogo de etiquetas no hay nada que elegir: directo.
       if (!this.allTags.length) return this.runImport();
       this.importModal = { ids };
@@ -756,6 +778,9 @@ function appBase() {
             tags_by_id: Object.fromEntries(
               [...this.selectedImports].map(id => [String(id), this.tagsForImport(id)])
                 .filter(([, tags]) => tags.length > 0)),
+            letters_by_id: Object.fromEntries(
+              [...this.selectedImports].filter(id => this.importLetterById[id])
+                .map(id => [String(id), this.importLetterById[id]])),
           }),
         });
         const json = await r.json();
@@ -775,6 +800,10 @@ function appBase() {
       }
     },
     async importOne(id) {
+      if (this.importSongsWithoutLetter([id]).length) {
+        alert('Elige antes la categoría de esta canción.');
+        return;
+      }
       this.selectedImports = new Set([id]);
       await this.doImport();
       this.docxPreview = null;

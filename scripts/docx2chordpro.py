@@ -32,11 +32,14 @@ from __future__ import annotations
 import argparse
 import bisect
 import difflib
+import io
 import os
 import re
 import sys
+import threading
 import unicodedata
 import zipfile
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -158,28 +161,66 @@ def is_chord_token(tok: str) -> bool:
 
 # ─────────── Métrica de texto ─────────── #
 
-_font_cache: Dict[int, "ImageFont.ImageFont"] = {}
+_font_cache: Dict[Tuple[str, bool, int], "ImageFont.ImageFont"] = {}
+
+# Fuente con la que se miden los textos. Por defecto Calibri (`fuente.ttf`), la
+# del cantoral grande. Otros Word (p. ej. los de `scripts/input/word/`) traen su
+# propia fuente incrustada: `measuring_with()` la activa SOLO para el hilo que
+# convierte, así el admin puede convertir los dos Word a la vez sin mezclarlas.
+_FONT_CTX = threading.local()
 
 
-def get_font(sz_halfpoints: int) -> "ImageFont.ImageFont":
+@contextmanager
+def measuring_with(key: str, regular, bold=None):
+    """Mide con otra fuente mientras dure el `with`.
+
+    `regular`/`bold` son rutas o bytes de un .ttf; `key` identifica la fuente en
+    las cachés (p. ej. el nombre del .docx). Con este contexto activo, la negrita
+    se mide con su propia fuente (`bold`); sin él, todo se mide con Calibri
+    regular, como siempre.
+    """
+    prev = getattr(_FONT_CTX, "font", None)
+    _FONT_CTX.font = (key, regular, bold or regular)
+    try:
+        yield
+    finally:
+        _FONT_CTX.font = prev
+
+
+def _load_font(src, px: int) -> "ImageFont.ImageFont":
+    if isinstance(src, (bytes, bytearray)):
+        src = io.BytesIO(src)
+    else:
+        src = str(src)
+    return ImageFont.truetype(src, px)
+
+
+def get_font(sz_halfpoints: int, bold: bool = False) -> "ImageFont.ImageFont":
     sz_halfpoints = max(sz_halfpoints or 24, 8)
     # Tamaño en píxeles a 96 dpi
     px = max(int(round((sz_halfpoints / 2) * PX_PER_PT)), 6)
-    if px not in _font_cache:
+    ctx = getattr(_FONT_CTX, "font", None)
+    if ctx is None:
+        key, src, bold = "", FONT_PATH, False
+    else:
+        key, regular, bold_src = ctx
+        src = bold_src if bold else regular
+    ck = (key, bool(bold), px)
+    if ck not in _font_cache:
         try:
-            _font_cache[px] = ImageFont.truetype(str(FONT_PATH), px)
+            _font_cache[ck] = _load_font(src, px)
         except Exception:
-            _font_cache[px] = ImageFont.load_default()
-    return _font_cache[px]
+            _font_cache[ck] = ImageFont.load_default()
+    return _font_cache[ck]
 
 
 @lru_cache(maxsize=100_000)
-def _measure_px(text: str, sz_halfpoints: int) -> float:
-    return float(get_font(sz_halfpoints).getlength(text))
+def _measure_px(text: str, sz_halfpoints: int, key: str = "", bold: bool = False) -> float:
+    return float(get_font(sz_halfpoints, bold).getlength(text))
 
 
-def text_width_px(text: str, sz_halfpoints: int) -> float:
-    """Ancho en píxeles del texto con la fuente del cantoral.
+def text_width_px(text: str, sz_halfpoints: int, bold: bool = False) -> float:
+    """Ancho en píxeles del texto con la fuente activa (Calibri por defecto).
 
     Memoizado: `parse_lyric_line` mide carácter a carácter, así que el mismo
     puñado de pares (carácter, tamaño) se repite decenas de miles de veces por
@@ -187,7 +228,10 @@ def text_width_px(text: str, sz_halfpoints: int) -> float:
     """
     if not text:
         return 0.0
-    return _measure_px(text, sz_halfpoints)
+    ctx = getattr(_FONT_CTX, "font", None)
+    if ctx is None:
+        return _measure_px(text, sz_halfpoints)
+    return _measure_px(text, sz_halfpoints, ctx[0], bool(bold))
 
 
 def dxa_to_px(dxa: float) -> float:
@@ -347,7 +391,7 @@ def parse_chord_line(atoms: List[Atom], start_x_dxa: float,
     cur_x = dxa_to_px(start_x_dxa)
     tab_stops_px = [dxa_to_px(s) for s in tab_stops_dxa]
     positions: List[Tuple[float, str]] = []
-    for kind, value, sz, _bold in atoms:
+    for kind, value, sz, bold in atoms:
         if kind == "tab":
             cur_x = next_tab_stop_px(cur_x, tab_stops_px)
         elif kind == "text":
@@ -360,12 +404,12 @@ def parse_chord_line(atoms: List[Atom], start_x_dxa: float,
                     while j < len(text) and not text[j].isspace():
                         j += 1
                     tok = text[i:j]
-                    tok_x = cur_x + text_width_px(text[:i], sz)
+                    tok_x = cur_x + text_width_px(text[:i], sz, bold)
                     positions.append((tok_x, tok))
                     i = j
                 else:
                     i += 1
-            cur_x += text_width_px(text, sz)
+            cur_x += text_width_px(text, sz, bold)
     return positions
 
 
@@ -377,7 +421,7 @@ def parse_lyric_line(atoms: List[Atom], start_x_dxa: float,
     tab_stops_px = [dxa_to_px(s) for s in tab_stops_dxa]
     chars: List[str] = []
     positions: List[float] = [cur_x]
-    for kind, value, sz, _bold in atoms:
+    for kind, value, sz, bold in atoms:
         if kind == "tab":
             cur_x = next_tab_stop_px(cur_x, tab_stops_px)
             # Representamos el tab como un espacio en la letra final
@@ -386,7 +430,7 @@ def parse_lyric_line(atoms: List[Atom], start_x_dxa: float,
         elif kind == "text":
             text = value or ""
             for ch in text:
-                cur_x += text_width_px(ch, sz)
+                cur_x += text_width_px(ch, sz, bold)
                 chars.append(ch)
                 positions.append(cur_x)
     return "".join(chars), positions

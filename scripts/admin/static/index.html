@@ -465,11 +465,17 @@
       (<span class="badge todo">📝</span>), porque la conversión automática no siempre
       los coloca bien: alguien tiene que darles un repaso antes de darlas por buenas.
     </p>
+    <p class="muted">
+      También salen las de los <strong>Words sueltos</strong> que se dejen en
+      <code>scripts/input/word/</code> (marcadas con <span class="badge-source">📄</span>).
+      Esos Words no traen secciones: elige la categoría en la columna «Sección» antes de importar.
+    </p>
 
     <div class="filter-bar">
       <input type="search" placeholder="Buscar…" x-model="importSearch" />
       <select x-model="importSectionFilter">
         <option value="">Todas las secciones</option>
+        <option value="__suelto__">📄 De Words sueltos</option>
         <template x-for="cat in data?.categories" :key="cat.letter">
           <option :value="cat.letter" x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
         </template>
@@ -493,9 +499,25 @@
                      :checked="selectedImports.has(m.docx_id)"
                      @change="toggleImport(m.docx_id)" />
             </td>
-            <td :title="categoryName(m.section_letter)" x-text="m.section_letter"></td>
+            <td :title="categoryName(m.section_letter)">
+              <span x-show="m.section_letter" x-text="m.section_letter"></span>
+              <select x-show="!m.section_letter" class="cat-select-mini"
+                      :class="{ 'needs-pick': !importLetterById[m.docx_id] }"
+                      title="Este Word no trae secciones: elige a qué categoría va"
+                      @change="setImportLetter(m.docx_id, $event.target.value)">
+                <option value="">— categoría —</option>
+                <template x-for="cat in data?.categories" :key="cat.letter">
+                  <option :value="cat.letter" :selected="importLetterById[m.docx_id] === cat.letter"
+                          x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+                </template>
+              </select>
+            </td>
             <td>
               <a href="#" @click.prevent="previewDocx(m.docx_id)" x-text="m.title"></a>
+              <span x-show="m.artist" class="muted small" x-text="'· ' + m.artist"></span>
+              <span x-show="m.source" class="badge-source"
+                    :title="'Viene del Word suelto scripts/input/word/' + m.source"
+                    x-text="'📄 ' + (m.source || '').replace(/\.docx$/i, '')"></span>
               <template x-if="m.doce_available">
                 <span class="badge-doce-wrap">
                   <span class="badge-doce"
@@ -3638,6 +3660,15 @@
       <div class="editor-header">
         <h2 x-text="docxPreview ? docxPreview.title : ''"></h2>
         <div class="editor-actions">
+          <select x-show="docxPreview && !docxPreview.section_letter" class="cat-select-mini"
+                  title="Este Word no trae secciones: elige a qué categoría va"
+                  @change="setImportLetter(docxPreview.id, $event.target.value)">
+            <option value="">— categoría —</option>
+            <template x-for="cat in data?.categories" :key="cat.letter">
+              <option :value="cat.letter" :selected="docxPreview && importLetterById[docxPreview.id] === cat.letter"
+                      x-text="cat.letter + '. ' + cat.title.replace(/^[A-Z+\d]+\.\s*/, '')"></option>
+            </template>
+          </select>
           <button class="btn primary" @click="importOne(docxPreview.id)">Importar esta</button>
           <button class="btn" @click="docxPreview = null">✕ Cerrar</button>
         </div>

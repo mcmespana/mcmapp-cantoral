@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## Lo esencial: el Cantoral Admin
+- **El Cantoral Admin (`scripts/admin/`, lanzado con `C. Admin Cantoral - MAC.command` / `- WINDOWS.bat`) es lo principal de este repo**, junto con guardar las canciones. Cualquier cosa que se pida (importar canciones, una fuente nueva, un campo, un arreglo) tiene que **funcionar desde el admin**: un script suelto o un archivo dejado «por ahí» no cuenta como hecho. Si algo solo se puede usar desde la terminal, está a medias.
+- Words sueltos con canciones del cantoral normal: se dejan en `scripts/input/word/` y salen en el admin, en «📥 Importar del cantoral» (`scripts/docx_extra.py`; tests: `python scripts/test_docx_extra.py`).
+
 ## Project Structure & Module Organization
 - `scripts/`: Python utilities and OS launchers to process songs. Key scripts: `crear_songs_json.py`, `tab2chordpro.py`, `sincronizaCambiosDeFirebase.py`.
 - `songs/`: Source ChordPro files grouped by category folders (e.g., `A. Entrada/`). Also contains `indice.json` and versioned JSON outputs `songs-v<major>[.<minor>].json`.

@@ -308,6 +308,26 @@ Cada fila tiene además:
   muestra un aviso; la canción que elijas hereda la sección, la posición y el
   tono que tenía en el cantoral.
 
+#### Words sueltos (`scripts/input/word/`)
+
+Cuando llegan canciones del cantoral normal en un Word aparte (p. ej.
+«Letras con acordes guitarra.docx»), basta con dejar el `.docx` en
+`scripts/input/word/`: sus canciones salen **en esta misma lista**, mezcladas con
+las del Word grande, con la etiqueta 📄 y el nombre del Word (filtro «📄 De Words
+sueltos» en el desplegable de secciones). No es otra sección: al importarlas van
+a la categoría que elijas, como cualquier otra.
+
+- Esos Words no traen secciones → en la columna **Sección** sale un desplegable
+  para elegir la categoría (también en el 👁 Ver). Sin elegirla no se importa.
+- «Letra y música: X» / «Letra: X» + «Música: Y» → `{artist:}`.
+- La conversión es la del Word grande, pero midiendo con la fuente que el Word
+  lleva incrustada (Roboto en vez de Calibri). Lógica en `scripts/docx_extra.py`
+  (`python scripts/docx_extra.py list|show N`); tests en
+  `scripts/test_docx_extra.py`.
+- Las que ya están en el repo con el **mismo título** no salen (así pasa con «El
+  amor no tiene fronteras»). Aquí no hay emparejado por trozos: «A tu modo» no
+  es «Tu modo».
+
 ### Importar de doceacordes (🎸)
 Catálogo completo de doceacordes.es. Se puede importar **de una en una** (botón
 📥 de la fila) o **varias a la vez**:

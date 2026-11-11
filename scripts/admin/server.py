@@ -58,6 +58,7 @@ PETICIONES_FILE = PETICIONES_DIR / "peticiones.json"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import docx2chordpro as d2c  # noqa: E402
+import docx_extra as dx  # noqa: E402  (Words sueltos de scripts/input/word/)
 import latex_import as lx  # noqa: E402
 import doceacordes_import as da  # noqa: E402
 import chordpro as cp  # noqa: E402  (módulo común: parseo campos ↔ directivas)
@@ -358,14 +359,31 @@ def build_repo_title_index(repo_songs: List[dict]) -> Dict[str, dict]:
 _docx_cache: Dict[str, object] = {"songs": None, "mtime": 0}
 
 
+def _docx_snapshot() -> str:
+    """Huella (nombre + mtime + tamaño) del Word del cantoral y de los Words
+    sueltos de scripts/input/word/: si cambia cualquiera, se recarga."""
+    parts = []
+    for p in [d2c.find_docx(), *dx.list_extra_docx()]:
+        st = p.stat()
+        parts.append(f"{p.name}:{st.st_mtime}:{st.st_size}")
+    return "|".join(parts)
+
+
 def load_docx_songs(force: bool = False) -> List[dict]:
-    """Lee y cachea las canciones del docx. Si el archivo cambia, recarga."""
+    """Lee y cachea las canciones del cantoral. Si algún Word cambia, recarga.
+
+    Son las del Word grande del cantoral y, detrás, las de los Words sueltos de
+    `scripts/input/word/` (canciones del cantoral normal que llegan aparte). Las
+    sueltas no traen sección (`section_letter` None): la categoría se elige al
+    importar. Las del Word grande van primero para que sus ids no cambien.
+    """
     docx_path = d2c.find_docx()
-    mtime = docx_path.stat().st_mtime
+    mtime = _docx_snapshot()
     if not force and _docx_cache["songs"] is not None and _docx_cache["mtime"] == mtime:
         return _docx_cache["songs"]  # type: ignore
     paras = d2c.load_paragraphs(docx_path)
     raw_songs = d2c.split_into_songs(paras)
+    raw_songs = raw_songs + dx.load_all()
     indexed = []
     # Contador por sección para asignar position_in_section (1-based) — usado
     # como sugerencia de número de archivo al importar.
@@ -378,7 +396,9 @@ def load_docx_songs(force: bool = False) -> List[dict]:
             "title_raw": s["title_raw"],
             "section": s["section"],
             "section_letter": letter,
-            "position_in_section": pos_by_section[letter or ""],
+            "position_in_section": pos_by_section[letter or ""] if letter else None,
+            # Word suelto del que viene (None = el Word grande del cantoral)
+            "source": s.get("source"),
             "_song": s,
         })
     _docx_cache["songs"] = indexed
@@ -398,7 +418,10 @@ def convert_docx_song(s: dict) -> dict:
     sid = s["id"]
     conv = _docx_conv_cache.get(sid)
     if conv is None:
-        conv = d2c.convert_song(s["_song"])
+        if s.get("source"):
+            conv = dx.convert_song(s["_song"])
+        else:
+            conv = d2c.convert_song(s["_song"])
         _docx_conv_cache[sid] = conv
     return conv
 
@@ -464,6 +487,8 @@ def docx_pending_by_section() -> Dict[str, Dict[int, str]]:
     convs: Dict[int, dict] = {}
     docx_index: Dict[str, dict] = {}
     for s in docx_songs:
+        if s.get("source"):
+            continue  # Words sueltos: sin sección, no reservan números
         conv = convert_docx_song(s)
         convs[s["id"]] = conv
         for k in title_keys(conv["title"]):
@@ -476,7 +501,7 @@ def docx_pending_by_section() -> Dict[str, Dict[int, str]]:
     ignored = load_ignored()
     out: Dict[str, Dict[int, str]] = {}
     for s in docx_songs:
-        if s["id"] in matched or s["title_raw"] in ignored:
+        if s.get("source") or s["id"] in matched or s["title_raw"] in ignored:
             continue
         letter = s.get("section_letter") or ""
         pos = s.get("position_in_section")
@@ -508,6 +533,8 @@ def docx_song_to_dict(s: dict, conv: dict, include_body: bool = False) -> dict:
         "capo": conv.get("capo"),
         "warnings": conv.get("warnings", []),
         "slug": conv.get("slug"),
+        "artist": conv.get("artist"),
+        "source": s.get("source"),
     }
     if include_body:
         out["content"] = render_cho_with_todo(conv)
@@ -550,6 +577,8 @@ def _downcase_note_words_in_lyrics(body: str) -> str:
 def render_cho_with_todo(conv: dict) -> str:
     """Render del .cho con la línea TO DO al principio."""
     header_lines = [TODO_COMMENT_LINE, f"{{title: {conv['title']}}}"]
+    if conv.get("artist"):
+        header_lines.append(f"{{artist: {conv['artist']}}}")
     if conv.get("key"):
         header_lines.append(f"{{key: {conv['key']}}}")
     if conv.get("capo"):
@@ -646,6 +675,11 @@ def build_catalog_indexes():
     for s in load_docx_songs():
         conv = convert_docx_song(s)
         docx_convs[s["id"]] = conv
+        if s.get("source"):
+            # Las de Words sueltos no entran en el emparejado difuso con el repo
+            # (su «búsqueda por trozo» casaba «A tu modo» con «Tu modo»): se
+            # comprueban por título exacto con `in_repo_exact()`.
+            continue
         for k in title_keys(conv["title"]):
             docx_index.setdefault(k, {
                 "id": s["id"],
@@ -657,6 +691,12 @@ def build_catalog_indexes():
         for k in title_keys(lt["title"]):
             latex_index.setdefault(k, lt)
     return docx_convs, docx_index, latex_index
+
+
+def in_repo_exact(title: str, repo_songs: List[dict]) -> bool:
+    """¿Hay en el repo una canción con este mismo título (normalizado)?"""
+    keys = set(title_keys(title))
+    return any(keys & set(title_keys(r["title"])) for r in repo_songs)
 
 
 def enrich_repo_song(r: dict, docx_index: Dict[str, dict],
@@ -732,7 +772,10 @@ def api_catalog():
     ignored = load_ignored()
     missing = []
     for s in docx_songs:
-        if s["id"] in matched_docx_ids:
+        if s.get("source"):
+            if in_repo_exact(docx_convs[s["id"]]["title"], repo_songs):
+                continue
+        elif s["id"] in matched_docx_ids:
             continue
         if s["title_raw"] in ignored:
             continue
@@ -748,6 +791,8 @@ def api_catalog():
             "title_raw": s["title_raw"],
             "section_letter": s["section_letter"],
             "position_in_section": s.get("position_in_section"),
+            "source": s.get("source"),
+            "artist": conv.get("artist"),
             "key": conv.get("key"),
             "capo": conv.get("capo"),
             "warnings": conv.get("warnings", []),
@@ -1391,6 +1436,9 @@ def api_docx_import():
     # aceptar la sugerencia concreta de cada fila.
     common_tags = cp.normalize_tags(body.get("tags") or [])
     tags_by_id = body.get("tags_by_id") or {}
+    # Categoría elegida a mano: obligatoria para las de Words sueltos (no traen
+    # sección) y opcional para las del Word grande (cambia la de su sección).
+    letters_by_id = body.get("letters_by_id") or {}
     songs = load_docx_songs()
     repo_songs = list_repo_songs()
     repo_titles = {normalize_title_for_match(r["title"]) for r in repo_songs}
@@ -1410,15 +1458,24 @@ def api_docx_import():
         if normalize_title_for_match(conv["title"]) in repo_titles:
             results.append({"id": i, "ok": False, "error": "ya existe en repo"})
             continue
-        folder = d2c.resolve_target_folder(s["section"])
+        letter = str(letters_by_id.get(str(i)) or letters_by_id.get(i) or "").upper()
+        if letter:
+            cat = next((c for c in list_categories() if c["letter"] == letter), None)
+            folder = SONGS_DIR / cat["folder"] if cat else None
+        else:
+            letter = s.get("section_letter") or ""
+            folder = d2c.resolve_target_folder(s["section"])
         if folder is None:
-            results.append({"id": i, "ok": False, "error": "sin carpeta destino"})
+            results.append({"id": i, "ok": False, "title": conv["title"],
+                            "error": "elige la categoría" if not letter else "sin carpeta destino"})
             continue
         # Sugerencia de número: posición de la canción dentro de su sección
-        # en el DOCX. Si está libre se respeta; si no, primer hueco libre que no
-        # esté apalabrado por otra canción del docx pendiente de importar.
-        num = preferred_number(folder, s.get("position_in_section"),
-                               set(reserved_numbers_for(s.get("section_letter") or "")))
+        # en el DOCX (si se importa a su propia sección). Si está libre se
+        # respeta; si no, primer hueco libre que no esté apalabrado por otra
+        # canción del docx pendiente de importar.
+        hint = (s.get("position_in_section")
+                if letter == (s.get("section_letter") or "") else None)
+        num = preferred_number(folder, hint, set(reserved_numbers_for(letter)))
         fname = f"{num:02d}.{conv['slug']}.cho"
         fpath = folder / fname
         if fpath.exists():
