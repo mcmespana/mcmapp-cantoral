@@ -285,6 +285,21 @@ def test_media_changed_tags():
     assert sync.media_changed({"tagsOld": ["a"], "tagsNew": ["a"]}) is False
 
 
+# ── marcado <i>/<b>/<u> en la letra ─────────────────────────────────────────────
+def test_markup_no_llega_a_la_app_mientras_no_lo_pinte():
+    cho = "{title: X}\n\n[G]Hoy <i>Fue sin [Am]querer</i> y <u>alta</u> <b>ya</b>\n"
+    assert cp.strip_markup(cho).endswith("[G]Hoy Fue sin [Am]querer y alta ya\n")
+    if not cp.APP_MARKUP:
+        assert "<i>" not in cp.content_for_app(cho)
+    # otras cosas con < > no se tocan
+    assert cp.strip_markup("a <3 b <br> <span>") == "a <3 b <br> <span>"
+
+def test_sync_compara_sin_marcado():
+    original = "{title: X}\n\nHoy <i>es</i> Navidad\n"
+    seen_by_app = cp.content_for_app(original)
+    if not cp.APP_MARKUP:
+        assert not sync.content_conflict({"contentOld": seen_by_app}, original)
+
 # ── subcategorías, «también en» y duración (§5 de CAMPOS_CANCIONES) ─────────────
 CHO_NAVIDAD = (
     "{title: Somos Consolación}\n"

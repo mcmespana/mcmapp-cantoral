@@ -180,6 +180,10 @@ def _norm_body(text: str) -> str:
     """Normaliza para comparar cuerpos: sin multimedia, sin espacios al final
     de línea y sin líneas en blanco sobrantes al final."""
     t = cp.strip_media(cp.nl(text))
+    if not cp.APP_MARKUP:
+        # La app recibió el cuerpo sin <i>/<b>/<u>: comparar sin ellos, o
+        # cualquier edición de una canción con marcado saldría como conflicto.
+        t = cp.strip_markup(t)
     lines = [ln.rstrip() for ln in t.split("\n")]
     while lines and lines[-1] == "":
         lines.pop()

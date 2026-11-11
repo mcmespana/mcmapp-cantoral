@@ -102,7 +102,7 @@ def main():
             text = open(path, encoding='utf-8').read()
             meta = cp.parse_basic_meta(text)  # title/author/key/capo
             extra = cp.parse_media(text)      # multimedia + meta extra
-            clean_content = cp.strip_media(text)
+            clean_content = cp.content_for_app(text)
 
             # Extrae código numérico inicial, ej. "01" → "01. "
             code = ''

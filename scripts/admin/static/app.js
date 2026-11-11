@@ -293,6 +293,7 @@ function app() {
     // opciones se recuerdan en este navegador.
     appPv: loadAppPreviewOptions(),
     appPvStrip: null,   // RegExp de directivas que no llegan a la app
+    appPvMarkup: null,  // RegExp de <i>/<b>/<u> si la app aún no los pinta
 
     // Editor
     editor: {
@@ -367,6 +368,11 @@ function app() {
         if (j && j.strip && j.strip.length) {
           this.appPvStrip = new RegExp(
             '^[ \\t]*\\{\\s*(?:' + j.strip.join('|') + ')\\s*(?::[^}]*)?\\}[ \\t]*\\r?\\n?', 'gim');
+        }
+        // <i> <b> <u> en la letra: mientras la app no los pinte
+        // (chordpro.APP_MARKUP), tampoco la vista previa.
+        if (j && j.markupTags && !j.markup) {
+          this.appPvMarkup = new RegExp('</?(?:' + j.markupTags.join('|') + ')>', 'gi');
         }
       }).catch(() => {});
       this.$watch('appPv', (v) => {
@@ -4118,7 +4124,8 @@ function app() {
         return m ? m[1] : '';
       };
       const capo = get('capo');
-      const body = this.appPvStrip ? cho.replace(this.appPvStrip, '') : cho;
+      let body = this.appPvStrip ? cho.replace(this.appPvStrip, '') : cho;
+      if (this.appPvMarkup) body = body.replace(this.appPvMarkup, '');
       const o = this.appPv;
       return window.MCMSheet.render(body, {
         notation: o.notation,

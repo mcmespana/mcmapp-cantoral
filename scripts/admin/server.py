@@ -1051,6 +1051,10 @@ def api_app_preview_config():
     sheet = SCRIPT_DIR / "static" / "mcm-sheet.js"
     return jsonify({
         "strip": list(cp.MEDIA_DIRECTIVES) + [cp.DEDUCED_DIRECTIVE],
+        # <i>/<b>/<u> en la letra: la vista previa los quita si la app aún no
+        # los pinta (cp.APP_MARKUP), igual que crear_songs_json.py.
+        "markup": cp.APP_MARKUP,
+        "markupTags": list(cp.MARKUP_TAGS),
         "sheet": sheet.exists(),
     })
 

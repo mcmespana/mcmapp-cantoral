@@ -359,6 +359,35 @@ def strip_media(text: str) -> str:
     return _ADMIN_STRIP_RX.sub("", _STRIP_RX.sub("", text))
 
 
+# ─────────── Marcado dentro de la letra: <i>, <b>, <u> ─────────── #
+#
+# ChordPro 6 admite marcado tipo Pango en la letra. Usamos solo tres etiquetas,
+# para lo que el papel distingue con formato y tiene significado al cantar:
+#   <i>…</i>  cursiva: 2ª voz, eco, la parte del otro grupo
+#   <u>…</u>  subrayado: altas/bajas (lo dice la leyenda de la canción)
+#   <b>…</b>  negrita dentro de una línea que NO es estribillo (énfasis)
+# Nunca cruzan de una línea a otra. Ver docs/VILLANCICOS_SOLIDARIOS.md.
+#
+# APP_MARKUP dice si la app ya sabe pintarlo. Mientras sea False,
+# crear_songs_json.py lo quita del `content` (si no, la app enseñaría «<i>» tal
+# cual) y la vista previa del admin hace lo mismo. Los .cho lo guardan siempre:
+# el día que la app lo pinte, se pone a True y aparece solo.
+APP_MARKUP = False
+MARKUP_TAGS = ("i", "b", "u")
+_MARKUP_RX = re.compile(r"</?(?:" + "|".join(MARKUP_TAGS) + r")>", re.IGNORECASE)
+
+
+def strip_markup(text: str) -> str:
+    """Quita <i> <b> <u> (y sus cierres) dejando el texto."""
+    return _MARKUP_RX.sub("", text)
+
+
+def content_for_app(text: str) -> str:
+    """El cuerpo tal y como viaja a la app (songs/data → `content`)."""
+    body = strip_media(text)
+    return body if APP_MARKUP else strip_markup(body)
+
+
 # ─────────── Etiquetas del cantoral: {tags: a, b, c} ─────────── #
 #
 # Las etiquetas son LIBRES: se inventan sobre la marcha en el .cho y no hace
