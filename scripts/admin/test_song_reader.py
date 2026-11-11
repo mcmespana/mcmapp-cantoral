@@ -108,6 +108,25 @@ def test_hacia_belen_photo_end_to_end():
 
 
 # ── limpieza de versos ─────────────────────────────────────────────────────────
+def test_notacion_cantoral_2008():
+    """«la-» (menor), «Mi7», «Sol+» (mayor): así vienen los acordes en el
+    cantoral de villancicos de 2008 y así los copia Claude. Antes «la-» se
+    tiraba por no parecer un acorde."""
+    song = {"title": "LOS PECES EN EL RIO", "artist": "", "key": "", "capo": 4, "category": "",
+            "doubts": [], "sections": [
+                {"kind": "verse", "label": "", "lines": [
+                    "[Lam]La Virgen se está pei[Mi7]nando entre cortina y cor[la-]tina."]},
+                {"kind": "chorus", "label": "", "lines": [
+                    "Pero mira cómo beben los [Mi7]peces en el río",
+                    "por ver al Dios na[la-]cido [Sol+]"]}]}
+    text, notes, _ = sr.render_song(song)
+    assert "[la-]tina" in text and "[Sol+]" in text, text
+    assert not any("Quitado" in n for n in notes), notes
+    res = si.import_text(text)
+    assert "cor[Am]tina" in res.cho and "na[Am]cido" in res.cho and "[G]" in res.cho, res.cho
+    assert "{capo: 4}" in res.cho
+
+
 def test_clean_line():
     assert sr.clean_line("[Sol 7]Ven, Se[La m]ñor")[0] == "[Sol7]Ven, Se[Lam]ñor"
     assert sr.clean_line("[C] [-] [A]el canto")[0] == "[C] [A]el canto"

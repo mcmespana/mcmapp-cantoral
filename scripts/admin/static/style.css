@@ -1462,6 +1462,16 @@ table.songs tr.row-archived td { opacity: 0.55; }
 .vill-add-item:hover { background: var(--bg-3); }
 .vill-notes { display: block; font-size: 12px; color: var(--fg-3); }
 .vill-notes textarea { width: 100%; box-sizing: border-box; margin-top: 4px; }
+.vill-src { display: flex; gap: 8px; margin: 14px 0 0; flex-wrap: wrap; }
+.vill-src button { border: 1px solid var(--border-strong); background: var(--bg-2); color: var(--fg); border-radius: 6px;
+  padding: 7px 12px; cursor: pointer; font-size: 13px; }
+.vill-src button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); font-weight: 600; }
+.vill-pdf-songs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.vill-pdf-song { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 10px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; }
+.vill-pdf-num { min-width: 22px; text-align: center; font-weight: 700; color: var(--fg-3); }
+.vill-pdf-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.vill-pdf-frame { width: 100%; height: calc(100vh - 300px); min-height: 520px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
 .also-list { display: flex; flex-direction: column; gap: 4px; }
 .also-row { display: flex; gap: 6px; align-items: center; font-size: 13px; }
 .also-row select { font-size: 12px; }

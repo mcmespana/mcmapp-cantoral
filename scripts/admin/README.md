@@ -269,7 +269,13 @@ tres pestañas:
   no se copian ni se mueven). Cambiar la subcategoría en la fila o en bloque,
   **➕ Traer del cantoral normal**, «Quitar de Navidad» y «＋ también en…» para
   llevar una de Navidad a otra categoría.
-- **📄 Importar del Word** — las 51 canciones del Word de canciones nuevas, una
+- **📄 Importar → 📕 Cantoral 2008** — el PDF escaneado página a página: la
+  página al lado de sus canciones (índice a mano en
+  `scripts/villancicos/cantoral-2008.json`) y **✨ Leer con IA**, que manda solo
+  esa página a ✨ Añadir canción y elige la canción pedida. Al crearla queda con
+  su página en `{fuente:}` y su subcategoría. Necesita `pypdf` (en
+  `requirements.txt`: hay que reconstruir la imagen de Docker).
+- **📄 Importar → 📄 Word** — las 51 canciones del Word de canciones nuevas, una
   a una: a la izquierda cómo están en el Word («como en el papel», cada acorde en
   su columna) y a la derecha cómo se verán en la app (o el ChordPro, editable).
   Número y subcategoría, **📥 Crear y revisar** (con su TO DO y la pestaña

@@ -91,8 +91,22 @@ _CHORD_LABEL_RX = re.compile(
     r"^(intro|instrumental|interludio|final|outro|solo|puente|rueda)\s*:?$", re.IGNORECASE)
 
 
+# Cantorales antiguos (como el de los Villancicos Solidarios de 2008): «+» detrás
+# de una nota EN ESPAÑOL es mayor y «-» menor: «Sol+» = G, «la-» = Am, «si-7» =
+# Bm7. Detrás de una nota inglesa «+» sigue siendo aumentado (C+).
+_ES_SIGN_RX = re.compile(r"^((?:do|re|mi|fa|sol|la|si)(?:#|b)?)([+-])(.*)$", re.IGNORECASE)
+
+
+def _es_signs(tok: str) -> str:
+    m = _ES_SIGN_RX.match(tok)
+    if not m:
+        return tok
+    root, sign, rest = m.groups()
+    return root + ("m" if sign == "-" else "") + rest
+
+
 def _strip_parens(tok: str) -> str:
-    return tok.strip("()[]")
+    return _es_signs(tok.strip("()[]"))
 
 
 def is_strict_chord(tok: str) -> bool:

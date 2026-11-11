@@ -1572,7 +1572,7 @@
       <button :class="{active: vill.tab === 'songs'}" @click="villTab('songs')">
         🎶 Canciones <span class="vill-tab-n" x-text="vill.data ? vill.data.songs.length : ''"></span></button>
       <button :class="{active: vill.tab === 'word'}" @click="villTab('word')">
-        📄 Importar del Word <span class="vill-tab-n" x-show="vill.word" x-text="villWordCount('pending') + ' faltan'"></span></button>
+        📄 Importar <span class="vill-tab-n" x-show="vill.word" x-text="villWordCount('pending') + ' faltan del Word'"></span></button>
       <button :class="{active: vill.tab === 'packs'}" @click="villTab('packs')">
         🎼 Packs <span class="vill-tab-n" x-text="vill.packs.length || ''"></span></button>
     </div>
@@ -1716,8 +1716,80 @@
       </table>
     </div>
 
-    <!-- ───── 📄 Importar del Word ───── -->
+    <!-- ───── 📄 Importar: el Word de canciones nuevas o el PDF de 2008 ───── -->
     <div x-show="vill.tab === 'word'" x-cloak>
+      <div class="vill-src">
+        <button :class="{on: vill.importSrc === 'word'}" @click="villSetImportSrc('word')">📄 Word «Canciones nuevas» <span class="muted small">(19–66)</span></button>
+        <button :class="{on: vill.importSrc === 'pdf'}" @click="villSetImportSrc('pdf')">📕 Cantoral 2008 <span class="muted small">(PDF escaneado: 1–18 y más)</span></button>
+      </div>
+
+      <div x-show="vill.importSrc === 'pdf'" x-cloak>
+        <div class="filter-bar">
+          <select x-model="vill.pdfFilter">
+            <option value="pending" x-text="'⏳ Páginas con canciones que faltan (' + villPdfCount('pending') + ' canciones)'"></option>
+            <option value="elsewhere" x-text="'↪ Ya en el cantoral normal (' + villPdfCount('elsewhere') + ')'"></option>
+            <option value="imported" x-text="'✅ Importadas (' + villPdfCount('imported') + ')'"></option>
+            <option value="all">Todas las páginas</option>
+          </select>
+          <span class="muted small">Está escaneado (con acordes a mano en algunas): cada página se lee con Claude
+            en ✨ Añadir canción, que te deja elegir la canción si hay varias.</span>
+        </div>
+        <div class="vill-word">
+          <div class="vill-word-list">
+            <table class="songs"><tbody>
+              <template x-for="pg in villPdfPages()" :key="pg.page">
+                <tr :class="{'selected-row': vill.pdfPage === pg.page}" @click="vill.pdfPage = pg.page" style="cursor:pointer">
+                  <td class="muted" style="width:44px" x-text="'p. ' + pg.page"></td>
+                  <td>
+                    <template x-for="s in pg.songs" :key="s.title + (s.repeat ? '*' : '')">
+                      <div class="small" :class="{muted: s.repeat}">
+                        <span x-text="{pending: '⏳', imported: '✅', elsewhere: '↪', linked: '🔗'}[s.status]"></span>
+                        <span x-text="s.title"></span>
+                        <span class="muted" x-show="s.n != null" x-text="'· nº ' + s.n"></span>
+                      </div>
+                    </template>
+                  </td>
+                </tr>
+              </template>
+            </tbody></table>
+          </div>
+          <div class="vill-word-detail">
+            <template x-if="villPdfCurrent()">
+              <div>
+                <div class="vill-pdf-songs">
+                  <template x-for="s in villPdfCurrent().songs" :key="s.title + (s.repeat ? '*' : '')">
+                    <div class="vill-pdf-song">
+                      <span class="vill-pdf-num" x-text="s.n != null ? s.n : '·'"></span>
+                      <b x-text="s.title"></b>
+                      <span class="vill-sig" x-show="villSub(s.sub)" x-text="villSub(s.sub)?.short"
+                            :title="'Subcategoría sugerida: ' + (villSub(s.sub)?.title || '')"></span>
+                      <span class="small muted" x-show="s.repeat">(repetida en el PDF)</span>
+                      <span class="vill-pdf-actions">
+                        <template x-if="s.status === 'pending' && !s.repeat">
+                          <button class="btn-mini" @click="villRead2008(villPdfCurrent(), s)">✨ Leer con IA</button>
+                        </template>
+                        <template x-if="s.status === 'elsewhere'">
+                          <span class="small">↪ Ya en <a href="#" @click.prevent="openEditor(s.path)" x-text="s.category_title"></a>
+                            <button class="btn-mini" @click="villAlsoIn(s.path, 'navidad', s.sub)">↪ Traer a Navidad</button>
+                            <button class="btn-mini" title="Si la de 2008 es otra versión" @click="villRead2008(villPdfCurrent(), s)">✨ Leer igualmente</button></span>
+                        </template>
+                        <template x-if="['imported', 'linked'].includes(s.status)">
+                          <a class="small" href="#" @click.prevent="openEditor(s.path)" x-text="s.status === 'linked' ? '🔗 traída · abrir' : '✅ abrir'"></a>
+                        </template>
+                      </span>
+                    </div>
+                  </template>
+                  <p class="muted small" x-show="!villPdfCurrent().songs.length" x-text="villPdfCurrent().note || 'Sin canciones.'"></p>
+                </div>
+                <iframe class="vill-pdf-frame" :src="vill.tab === 'word' && vill.importSrc === 'pdf' ? '/api/villancicos/pdf/page/' + vill.pdfPage : 'about:blank'"
+                        title="Página del cantoral de 2008"></iframe>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div x-show="vill.importSrc === 'word'">
       <div class="filter-bar">
         <select x-model="vill.wordFilter">
           <option value="pending" x-text="'⏳ Faltan (' + villWordCount('pending') + ')'"></option>
@@ -1829,6 +1901,7 @@
             («Estrofa 1: Se añade bombo»), «Toda la canción: sim SOL RE LA», los <code>[CLAP]</code>…
             Detalles en <code>docs/VILLANCICOS_SOLIDARIOS.md</code>.</p>
         </div>
+      </div>
       </div>
     </div>
 

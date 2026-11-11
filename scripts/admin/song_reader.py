@@ -115,7 +115,11 @@ y en orden: una canción puede continuar de una a otra.
 medias arriba) NO se transcribe: pon en "ignored" su título o su primer verso y \
 por qué, en pocas palabras.
 - Fuera cabeceras y pies de página, números de página, sellos y anotaciones a \
-mano que no sean de la canción.
+mano que no sean de la canción. Los corchetes o rayas en el margen que agrupan \
+una canción tampoco son de la canción.
+- Los ACORDES escritos a mano encima de la letra SÍ son de la canción: \
+transcríbelos igual que los impresos. Si uno a mano corrige a uno impreso \
+(tachado o escrito encima), vale el de mano.
 - Si no hay ninguna canción legible, "songs" va vacía y "ignored" dice por qué.
 
 Cómo leer la página:
@@ -134,6 +138,14 @@ Si dudas entre dos sílabas, la acentuada.
 sin traducirlos; ya se traducen solos. Solo quita los espacios de dentro: \
 "Sol 7" → "Sol7", "La m" → "Lam". Guiones, barras o signos sueltos entre \
 acordes ("-", "|", "%") no son acordes: no los pongas.
+- En cantorales antiguos el menor va con un guion y el mayor con un más, \
+pegados a la nota: "la-", "mi-", "fa#-", "si-7", "Sol+", "Do+". Cópialos así, \
+con su signo: se entienden. Un "+7" suelto detrás de un acorde ("Sol +7", \
+"DO +7") es ese mismo acorde con séptima: escribe el acorde y luego el mismo \
+con 7 ("[Sol]… [Sol7]").
+- Un acorde entre paréntesis detrás de otro ("Do (Re)", "Sol7 (La7)") es la \
+alternativa en otro tono: pon solo el primero y apunta la alternativa en \
+"doubts".
 - Una línea de solo acordes (introducción, interludio) va como una línea \
 "[C][Em][Dm][G7]" en una sección "intro" o "instrumental". "INTRO: C Em Dm G7" \
 escrito en el texto es eso mismo.
@@ -153,8 +165,11 @@ más cercano a la mitad.
 - Sin numeración a mano ("1.", "2."): fuera.
 - Las marcas de repetición al final de un verso o de una estrofa ("(2)", \
 "(bis)", "x2") se quedan al final de esa línea, escritas "(x2)", "(x3)"…
-- Las notas que no se cantan ("se repite dos veces", "solista", "todos") van \
+- Las notas que no se cantan ("se repite dos veces", "solista", "todos", \
+"Acordes y arreglo moderno página B16", "(Final: Y EL MUNDO ES HOGAR)") van \
 como sección "note" con el texto en "label", no como letra.
+- Si la canción está en catalán, en inglés o en otro idioma, se transcribe en \
+ese idioma, sin traducir ni "corregir" sus palabras.
 
 Secciones, en el orden de la hoja:
 - "verse": estrofa. "chorus": estribillo, cada vez que aparece escrito (lo \
@@ -173,10 +188,11 @@ Datos:
 Belén").
 - "artist": solo si viene escrito (Autor:, Letra y música:, un nombre bajo el \
 título); si no, "".
-- "key": el tono, solo si viene escrito; si no, "".
+- "key": el tono, solo si viene escrito; también vale una nota sola junto al \
+título ("DIME NIÑO   DO C/4" → tono "Do", cejilla 4). Si no, "".
 - "capo": la cejilla si viene ("Cejilla 6º traste" → 6). En estos cantorales \
-"c/2" o "C/2" escrito a mano junto al título es cejilla 2 ("c/0" es 0). Si no \
-dice nada, -1.
+"c/2", "C/2", "c-3" o "(c-2)" junto al título (a mano o impreso) es cejilla \
+2, 3… ("c/0" es 0). Si no dice nada, -1.
 - "category": si te dan una lista de categorías, la letra de la que mejor \
 encaje por el momento de la misa o el tiempo litúrgico; si no está claro, "".
 - "doubts": lo que no hayas podido leer bien o hayas decidido sin estar \

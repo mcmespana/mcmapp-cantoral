@@ -80,13 +80,36 @@ igualmente.
 `python scripts/villancicos_docx.py list|show 19|extract --all` hace lo mismo
 desde la terminal (a `scripts/staging_villancicos/`, fuera de git).
 
-### 2.2 Cantoral de 2008 (solo PDF, las 1–18 y más) → ✨ Añadir canción
+### 2.2 Cantoral de 2008 (solo PDF, las 1–18 y más) → 📕 Cantoral 2008
 
 `scripts/villancicos/Cantoral Villancicos Solidarios 2008 - Actualizado.pdf`:
-escaneado, con acordes a mano encima de algunas, corchetes en el margen y
-notación antigua (`la-`, `Sol+`, `c-3`). Se lee con Claude desde
-**✨ Añadir canción → 📷 Foto o PDF** (ver §2.4 del README del admin y la
-sección 5 de abajo).
+escaneado (28 páginas), con acordes a mano encima de algunas, corchetes en el
+margen y notación antigua. No hace falta hacer capturas:
+**🎄 Villancicos → 📄 Importar → 📕 Cantoral 2008**.
+
+- A la izquierda, las páginas con sus canciones (índice hecho a mano en
+  `scripts/villancicos/cantoral-2008.json`: título, el número del listado del
+  Edificio Hucha cuando se sabe y una subcategoría sugerida) y si ya están:
+  ⏳ falta, ✅ importada, ↪ ya en el cantoral normal, 🔗 traída.
+- A la derecha, la página y, por canción, **✨ Leer con IA**: manda SOLO esa
+  página a ✨ Añadir canción, que la lee con Claude, elige sola la canción
+  pedida (una página trae 2-5) y pone la categoría Navidad y el número. Se
+  revisa como siempre (las 🔎 dudas de la lectura primero) y al crear queda con
+  `{fuente: Cantoral Villancicos Solidarios 2008 (p. 6)}` y su subcategoría.
+- Las que ya están en el cantoral normal (Alma misionera, Gratis, Himno del
+  COM, Surgirá un mundo nuevo… unas 12) ofrecen **↪ Traer a Navidad**.
+
+El lector (`scripts/admin/song_reader.py`) sabe de este cantoral: los acordes
+escritos **a mano** cuentan (y si corrigen uno impreso, manda el de mano), los
+corchetes del margen no son de la canción, `c/2` · `c-3` · `(c-2)` es la
+cejilla, «DIME NIÑO DO C/4» es tono Do y cejilla 4, «Acordes y arreglo moderno
+página B16» es una nota, y las canciones en catalán se quedan en catalán. La
+notación `la-` / `si-7` (menor), `Sol+` (mayor) y `SOL +7` se entiende también
+en ✨ al pegar texto.
+
+Cuesta una llamada a Claude por página leída (unas 28 en total). Si una página
+sale floja, se puede volver a leer, o hacer una captura más grande solo de esa
+canción y soltarla en ✨.
 
 ### 2.3 Canciones que ya están en el cantoral normal
 

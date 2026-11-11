@@ -14,6 +14,9 @@ cabecera de metadatos…). Va aparte para no engordar más server.py.
   GET  /api/villancicos/word/preview?id=  conversión + vista «como en el papel»
   POST /api/villancicos/word/import       {id, number, subcategory, content?}
   POST /api/villancicos/word/refresh      {url}: baja el Google Doc como .docx
+  GET  /api/villancicos/pdf/index         cantoral de 2008: canciones por página
+  GET  /api/villancicos/pdf/page/<n>      una página suelta del PDF
+  POST /api/villancicos/mark              {path, source, subcategory}
   GET  /api/packs                         packs resueltos
   PUT  /api/packs/<slug>                  guarda (y renombra con {oldSlug})
   DELETE /api/packs/<slug>
@@ -301,6 +304,93 @@ def register(app, srv) -> None:  # noqa: C901 — un sitio para todas las rutas
         target.parent.mkdir(exist_ok=True)
         target.write_bytes(data)
         return jsonify({"ok": True, "songs": len(vd.load_songs())})
+
+    # ─────────── El cantoral de 2008 (PDF escaneado) ─────────── #
+    #
+    # No se convierte solo: cada página se lee con Claude en ✨ Añadir canción.
+    # Aquí está el índice (scripts/villancicos/cantoral-2008.json, hecho a mano)
+    # con el estado de cada canción, y cada página como un PDF suelto para
+    # mandarla al lector sin las otras 27.
+
+    PDF_INDEX = vd.VILLANCICOS_DIR / "cantoral-2008.json"
+    pdf_cache: Dict[int, bytes] = {}
+
+    def pdf_path() -> Path:
+        import json
+        data = json.loads(PDF_INDEX.read_text(encoding="utf-8"))
+        return vd.VILLANCICOS_DIR / data["file"]
+
+    @app.route("/api/villancicos/pdf/index")
+    def pdf_index():
+        import json
+        if not PDF_INDEX.exists():
+            return jsonify({"available": False, "pages": []})
+        data = json.loads(PDF_INDEX.read_text(encoding="utf-8"))
+        rows = rows_with_keys()
+        index = pk.SongIndex(rows)
+        by_page: Dict[int, List[dict]] = {}
+        for r in rows:
+            if r["category_key"] != NAVIDAD:
+                continue
+            src = srv.parse_cho_metadata((srv.REPO_DIR / r["path"]).read_text(encoding="utf-8")).get("source") or ""
+            m = re.search(r"2008.*\(p\.\s*(\d+)\)", src)
+            if m:
+                by_page.setdefault(int(m.group(1)), []).append(r)
+        pages = []
+        for pg in data["pages"]:
+            songs = []
+            for song in pg["songs"]:
+                out = dict(song)
+                cand = next((r for r in by_page.get(pg["page"], [])
+                             if pk.title_key(r["title"]) == pk.title_key(song["title"])), None)
+                status = "imported" if cand else ""
+                if cand is None:
+                    cand, st = index.find(None, song["title"])
+                    if cand is not None:
+                        status = ("imported" if cand["category_key"] == NAVIDAD else
+                                  "linked" if st == "by_title" else "elsewhere")
+                out["status"] = status or "pending"
+                if cand is not None:
+                    out.update(path=cand["path"], category_title=cand["category_title"])
+                songs.append(out)
+            pages.append(dict(pg, songs=songs))
+        return jsonify({"available": pdf_path().exists(), "file": data["file"], "pages": pages})
+
+    @app.route("/api/villancicos/pdf/page/<int:n>")
+    def pdf_page(n):
+        from flask import Response
+        if n not in pdf_cache:
+            try:
+                from pypdf import PdfReader, PdfWriter
+            except ImportError:
+                abort(500, "Falta el paquete «pypdf» en el servidor (requirements.txt del admin): "
+                           "pip install pypdf, o reconstruir la imagen de Docker.")
+            reader = PdfReader(str(pdf_path()))
+            if not 1 <= n <= len(reader.pages):
+                abort(404, "Esa página no existe")
+            w = PdfWriter()
+            w.add_page(reader.pages[n - 1])
+            import io
+            buf = io.BytesIO()
+            w.write(buf)
+            pdf_cache[n] = buf.getvalue()
+        return Response(pdf_cache[n], mimetype="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="cantoral-2008-p{n}.pdf"'})
+
+    @app.route("/api/villancicos/mark", methods=["POST"])
+    def vill_mark():
+        """Tras crear con ✨ una canción del cantoral de 2008: su fuente (con la
+        página, para saber que ya está) y su subcategoría."""
+        body = request.get_json(silent=True) or {}
+        p = srv.safe_relpath(body.get("path") or "")
+        if not p.exists():
+            abort(404, "No existe")
+        changes = {}
+        if body.get("source"):
+            changes["source"] = srv._sanitize_directive_value(body["source"])
+        if "subcategory" in body:
+            changes["subcategory"] = cp.slugify_tag(body.get("subcategory") or "")
+        return jsonify({"ok": True, "changed": write_meta(p, **changes) if changes else False})
 
     # ─────────── Packs ─────────── #
 

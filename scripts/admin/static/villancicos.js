@@ -61,6 +61,11 @@ function villancicosMixin() {
       wordView: 'app',
       wordBusy: false,
       wordUrl: (() => { try { return localStorage.getItem('vill.docUrl') || ''; } catch (e) { return ''; } })(),
+      // Cantoral de 2008 (PDF escaneado): se lee página a página con ✨
+      importSrc: 'word',       // word | pdf
+      pdf: null,               // /api/villancicos/pdf/index
+      pdfPage: null,
+      pdfFilter: 'pending',
       // Packs
       packs: [],
       packSlug: null,          // slug guardado del pack abierto (null = nuevo)
@@ -86,7 +91,8 @@ function villancicosMixin() {
       if (this.vill.tab === 'packs' && tab !== 'packs' && this.vill.packDirty &&
           !confirm('El pack tiene cambios sin guardar. ¿Salir igualmente?')) return;
       this.vill.tab = tab;
-      if (tab === 'word' && !this.vill.word) this.villLoadWord();
+      if (tab === 'word' && this.vill.importSrc === 'word' && !this.vill.word) this.villLoadWord();
+      if (tab === 'word' && this.vill.importSrc === 'pdf' && !this.vill.pdf) this.villLoadPdf();
       if (tab === 'packs' && !this.vill.packs.length) this.villLoadPacks();
     },
     async villLoad() {
@@ -168,6 +174,7 @@ function villancicosMixin() {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status);
         await this.villLoad();
         if (this.vill.word) this.villLoadWord(true);
+        if (this.vill.pdf) this.villLoadPdf();
         this.loadGitStatus && this.loadGitStatus(true);
         return true;
       } catch (e) { alert('No se pudo: ' + e.message); return false; }
@@ -296,6 +303,77 @@ function villancicosMixin() {
       } finally {
         this.vill.wordBusy = false;
       }
+    },
+
+    // ─────────── 📕 Cantoral 2008 (PDF) ─────────── #
+    async villLoadPdf() {
+      try {
+        const r = await fetch('/api/villancicos/pdf/index');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.vill.pdf = await r.json();
+        if (this.vill.pdfPage === null) {
+          const first = this.vill.pdf.pages.find(pg => pg.songs.some(s => s.status === 'pending'));
+          this.vill.pdfPage = first ? first.page : 2;
+        }
+      } catch (e) { alert('No pude leer el índice del cantoral de 2008: ' + e.message); }
+    },
+    villSetImportSrc(src) {
+      this.vill.importSrc = src;
+      if (src === 'pdf' && !this.vill.pdf) this.villLoadPdf();
+      if (src === 'word' && !this.vill.word) this.villLoadWord();
+    },
+    villPdfPages() {
+      const f = this.vill.pdfFilter;
+      return (this.vill.pdf?.pages || []).filter(pg => pg.songs.length &&
+        (f === 'all' || pg.songs.some(s => s.status === f || (f === 'elsewhere' && s.status === 'linked'))));
+    },
+    villPdfCurrent() { return (this.vill.pdf?.pages || []).find(pg => pg.page === this.vill.pdfPage) || null; },
+    villPdfCount(status) {
+      return (this.vill.pdf?.pages || []).flatMap(pg => pg.songs)
+        .filter(s => !s.repeat && (s.status === status || (status === 'elsewhere' && s.status === 'linked'))).length;
+    },
+    // Manda la página a ✨ Añadir canción, que la lee con Claude (como una foto).
+    async villRead2008(pg, song) {
+      if (!this.aiStatus?.enabled) { alert(this.aiMissingText ? this.aiMissingText() : 'La IA no está activada (⚙️ Ajustes).'); return; }
+      let blob;
+      try {
+        const r = await fetch('/api/villancicos/pdf/page/' + pg.page);
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status);
+        blob = await r.blob();
+      } catch (e) { alert('No pude sacar la página: ' + e.message); return; }
+      this.openAddSong();
+      this.addSong.category = this.vill.data?.category.letter || 'N';
+      await this.readAddSongFiles([new File([blob], `cantoral-2008-p${pg.page}.pdf`, { type: 'application/pdf' })]);
+      // Una página trae varias: se elige la que se pidió.
+      const want = villNorm(song.title).replace(/\([^)]*\)|[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+      const songs = this.addSong.read?.songs || [];
+      const idx = songs.findIndex(s => {
+        const t = villNorm(s.title).replace(/\([^)]*\)|[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+        return t && (t.includes(want) || want.includes(t));
+      });
+      if (idx > 0) this.pickReadSong(idx);
+      if (song.n !== undefined && song.n !== null && song.n > 0) this.addSong.number = song.n;
+    },
+    // Tras crear con ✨ una canción leída de una página del cantoral de 2008:
+    // su {fuente:} con la página (así se sabe que ya está) y la subcategoría.
+    async villAfterAddSong(path, a) {
+      const m = /^cantoral-2008-p(\d+)\.pdf$/.exec(a?.photos?.[0]?.name || '');
+      if (!m) return;
+      const page = Number(m[1]);
+      if (!this.vill.pdf) await this.villLoadPdf();
+      const pg = (this.vill.pdf?.pages || []).find(x => x.page === page);
+      const t = villNorm(a.title || '');
+      const hit = pg?.songs.find(s => villNorm(s.title).includes(t) || t.includes(villNorm(s.title))) || null;
+      try {
+        await fetch('/api/villancicos/mark', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, source: `Cantoral Villancicos Solidarios 2008 (p. ${page})`,
+                                 subcategory: hit?.sub || '' }),
+        });
+      } catch (e) { /* no es grave: se pone a mano */ }
+      this.vill.pdf = null;
+      this.villLoadPdf();
+      this.villLoad();
     },
 
     // ─────────── 🎼 Packs ─────────── #

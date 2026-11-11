@@ -4085,6 +4085,8 @@ function appBase() {
           throw new Error(err.error || ('HTTP ' + r.status));
         }
         const { path } = await r.json();
+        // Leída de una página del cantoral de 2008 (🎄 Villancicos): fuente y subcategoría.
+        if (typeof this.villAfterAddSong === 'function') await this.villAfterAddSong(path, a);
         // Si en la foto había más canciones, quedan a mano para la siguiente
         // vez que se abra ✨ (sin volver a leerla). Una hora, por si acaso.
         const left = (a.read?.songs || []).filter((_, i) => i !== a.read.idx);
