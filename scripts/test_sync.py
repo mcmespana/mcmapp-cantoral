@@ -285,6 +285,69 @@ def test_media_changed_tags():
     assert sync.media_changed({"tagsOld": ["a"], "tagsNew": ["a"]}) is False
 
 
+# ── subcategorías, «también en» y duración (§5 de CAMPOS_CANCIONES) ─────────────
+CHO_NAVIDAD = (
+    "{title: Somos Consolación}\n"
+    "{subcategoria: Otras}\n"
+    "{duracion: 3'30}\n"
+    "{tambien_en: navidad/otras, Himnos}\n"
+    "\n"
+    "[C]Letra\n"
+)
+
+def test_parse_subcategory_duration_also_in():
+    m = cp.parse_media(CHO_NAVIDAD)
+    assert m["subcategory"] == "otras"          # slug
+    assert m["duration"] == "3:30"              # normalizada a m:ss
+    assert m["alsoIn"] == [{"category": "navidad", "subcategory": "otras"},
+                           {"category": "himnos"}]
+
+def test_strip_media_quita_las_nuevas():
+    stripped = cp.strip_media(CHO_NAVIDAD)
+    assert "{subcategoria" not in stripped and "{duracion" not in stripped
+    assert "{tambien_en" not in stripped and "[C]Letra" in stripped
+
+def test_also_in_ultima_subcategoria_manda():
+    assert cp.normalize_also_in("navidad/otras, navidad/actuales") == [
+        {"category": "navidad", "subcategory": "actuales"}]
+    assert cp.format_also_in([{"category": "navidad", "subcategory": "otras"},
+                              {"category": "himnos"}]) == "navidad/otras, himnos"
+    assert cp.parse_also_in("") == [] and cp.format_also_in([]) == ""
+
+def test_parse_duration():
+    for raw, secs in [("3:30", 210), ("3'30", 210), ("3m30s", 210), ("3 min", 180),
+                      ("210", 210), ("4'05\"", 245), ("abc", 0), ("3:75", 0), ("", 0)]:
+        assert cp.parse_duration(raw) == secs, raw
+    assert cp.format_duration(210) == "3:30" and cp.format_duration(0) == ""
+
+def test_load_subcategories():
+    indice = {
+        "entrada": {"categoryTitle": "A. Entrada"},
+        "navidad": {"categoryTitle": "N. Navidad", "subcategories": {
+            "Clásicos": {"title": "Villancicos clásicos", "short": "VC", "order": 2},
+            "otras": "Otras canciones"}},
+    }
+    subs = cp.load_subcategories(indice)
+    assert list(subs) == ["navidad"]            # sin subcategorías no sale
+    assert subs["navidad"]["clasicos"] == {"title": "Villancicos clásicos", "short": "VC",
+                                           "order": 2}
+    assert subs["navidad"]["otras"]["title"] == "Otras canciones"
+
+def test_sync_subcategoria_y_tambien_en():
+    original = CHO_NAVIDAD
+    # sin *New se conserva
+    media = sync.resolve_media({}, original)
+    assert media["subcategory"] == "otras" and media["alsoIn"][0]["category"] == "navidad"
+    # la app cambia la subcategoría y quita el «también en»
+    media = sync.resolve_media({"subcategoryNew": "clasicos", "alsoInNew": []}, original)
+    assert media["subcategory"] == "clasicos" and media["alsoIn"] == []
+    lines = sync.build_media_lines({"subcategory": "clasicos", "duration": "3:30",
+                                    "alsoIn": [{"category": "navidad", "subcategory": "otras"}]})
+    assert "{subcategoria: clasicos}" in lines and "{duracion: 3:30}" in lines
+    assert "{tambien_en: navidad/otras}" in lines
+    assert sync.media_changed({"alsoInOld": [], "alsoInNew": [{"category": "navidad"}]}) is True
+
+
 
 # ── runner sin pytest ───────────────────────────────────────────────────────────
 def _run():

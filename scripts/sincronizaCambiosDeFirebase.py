@@ -119,6 +119,10 @@ def resolve_media(edition: dict, original_text: str) -> dict:
         nk = f"{field}New"
         if nk in edition:
             media[field] = cp.normalize_tags(edition[nk])
+    for field in cp.ALSO_IN_FIELDS:
+        nk = f"{field}New"
+        if nk in edition:
+            media[field] = cp.normalize_also_in(edition[nk] or [])
     return media
 
 def build_media_lines(media: dict) -> list:
@@ -139,6 +143,9 @@ def build_media_lines(media: dict) -> list:
     tags = cp.format_tags(media.get("tags") or [])
     if tags:
         lines.append(f"{{tags: {tags}}}")
+    also_in = cp.format_also_in(media.get("alsoIn") or [])
+    if also_in:
+        lines.append(f"{{tambien_en: {also_in}}}")
     comment = media.get("comment")
     if isinstance(comment, str) and comment.strip():
         lines.append(f"{{comentario: {comment.strip()}}}")
@@ -162,7 +169,8 @@ def inject_media(body: str, media: dict) -> str:
 
 def media_changed(edition: dict) -> bool:
     """¿La edición trae algún cambio multimedia?"""
-    for field in list(cp.SCALAR_FIELDS) + list(cp.LIST_FIELDS) + list(cp.TAG_FIELDS):
+    for field in (list(cp.SCALAR_FIELDS) + list(cp.LIST_FIELDS) + list(cp.TAG_FIELDS)
+                  + list(cp.ALSO_IN_FIELDS)):
         nk = f"{field}New"
         if nk in edition and edition.get(nk) != edition.get(f"{field}Old"):
             return True

@@ -63,6 +63,12 @@ def main():
     tag_aliases = cp.catalog_aliases(tag_catalog)
     tag_counts = {}
 
+    # Subcategorías declaradas en indice.json ({categoria: {slug: {...}}}) y
+    # los avisos de las que no cuadran (se avisa, no se rompe nada).
+    subcats = cp.load_subcategories(indice)
+    sub_warnings = []
+    also_in_seen = []  # (categoría destino, subcategoría, fichero) para validar al final
+
     result = {}  # Diccionario final que se volcará a JSON
 
     # Mapea carpetas como "A"->"A. Entrada"
@@ -126,6 +132,18 @@ def main():
             if extra['driveLinks']:     entry['driveLinks'] = extra['driveLinks']
             if extra['otherLinks']:     entry['otherLinks'] = extra['otherLinks']
             if extra['comment']:        entry['comment'] = extra['comment']
+            if extra['duration']:       entry['duration'] = extra['duration']
+            if extra['subcategory']:
+                entry['subcategory'] = extra['subcategory']
+                if extra['subcategory'] not in subcats.get(cat_key, {}):
+                    sub_warnings.append(
+                        f"{folder}/{fname}: subcategoría '{extra['subcategory']}' "
+                        f"no declarada en '{cat_key}'")
+            if extra['alsoIn']:
+                entry['alsoIn'] = extra['alsoIn']
+                for ref in extra['alsoIn']:
+                    also_in_seen.append((ref['category'], ref.get('subcategory'),
+                                         f"{folder}/{fname}"))
             tags = cp.normalize_tags(extra['tags'], tag_aliases)
             if tags:
                 entry['tags'] = tags
@@ -139,10 +157,41 @@ def main():
             'categoryTitle': cat_info['categoryTitle'],
             'songs': songs
         }
+        if subcats.get(cat_key):
+            # Mapa por slug (como songs/tags): Firebase se lleva mejor con
+            # objetos que con arrays. El orden va en `order`.
+            result[cat_key]['subcategories'] = subcats[cat_key]
 
     # Escribe el JSON final
     with open(new_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
+
+    # «También en» que apunta a una categoría o subcategoría que no existe:
+    # la canción no aparecería en ningún sitio nuevo. Mejor saberlo ya.
+    for cat, sub, where in also_in_seen:
+        if cat not in indice:
+            sub_warnings.append(f"{where}: {{tambien_en}} a la categoría '{cat}', que no existe")
+        elif sub and sub not in subcats.get(cat, {}):
+            sub_warnings.append(f"{where}: {{tambien_en}} a '{cat}/{sub}', subcategoría no declarada")
+    if subcats:
+        for cat_key, subs in subcats.items():
+            counts = {}
+            for song in (result.get(cat_key) or {}).get('songs', []):
+                counts[song.get('subcategory') or ''] = counts.get(song.get('subcategory') or '', 0) + 1
+            for cat, sub, _ in also_in_seen:
+                if cat == cat_key:
+                    counts[sub or ''] = counts.get(sub or '', 0) + 1
+            if not counts:
+                continue
+            print(f"\n🗂  Subcategorías de '{cat_key}':")
+            for slug, info in sorted(subs.items(), key=lambda kv: kv[1].get('order', 99)):
+                print(f"   {info.get('short', ''):>3} {info['title']:<28} {counts.get(slug, 0):>3}")
+            if counts.get(''):
+                print(f"       {'(sin subcategoría)':<28} {counts['']:>3}")
+    if sub_warnings:
+        print("\n⚠️  Subcategorías / «también en» a revisar:")
+        for w in sub_warnings:
+            print(f"   - {w}")
 
     # Aviso de higiene del vocabulario: el momento barato de cazar un typo es
     # cuando la etiqueta aparece por primera vez, antes de que se consolide.
