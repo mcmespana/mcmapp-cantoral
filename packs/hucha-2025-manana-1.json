@@ -1,0 +1,174 @@
+{
+  "title": "Mañana 1",
+  "event": "Villancicos Solidarios 2025 · Edificio Hucha",
+  "targetMinutes": 60,
+  "items": [
+    {
+      "song": null,
+      "title": "Himno Edificio Hucha",
+      "key": "Am",
+      "capo": 1,
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "Feliz Navidad",
+      "key": "G",
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "Dime Niño",
+      "key": "C",
+      "capo": 7,
+      "notes": "= SOL",
+      "page": "A1"
+    },
+    {
+      "song": null,
+      "title": "Tarantán",
+      "key": "C",
+      "capo": 2,
+      "page": "B16"
+    },
+    {
+      "song": null,
+      "title": "Mi Navidad",
+      "key": "C",
+      "capo": 2,
+      "notes": "o 4",
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "La Luz que nace en ti",
+      "key": "G",
+      "capo": 2,
+      "page": "B25"
+    },
+    {
+      "song": null,
+      "title": "Burrito Sabanero",
+      "key": "C",
+      "capo": 2,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Noche de Paz",
+      "key": "D",
+      "capo": 3,
+      "page": "B28"
+    },
+    {
+      "song": null,
+      "title": "Celébrate",
+      "key": "G",
+      "capo": 2,
+      "page": "B30"
+    },
+    {
+      "song": null,
+      "title": "Ande la Marimorena",
+      "key": "G",
+      "capo": 3,
+      "page": "A7"
+    },
+    {
+      "song": null,
+      "title": "All I Want For Christmas",
+      "key": "C",
+      "capo": 3,
+      "page": "B23"
+    },
+    {
+      "song": null,
+      "title": "Superestrella",
+      "key": "D",
+      "capo": 2,
+      "page": "B39"
+    },
+    {
+      "song": null,
+      "title": "Veré la estrella (MN)",
+      "key": "G",
+      "capo": 4,
+      "page": "B17"
+    },
+    {
+      "song": null,
+      "title": "Ya es Navidad",
+      "key": "C",
+      "capo": 3,
+      "page": "B32"
+    },
+    {
+      "song": null,
+      "title": "Niño Lindo",
+      "key": "Am",
+      "capo": 2,
+      "page": "A14"
+    },
+    {
+      "song": null,
+      "title": "El principio de la Navidad",
+      "key": "C",
+      "capo": 2,
+      "page": "B38"
+    },
+    {
+      "song": null,
+      "title": "Venid Fieles Todos",
+      "key": "C",
+      "capo": 2,
+      "page": "B28"
+    },
+    {
+      "song": null,
+      "title": "Buena Energía",
+      "key": "Bm",
+      "capo": 1,
+      "page": "B17"
+    },
+    {
+      "song": null,
+      "title": "Hallelujah",
+      "key": "G",
+      "page": "B16"
+    },
+    {
+      "song": null,
+      "title": "Ilusión, Navidad",
+      "key": "C",
+      "capo": 3,
+      "page": "A3"
+    },
+    {
+      "song": null,
+      "title": "Ay del Chiquirritín",
+      "key": "C",
+      "capo": 2,
+      "page": "A3"
+    },
+    {
+      "song": null,
+      "title": "Oh Happy Day",
+      "key": "C",
+      "capo": 2,
+      "page": "B16"
+    },
+    {
+      "song": null,
+      "title": "Himno Edificio Hucha",
+      "key": "Am",
+      "capo": 1,
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "Feliz Navidad",
+      "key": "G",
+      "page": "A0"
+    }
+  ]
+}

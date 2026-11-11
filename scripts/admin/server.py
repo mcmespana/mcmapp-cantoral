@@ -2897,6 +2897,12 @@ def api_health():
     })
 
 
+# 🎄 Villancicos Solidarios: subcategorías de Navidad, «también en», importar
+# del Word de villancicos y packs. Va en su propio módulo (ver su docstring).
+import villancicos_api  # noqa: E402
+villancicos_api.register(app, sys.modules[__name__])
+
+
 def _prewarm() -> None:
     """Prepara en segundo plano las cachés caras antes del primer request.
 

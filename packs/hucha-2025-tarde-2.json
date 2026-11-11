@@ -1,0 +1,173 @@
+{
+  "title": "Tarde 2",
+  "event": "Villancicos Solidarios 2025 · Edificio Hucha",
+  "targetMinutes": 60,
+  "items": [
+    {
+      "song": null,
+      "title": "Himno Edificio Hucha",
+      "key": "Am",
+      "capo": 1,
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "Feliz Navidad",
+      "key": "G",
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "All I Want For Christmas",
+      "key": "C",
+      "capo": 3,
+      "page": "B23"
+    },
+    {
+      "song": null,
+      "title": "Ande la Marimorena",
+      "key": "G",
+      "capo": 3,
+      "page": "A7"
+    },
+    {
+      "song": null,
+      "title": "Bella noche sin sueño",
+      "key": "D",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Celébrate",
+      "key": "G",
+      "capo": 2,
+      "page": "B30"
+    },
+    {
+      "song": null,
+      "title": "Ya es Navidad",
+      "key": "C",
+      "capo": 3,
+      "page": "B32"
+    },
+    {
+      "song": null,
+      "title": "Campana sobre Campana",
+      "key": "C",
+      "capo": 1,
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "Soñaré",
+      "key": "G",
+      "capo": 4,
+      "page": "B22"
+    },
+    {
+      "song": null,
+      "title": "Tarantán",
+      "key": "C",
+      "capo": 2,
+      "page": "B16"
+    },
+    {
+      "song": null,
+      "title": "Navidad, es Navidad",
+      "key": "C",
+      "page": "A11"
+    },
+    {
+      "song": null,
+      "title": "Nochenochebuena",
+      "notes": "LA-RE C/4",
+      "page": "B34"
+    },
+    {
+      "song": null,
+      "title": "En Navidad (Rosana)",
+      "key": "C",
+      "capo": 2,
+      "page": "A13"
+    },
+    {
+      "song": null,
+      "title": "Está Nevando",
+      "key": "Em",
+      "page": "A8"
+    },
+    {
+      "song": null,
+      "title": "Podemos Vencer",
+      "key": "D",
+      "capo": 1,
+      "page": "B40"
+    },
+    {
+      "song": null,
+      "title": "Hoy ha nacido",
+      "key": "D",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "El Tamborilero",
+      "key": "C",
+      "capo": 2,
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "El principio de la Navidad",
+      "key": "C",
+      "capo": 2,
+      "page": "B38"
+    },
+    {
+      "song": null,
+      "title": "Dime Niño",
+      "key": "C",
+      "capo": 7,
+      "notes": "= SOL",
+      "page": "A1"
+    },
+    {
+      "song": null,
+      "title": "Mi Navidad",
+      "key": "C",
+      "capo": 2,
+      "notes": "o 4",
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "Sigue tu Estrella",
+      "key": "C",
+      "capo": 2,
+      "page": "B27"
+    },
+    {
+      "song": null,
+      "title": "Ya es Navidad",
+      "key": "C",
+      "capo": 3,
+      "page": "B32"
+    },
+    {
+      "song": null,
+      "title": "Oh Happy Day",
+      "key": "C",
+      "capo": 2,
+      "page": "B16"
+    },
+    {
+      "song": null,
+      "title": "La Luz que nace en ti",
+      "key": "G",
+      "capo": 2,
+      "page": "B25"
+    }
+  ]
+}

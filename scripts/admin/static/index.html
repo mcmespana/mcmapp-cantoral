@@ -26,6 +26,7 @@
     <a :class="{active: view === 'dashboard'}" @click.prevent="view = 'dashboard'" href="#">📊 Dashboard</a>
     <a class="nav-add" @click.prevent="openAddSong()" href="#">✨ Añadir canción</a>
     <a :class="{active: view === 'catalog'}" @click.prevent="view = 'catalog'; categoryFilter = ''" href="#">📋 Catálogo</a>
+    <a :class="{active: view === 'villancicos'}" @click.prevent="goVillancicos()" href="#">🎄 Villancicos</a>
     <a :class="{active: view === 'import'}" @click.prevent="view = 'import'" href="#">📥 Importar del cantoral</a>
     <a :class="{active: view === 'doce'}" @click.prevent="view = 'doce'; loadDoce()" href="#">🎸 Importar de doceacordes</a>
     <a :class="{active: view === 'tags'}" @click.prevent="goTags(null)" href="#">🏷 Etiquetas</a>
@@ -1557,6 +1558,419 @@
     </div>
   </section>
 
+  <!-- 🎄 VILLANCICOS SOLIDARIOS (static/villancicos.js · villancicos_api.py) -->
+  <section x-show="view === 'villancicos'" x-cloak class="vill">
+    <h1>🎄 Villancicos Solidarios</h1>
+    <p class="muted">
+      Todo lo de Navidad en un sitio: las canciones de la categoría <strong>N. Navidad</strong>
+      ordenadas por subcategoría, las que se <strong>traen</strong> del cantoral normal (siguen
+      en su categoría y salen también aquí, sin duplicarse), el <strong>Word</strong> de canciones
+      nuevas para importarlo una a una, y los <strong>packs</strong> de una hora.
+    </p>
+
+    <div class="vill-tabs">
+      <button :class="{active: vill.tab === 'songs'}" @click="villTab('songs')">
+        🎶 Canciones <span class="vill-tab-n" x-text="vill.data ? vill.data.songs.length : ''"></span></button>
+      <button :class="{active: vill.tab === 'word'}" @click="villTab('word')">
+        📄 Importar del Word <span class="vill-tab-n" x-show="vill.word" x-text="villWordCount('pending') + ' faltan'"></span></button>
+      <button :class="{active: vill.tab === 'packs'}" @click="villTab('packs')">
+        🎼 Packs <span class="vill-tab-n" x-text="vill.packs.length || ''"></span></button>
+    </div>
+
+    <!-- ───── 🎶 Canciones ───── -->
+    <div x-show="vill.tab === 'songs'">
+      <div class="vill-chips" x-show="vill.data">
+        <button class="vill-chip" :class="{on: vill.subFilter === null}" @click="vill.subFilter = null">
+          Todas <b x-text="vill.data?.songs.length"></b></button>
+        <template x-for="s in villSubs()" :key="s.slug">
+          <button class="vill-chip" :class="{on: vill.subFilter === s.slug}" @click="vill.subFilter = s.slug"
+                  :title="s.description || ''">
+            <span x-text="s.emoji"></span> <span class="vill-sig" x-text="s.short"></span>
+            <span x-text="s.title"></span> <b x-text="villCount(s.slug)"></b></button>
+        </template>
+        <button class="vill-chip" :class="{on: vill.subFilter === ''}" @click="vill.subFilter = ''"
+                x-show="villCount('')">❔ Sin clasificar <b x-text="villCount('')"></b></button>
+      </div>
+
+      <div class="filter-bar">
+        <input type="search" x-model="vill.search" placeholder="Buscar en Navidad…" />
+        <button @click="vill.bring.open = !vill.bring.open"
+                x-text="vill.bring.open ? '✕ Cerrar' : '➕ Traer del cantoral normal'"></button>
+        <button @click="villLoad()" :disabled="vill.loading">↻</button>
+        <span class="count" x-text="villFiltered().length + ' canciones'"></span>
+      </div>
+
+      <div class="vill-bring" x-show="vill.bring.open" x-cloak>
+        <div class="row-inline">
+          <input type="search" x-model="vill.bring.search" placeholder="Busca una canción de cualquier otra categoría…" />
+          <label class="muted small">a</label>
+          <select x-model="vill.bring.sub">
+            <template x-for="s in villSubs()" :key="s.slug"><option :value="s.slug" x-text="s.title" :selected="s.slug === vill.bring.sub"></option></template>
+            <option value="">Sin subcategoría</option>
+          </select>
+        </div>
+        <p class="muted small">La canción no se mueve: sigue en su categoría y en Navidad aparece también
+          (<code>{tambien_en: navidad/…}</code>). Se quita igual de fácil.</p>
+        <table class="songs" x-show="villBringResults().length">
+          <tbody>
+            <template x-for="s in villBringResults()" :key="s.path">
+              <tr>
+                <td><span x-text="s.title"></span> <span class="muted small" x-text="s.artist"></span></td>
+                <td class="muted small" x-text="s.category_title"></td>
+                <td style="width:90px"><button class="btn-mini" @click="villAlsoIn(s.path, 'navidad', vill.bring.sub)">↪ Traer</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="vill-bulk" x-show="vill.selected.length" x-cloak>
+        <span x-text="vill.selected.length + ' marcadas'"></span>
+        <select x-model="vill.bulkSub">
+          <template x-for="s in villSubs()" :key="s.slug"><option :value="s.slug" x-text="s.title" :selected="s.slug === vill.bulkSub"></option></template>
+          <option value="">Sin subcategoría</option>
+        </select>
+        <button class="btn-mini" @click="villApplyBulk()">Poner subcategoría</button>
+        <button class="link-mini" @click="vill.selected = []">✕ Quitar marcas</button>
+      </div>
+
+      <div class="tags-empty" x-show="vill.data && !vill.data.songs.length">
+        <p style="font-size:15px">Todavía no hay canciones de Navidad.</p>
+        <p>Empieza por <a href="#" @click.prevent="villTab('word')">📄 Importar del Word</a>, o trae
+          alguna del cantoral normal con <strong>➕ Traer del cantoral normal</strong>.</p>
+      </div>
+
+      <table class="songs vill-table" x-show="vill.data && vill.data.songs.length">
+        <thead><tr>
+          <th style="width:26px"></th><th style="width:40px">Nº</th><th>Canción</th>
+          <th style="width:80px">Tono</th><th style="width:56px">Dura</th>
+          <th style="width:170px">Subcategoría</th><th style="width:210px">Dónde vive</th>
+        </tr></thead>
+        <tbody>
+          <template x-for="row in villRows()" :key="row.key">
+            <tr :class="row.head ? 'vill-group' : ''">
+              <template x-if="row.head">
+                <td colspan="7"><span x-text="row.label"></span> <span class="muted small" x-text="'· ' + row.n"></span></td>
+              </template>
+              <template x-if="!row.head">
+                <td><input type="checkbox" :checked="vill.selected.includes(row.s.path)" @change="villToggle(row.s.path)"></td>
+              </template>
+              <template x-if="!row.head">
+                <td class="muted" x-text="row.s.home ? (row.s.number ?? '') : '↗'"></td>
+              </template>
+              <template x-if="!row.head">
+                <td>
+                  <a href="#" @click.prevent="openEditor(row.s.path)" x-text="row.s.title"></a>
+                  <span class="badge todo" x-show="row.s.has_todo" title="Pendiente de revisar">📝</span>
+                  <div class="muted small" x-text="row.s.artist"></div>
+                </td>
+              </template>
+              <template x-if="!row.head">
+                <td class="small"><span x-text="row.s.key"></span><span x-show="row.s.capo" x-text="' · C/' + row.s.capo"></span></td>
+              </template>
+              <template x-if="!row.head">
+                <td class="small muted" x-text="row.s.duration || '—'"></td>
+              </template>
+              <template x-if="!row.head">
+                <td>
+                  <select class="vill-sub-select" :value="row.s.subcategory"
+                          @change="villSetSub([row.s.path], $event.target.value)">
+                    <template x-for="s in villSubs()" :key="s.slug">
+                      <option :value="s.slug" x-text="(s.emoji ? s.emoji + ' ' : '') + s.title" :selected="s.slug === row.s.subcategory"></option>
+                    </template>
+                    <option value="" :selected="!row.s.subcategory">❔ Sin clasificar</option>
+                  </select>
+                </td>
+              </template>
+              <template x-if="!row.head">
+                <td class="small">
+                  <template x-if="row.s.home">
+                    <div>
+                      <span>🎄 Navidad</span>
+                      <template x-for="a in row.s.alsoIn" :key="a.category">
+                        <span class="vill-also">↪ <span x-text="villCategoryTitle(a.category)"></span>
+                          <button class="link-mini" title="Quitar de esa categoría"
+                                  @click="villAlsoIn(row.s.path, a.category, '', true)">✕</button></span>
+                      </template>
+                      <select class="vill-send" x-model="vill.sendTo[row.s.path]"
+                              @change="$event.target.value && villAlsoIn(row.s.path, $event.target.value, '').then(() => vill.sendTo[row.s.path] = '')">
+                        <option value="">＋ también en…</option>
+                        <template x-for="c in villOtherCategories()" :key="c.letter">
+                          <option :value="c.indice_key" x-text="c.title"></option>
+                        </template>
+                      </select>
+                    </div>
+                  </template>
+                  <template x-if="!row.s.home">
+                    <div>
+                      <span x-text="'↗ ' + row.s.category_title.replace(/^[A-Z+\d]+\.\s*/, '')"></span>
+                      <button class="btn-mini" title="Deja de salir en Navidad (la canción no se toca)"
+                              @click="villAlsoIn(row.s.path, 'navidad', '', true)">Quitar de Navidad</button>
+                    </div>
+                  </template>
+                </td>
+              </template>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ───── 📄 Importar del Word ───── -->
+    <div x-show="vill.tab === 'word'" x-cloak>
+      <div class="filter-bar">
+        <select x-model="vill.wordFilter">
+          <option value="pending" x-text="'⏳ Faltan (' + villWordCount('pending') + ')'"></option>
+          <option value="imported" x-text="'✅ Importadas (' + villWordCount('imported') + ')'"></option>
+          <option value="elsewhere" x-text="'↪ Ya en el cantoral normal (' + villWordCount('elsewhere') + ')'"></option>
+          <option value="all" x-text="'Todas (' + (vill.word?.songs.length || 0) + ')'"></option>
+        </select>
+        <span class="muted small" x-show="vill.word?.available"
+              x-text="vill.word ? vill.word.file + ' · ' + (vill.word.modified || '').replace('T', ' ') : ''"></span>
+        <input type="url" x-model="vill.wordUrl" placeholder="Enlace del Google Doc" style="min-width:200px;flex:1" />
+        <button @click="villWordRefresh()" :disabled="vill.wordBusy"
+                title="Baja la última versión del Google Doc (compartido «cualquiera con el enlace») y la guarda en scripts/villancicos/">⟳ Traer la última versión</button>
+      </div>
+      <p class="muted" x-show="vill.word && !vill.word.available">
+        No encuentro el Word en <code>scripts/villancicos/</code>. Pega el enlace del Google Doc y pulsa
+        <strong>⟳ Traer la última versión</strong>.</p>
+
+      <div class="vill-word">
+        <div class="vill-word-list">
+          <table class="songs">
+            <tbody>
+              <template x-for="s in villWordSongs()" :key="s.id">
+                <tr :class="{'selected-row': vill.wordSel === s.id}" @click="villWordOpen(s)" style="cursor:pointer">
+                  <td class="muted" style="width:32px" x-text="s.number ?? '–'"></td>
+                  <td>
+                    <span x-text="s.title"></span>
+                    <span class="badge" x-show="s.warnings.length" :title="s.warnings.join('\n')">⚠️</span>
+                    <div class="muted small" x-text="s.artist"></div>
+                  </td>
+                  <td class="small" style="width:120px" x-text="villWordStatusText(s)"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <p class="muted small" x-show="vill.word && !villWordSongs().length">Nada por aquí.</p>
+        </div>
+
+        <div class="vill-word-detail" x-show="vill.wordSel !== null">
+          <template x-if="vill.wordPreview">
+            <div>
+              <div class="vill-word-head">
+                <h3><span class="muted" x-text="villWordCurrent()?.number != null ? villWordCurrent().number + ' · ' : ''"></span>
+                  <span x-text="vill.wordPreview.title"></span>
+                  <span class="muted small" x-text="vill.wordPreview.artist"></span></h3>
+                <div class="row-inline">
+                  <label class="small">Nº <input type="number" min="0" max="999" x-model="vill.wordNumber" style="width:70px"></label>
+                  <select x-model="vill.wordSub">
+                    <option value="">Subcategoría…</option>
+                    <template x-for="s in villSubs()" :key="s.slug">
+                      <option :value="s.slug" x-text="(s.emoji ? s.emoji + ' ' : '') + s.title" :selected="s.slug === vill.wordSub"></option>
+                    </template>
+                  </select>
+                  <button class="btn primary" @click="villWordImport()" :disabled="vill.wordBusy || villWordCurrent()?.status === 'imported'"
+                          title="Crea N. Navidad/NN.titulo.cho con su TO DO y lo abre en el editor">📥 Crear y revisar</button>
+                  <button class="btn" @click="villWordNext()">Siguiente que falta →</button>
+                </div>
+              </div>
+
+              <div class="vill-banner" x-show="['elsewhere','linked'].includes(villWordCurrent()?.status)">
+                <template x-if="villWordCurrent()?.status === 'elsewhere'">
+                  <div>↪ Ya está en el cantoral normal (<span x-text="villWordCurrent().category_title"></span>):
+                    <a href="#" @click.prevent="openEditor(villWordCurrent().path)">ábrela</a> y compárala.
+                    Si es la misma, <button class="btn-mini" @click="villWordBringExisting()">↪ Tráela a Navidad</button>
+                    (no se duplica). Si la del Word es otra versión (otra letra, otro arreglo), créala igualmente.</div>
+                </template>
+                <template x-if="villWordCurrent()?.status === 'linked'">
+                  <div>🔗 La de <span x-text="villWordCurrent().category_title"></span> ya sale en Navidad.</div>
+                </template>
+              </div>
+              <div class="vill-banner ok" x-show="villWordCurrent()?.status === 'imported'">
+                ✅ Ya importada: <a href="#" @click.prevent="openEditor(villWordCurrent().path)" x-text="villWordCurrent()?.path"></a>
+              </div>
+              <ul class="vill-warnings" x-show="vill.wordPreview.warnings.length">
+                <template x-for="w in vill.wordPreview.warnings"><li x-text="w"></li></template>
+              </ul>
+
+              <div class="vill-word-panes">
+                <div class="vill-pane">
+                  <div class="vill-pane-title">📄 En el Word <span class="muted small">(cada cosa en su columna, como en el papel)</span></div>
+                  <pre class="vill-layout" x-text="vill.wordPreview.layout"></pre>
+                </div>
+                <div class="vill-pane">
+                  <div class="vill-pane-title">
+                    <button :class="{active: vill.wordView === 'app'}" @click="vill.wordView = 'app'">📱 Cómo se verá</button>
+                    <button :class="{active: vill.wordView === 'cho'}" @click="vill.wordView = 'cho'">📝 ChordPro</button>
+                    <button class="link-mini" x-show="vill.wordContent !== vill.wordPreview.cho"
+                            @click="vill.wordContent = vill.wordPreview.cho">↶ deshacer cambios</button>
+                  </div>
+                  <textarea class="vill-cho" x-show="vill.wordView === 'cho'" x-model="vill.wordContent" spellcheck="false"></textarea>
+                  <div class="app-pv-host" x-show="vill.wordView === 'app' && appPreviewOn()">
+                    <div class="app-pv-stage dev-phone">
+                      <iframe class="app-pv-frame" title="Así se verá en el móvil" x-init="watchAppPreview($el)"
+                              x-effect="vill.tab === 'word' && vill.wordView === 'app' && paintAppPreview($el, vill.wordContent, 'phone')"></iframe>
+                    </div>
+                  </div>
+                  <pre class="vill-layout" x-show="vill.wordView === 'app' && !appPreviewOn()" x-text="vill.wordContent"></pre>
+                </div>
+              </div>
+            </div>
+          </template>
+          <p class="muted" x-show="!vill.wordPreview">Convirtiendo…</p>
+        </div>
+        <div class="vill-word-detail muted" x-show="vill.wordSel === null && vill.word?.available">
+          <p>Elige una canción de la lista. Verás a la izquierda cómo está en el Word y a la derecha
+            cómo quedará en la app; puedes retocar el ChordPro antes de crearla. Al crearla se abre el
+            editor con su <strong>📝 TO DO</strong> y la pestaña <strong>📄 Original</strong>.</p>
+          <p>Lo que hace solo: acordes sobre su sílaba aunque la letra esté centrada, la negrita como
+            estribillo, la cursiva (2ª voz) y el subrayado, las notas pequeñas de arreglo
+            («Estrofa 1: Se añade bombo»), «Toda la canción: sim SOL RE LA», los <code>[CLAP]</code>…
+            Detalles en <code>docs/VILLANCICOS_SOLIDARIOS.md</code>.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───── 🎼 Packs ───── -->
+    <div x-show="vill.tab === 'packs'" x-cloak class="vill-packs">
+      <div class="vill-pack-list">
+        <button class="btn primary" @click="villNewPack()">＋ Nuevo pack</button>
+        <template x-for="p in vill.packs" :key="p.slug">
+          <div class="vill-pack-card" :class="{on: vill.packSlug === p.slug}" @click="villOpenPack(p)">
+            <div class="vill-pack-card-title" x-text="p.title"></div>
+            <div class="muted small" x-text="[p.event, p.date].filter(Boolean).join(' · ')"></div>
+            <div class="vill-bar"><div :class="{over: villPackOver(p)}" :style="'width:' + villPackPct(p) + '%'"></div></div>
+            <div class="small">
+              <span x-text="(p.estimated ? '≈ ' : '') + villClock(p.totalSeconds) + ' / ' + p.targetMinutes + '′'"></span>
+              · <span x-text="p.items.filter(i => i.type !== 'break').length + ' canciones'"></span>
+              <span class="vill-missing" x-show="p.items.some(i => i.status === 'missing')"
+                    x-text="'· ' + p.items.filter(i => i.status === 'missing').length + ' sin canción'"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="vill-pack-editor" x-show="vill.pack">
+        <template x-if="vill.pack">
+          <div>
+            <div class="vill-pack-head">
+              <input class="vill-pack-title" x-model="vill.pack.title" @input="villTouch()" placeholder="Título del pack" />
+              <div class="vill-pack-actions">
+                <button class="btn primary" @click="villSavePack()" :disabled="vill.packSaving || !vill.packDirty"
+                        x-text="vill.packDirty ? '💾 Guardar' : '✓ Guardado'"></button>
+                <button class="btn" @click="villExport('txt')" title="Copiar como texto para WhatsApp">📋 WhatsApp</button>
+                <button class="btn" @click="villPrintList()" title="Imprimir la lista con la hora de cada canción">🖨 Lista</button>
+                <button class="btn" @click="villPrintSongbook()" title="Imprimir las canciones con acordes, en el tono del pack">🖨 Cancionero</button>
+                <button class="btn" @click="villExport('md')" title="Descargar en Markdown">⬇ .md</button>
+                <button class="btn" @click="villDuplicatePack()">⧉ Duplicar</button>
+                <button class="btn danger-ghost" @click="villDeletePack()">🗑</button>
+              </div>
+            </div>
+            <div class="vill-pack-meta">
+              <label>Evento <input x-model="vill.pack.event" @input="villTouch()" placeholder="Villancicos Solidarios 2026 · …"></label>
+              <label>Fecha <input type="date" x-model="vill.pack.date" @input="villTouch()"></label>
+              <label>Objetivo <input type="number" min="5" max="600" x-model.number="vill.pack.targetMinutes" @input="villTouch()" style="width:70px"> min</label>
+              <label title="La que se cuenta para las canciones que no tienen duración">Si no se sabe, cada una
+                <input x-model="vill.pack.defaultDuration" @input="villTouch()" :placeholder="villClock(vill.defaultSecs)" style="width:60px"></label>
+            </div>
+            <div class="vill-total">
+              ⏱ <b x-text="(villPackEstimated() ? '≈ ' : '') + villClock(villPackTotal())"></b>
+              de <span x-text="vill.pack.targetMinutes"></span>′
+              <div class="vill-bar big"><div :class="{over: villPackOver()}" :style="'width:' + villPackPct() + '%'"></div></div>
+              <span class="small" :class="villPackOver() ? 'vill-missing' : 'muted'"
+                    x-text="villPackOver() ? 'se pasa ' + villClock(villPackTotal() - vill.pack.targetMinutes * 60)
+                                           : 'sobran ' + villClock(vill.pack.targetMinutes * 60 - villPackTotal())"></span>
+            </div>
+
+            <table class="songs vill-items">
+              <thead><tr>
+                <th style="width:22px"></th><th style="width:28px">#</th><th style="width:52px">Empieza</th>
+                <th>Canción</th><th style="width:62px">Tono</th><th style="width:52px">C/</th>
+                <th style="width:64px">Dura</th><th style="width:150px">Notas</th><th style="width:70px"></th>
+              </tr></thead>
+              <tbody>
+                <template x-for="(it, i) in vill.pack.items" :key="i + ':' + (it.song || it.title)">
+                  <tr draggable="true" @dragstart="villDragStart(i, $event)" @dragover="villDragOver(i, $event)"
+                      @drop.prevent="villDrop(i)" @dragend="vill.dragIdx = vill.overIdx = null"
+                      :class="{'vill-drop': vill.overIdx === i, 'vill-break': it.type === 'break', 'selected-row': vill.packLinkIdx === i}">
+                    <td class="vill-grip" title="Arrastra para ordenar">⠿</td>
+                    <td class="muted" x-text="it.type === 'break' ? '' : villSongNumber(vill.pack.items, i)"></td>
+                    <td class="muted small" x-text="villClock(villPackTimeline()[i])"></td>
+                    <template x-if="it.type === 'break'">
+                      <td colspan="4">⏸ <input x-model="it.title" @input="villTouch()" style="width:60%">
+                        <input type="number" min="0" max="240" x-model.number="it.minutes" @input="villTouch()" style="width:56px"> min</td>
+                    </template>
+                    <template x-if="it.type !== 'break'">
+                      <td>
+                        <template x-if="it.path">
+                          <a href="#" @click.prevent="openEditor(it.path)" x-text="it.title || it.songTitle"></a>
+                        </template>
+                        <template x-if="!it.path">
+                          <span><span x-text="it.title"></span>
+                            <button class="btn-mini vill-missing" @click="vill.packLinkIdx = (vill.packLinkIdx === i ? null : i); vill.packAdd = it.title"
+                                    title="Aún no está en Navidad (o se llama distinto): búscala para enlazarla">🔗 buscar</button>
+                            <span class="muted small" x-show="it.suggestion"
+                                  :title="'Hay una parecida en ' + villCategoryTitle(it.suggestion?.category_key) + ': si es la misma, tráela a Navidad (pestaña Canciones o 📄 Importar) y se enlaza sola'"
+                                  x-text="'¿' + (it.suggestion?.title || '') + ' (' + villCategoryTitle(it.suggestion?.category_key) + ')?'"></span></span>
+                        </template>
+                        <span class="muted small" x-show="it.path && it.title && it.songTitle && it.title !== it.songTitle" x-text="'(' + it.songTitle + ')'"></span>
+                        <span class="badge todo" x-show="it.hasTodo" title="Pendiente de revisar">📝</span>
+                        <span class="muted small" x-show="it.page" x-text="'p. ' + it.page"></span>
+                      </td>
+                    </template>
+                    <template x-if="it.type !== 'break'">
+                      <td><input x-model="it.key" @input="villTouch()" :placeholder="it.songKey || ''" class="vill-in"></td>
+                    </template>
+                    <template x-if="it.type !== 'break'">
+                      <td><input inputmode="numeric" x-model="it.capo" @input="villTouch()" :placeholder="it.songCapo || '0'" class="vill-in"></td>
+                    </template>
+                    <template x-if="it.type !== 'break'">
+                      <td><input x-model="it.duration" @input="villTouch()" :placeholder="it.songDuration || villClock(villItemSecs(it))"
+                                 :title="villItemEstimated(it) ? 'Estimada: pon la duración real (m:ss) en la canción o aquí' : ''" class="vill-in"></td>
+                    </template>
+                    <td x-show="it.type !== 'break'"><input x-model="it.notes" @input="villTouch()" placeholder="🎺 🎻 …" class="vill-in"></td>
+                    <td class="vill-item-actions">
+                      <button class="link-mini" @click="villMoveItem(i, -1)" title="Subir">▲</button>
+                      <button class="link-mini" @click="villMoveItem(i, 1)" title="Bajar">▼</button>
+                      <button class="link-mini" @click="villRemoveItem(i)" title="Quitar">✕</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+
+            <div class="vill-add">
+              <input type="search" x-model="vill.packAdd"
+                     :placeholder="vill.packLinkIdx !== null ? '🔗 Busca la canción para enlazarla…' : '＋ Añadir canción: escribe parte del título…'" />
+              <button class="btn" @click="villAddBreak()">⏸ Pausa</button>
+              <button class="btn" @click="villAddBookends()" title="Himno y Feliz Navidad al principio y al final">⭐ Himno + Feliz Navidad</button>
+              <div class="vill-add-results" x-show="villPackCandidates().length">
+                <template x-for="s in villPackCandidates()" :key="s.path">
+                  <div class="vill-add-item" @click="villPickSong(s)">
+                    <span x-text="s.nav ? '🎄' : '↗'"></span>
+                    <span x-text="s.title"></span>
+                    <span class="muted small" x-text="s.category_title.replace(/^[A-Z+\d]+\.\s*/, '') + (s.key ? ' · ' + s.key : '')"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <label class="vill-notes">Notas del pack
+              <textarea rows="2" x-model="vill.pack.notes" @input="villTouch()"></textarea></label>
+            <p class="muted small">Tono, cejilla y notas de cada canción son <strong>de este pack</strong> (no
+              cambian la canción). Al imprimir el cancionero, las canciones salen ya en el tono del pack.
+              Los packs se guardan en <code>packs/</code> del repo: súbelos con el botón de la nube.</p>
+          </div>
+        </template>
+      </div>
+      <div class="vill-pack-editor muted" x-show="!vill.pack">
+        <p>Elige un pack o crea uno nuevo. Están los del <strong>Edificio Hucha 2025</strong> sacados del
+          listado: las canciones se enlazan solas, por el título, según se van importando.</p>
+      </div>
+    </div>
+  </section>
+
   <section x-show="view === 'reorder' && data" x-cloak>
     <h1>🔀 Reordenar canciones</h1>
     <p class="muted">Cambia el <strong>número</strong> con el que sale cada canción en la app:
@@ -1939,7 +2353,7 @@
         </button>
         <button :class="{active: editor.tab === 'extra'}" @click="setEditorTab('extra')">
           📋 Datos extra
-          <span class="tab-badge" x-show="(editor.meta.rhythm || editor.meta.album || editor.meta.liturgicalTime || editor.meta.source || editor.meta.comment)" >●</span>
+          <span class="tab-badge" x-show="(editor.meta.rhythm || editor.meta.album || editor.meta.liturgicalTime || editor.meta.source || editor.meta.comment || editor.meta.subcategory || editor.meta.duration || (editor.meta.alsoIn || []).length)" >●</span>
         </button>
         <span class="dirty" x-show="editor.dirty">● sin guardar</span>
         <span class="dirty" x-show="mediaDirty" style="color:#0ea5e9">● meta sin guardar</span>
@@ -2577,6 +2991,49 @@
               <textarea rows="4" x-model="mediaForm.comment" @input="mediaDirty = true"
                         placeholder="María Magdalena, Versión Hakuna…"></textarea>
             </div>
+
+            <div class="extra-section">
+              <h4>🗂 Dónde sale</h4>
+              <template x-if="editorCategory() && subcategoriesOf(editorCategory().indice_key).length">
+                <div>
+                  <label>Subcategoría en <span x-text="editorCategory().title.replace(/^[A-Z+\d]+\.\s*/, '')"></span></label>
+                  <select x-model="mediaForm.subcategory" @change="mediaDirty = true">
+                    <option value="">Sin subcategoría</option>
+                    <template x-for="s in subcategoriesOf(editorCategory().indice_key)" :key="s.slug">
+                      <option :value="s.slug" x-text="(s.emoji ? s.emoji + ' ' : '') + s.title" :selected="s.slug === mediaForm.subcategory"></option>
+                    </template>
+                  </select>
+                </div>
+              </template>
+              <label>También en otras categorías</label>
+              <div class="also-list">
+                <template x-for="(a, i) in mediaForm.alsoIn" :key="a.category">
+                  <div class="also-row">
+                    <span x-text="'↪ ' + categoryTitleByKey(a.category)"></span>
+                    <select x-show="subcategoriesOf(a.category).length" x-model="a.subcategory" @change="mediaDirty = true">
+                      <option value="">Sin subcategoría</option>
+                      <template x-for="s in subcategoriesOf(a.category)" :key="s.slug">
+                        <option :value="s.slug" x-text="s.title" :selected="s.slug === a.subcategory"></option>
+                      </template>
+                    </select>
+                    <button class="link-mini" @click="mediaForm.alsoIn = mediaForm.alsoIn.filter((_, k) => k !== i); mediaDirty = true">✕</button>
+                  </div>
+                </template>
+                <div class="also-row">
+                  <select x-model="mediaAlsoAdd" @change="mediaAddAlsoIn()">
+                    <option value="">＋ Que salga también en…</option>
+                    <template x-for="c in (data?.categories || []).filter(c => c.indice_key && c.folder !== editorCategory()?.folder)" :key="c.letter">
+                      <option :value="c.indice_key" x-text="c.title"></option>
+                    </template>
+                  </select>
+                </div>
+              </div>
+              <div class="tag-hint">La canción no se mueve ni se copia: sigue en su categoría y la app la
+                enseña también en esas otras.</div>
+              <label>Duración aproximada</label>
+              <input type="text" x-model="mediaForm.duration" @input="mediaDirty = true" placeholder="3:30"
+                     title="m:ss — para que los packs sepan cuánto duran" />
+            </div>
           </div>
         </div>
       </div>
@@ -3125,6 +3582,7 @@
 <!-- La hoja de la app empaquetada (generada en mcmapp con
      «npm run build:sheet-bundle»): la vista previa pinta igual que el móvil. -->
 <script src="mcm-sheet.js"></script>
+<script src="villancicos.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

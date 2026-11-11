@@ -1,0 +1,160 @@
+{
+  "title": "Tarde 4",
+  "event": "Villancicos Solidarios 2025 · Edificio Hucha",
+  "notes": "Extra, secundario",
+  "targetMinutes": 60,
+  "items": [
+    {
+      "song": null,
+      "title": "Llegó la Navidad",
+      "key": "D",
+      "page": "B33"
+    },
+    {
+      "song": null,
+      "title": "Nochenochebuena",
+      "notes": "LA-RE C/4",
+      "page": "B34"
+    },
+    {
+      "song": null,
+      "title": "Venid sencillos pastores",
+      "key": "Am",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Bella noche sin sueño",
+      "key": "D",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "En Navidad (Rosana)",
+      "key": "C",
+      "capo": 2,
+      "page": "A13"
+    },
+    {
+      "song": null,
+      "title": "Hecho con tus sueños 2014",
+      "key": "C",
+      "capo": 4,
+      "page": "B21"
+    },
+    {
+      "song": null,
+      "title": "All I Want For Christmas",
+      "key": "C",
+      "capo": 3,
+      "page": "B23"
+    },
+    {
+      "song": null,
+      "title": "Hoy ha nacido",
+      "key": "D",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "El Tamborilero",
+      "key": "C",
+      "capo": 2,
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "Todas nuestras luchas",
+      "key": "Bm",
+      "capo": 1,
+      "page": "B36"
+    },
+    {
+      "song": null,
+      "title": "Hecho con tus Sueños",
+      "key": "C",
+      "capo": 2,
+      "page": "B18"
+    },
+    {
+      "song": null,
+      "title": "Ya es Navidad",
+      "key": "C",
+      "capo": 3,
+      "page": "B32"
+    },
+    {
+      "song": null,
+      "title": "La Luz que nace en ti",
+      "key": "G",
+      "capo": 2,
+      "page": "B25"
+    },
+    {
+      "song": null,
+      "title": "Dime Niño",
+      "key": "C",
+      "capo": 7,
+      "notes": "= SOL",
+      "page": "A1"
+    },
+    {
+      "song": null,
+      "title": "Ay del Chiquirritín",
+      "key": "C",
+      "capo": 2,
+      "page": "A3"
+    },
+    {
+      "song": null,
+      "title": "Noche de Paz",
+      "key": "D",
+      "capo": 3,
+      "page": "B28"
+    },
+    {
+      "song": null,
+      "title": "Hacia Belén",
+      "key": "C",
+      "capo": 2,
+      "page": "A5"
+    },
+    {
+      "song": null,
+      "title": "Oh, bianco Natale",
+      "key": "G",
+      "capo": 3,
+      "page": "A4"
+    },
+    {
+      "song": null,
+      "title": "Venid Fieles Todos",
+      "key": "C",
+      "capo": 2,
+      "page": "B28"
+    },
+    {
+      "song": null,
+      "title": "Superestrella",
+      "key": "D",
+      "capo": 2,
+      "page": "B39"
+    },
+    {
+      "song": null,
+      "title": "Himno Edificio Hucha",
+      "key": "Am",
+      "capo": 1,
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "Feliz Navidad",
+      "key": "G",
+      "page": "A0"
+    }
+  ]
+}

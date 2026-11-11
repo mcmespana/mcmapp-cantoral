@@ -176,7 +176,17 @@ const _docePrefetched = new Set();
 // 60 pasos de una canción normal son unos pocos cientos de KB.
 const UNDO_LIMIT = 60;
 
+// app() = el admin de siempre + la sección 🎄 Villancicos (static/villancicos.js).
+// Se copian los descriptores para que los getters sigan siendo getters.
 function app() {
+  const base = appBase();
+  if (typeof villancicosMixin === 'function') {
+    Object.defineProperties(base, Object.getOwnPropertyDescriptors(villancicosMixin()));
+  }
+  return base;
+}
+
+function appBase() {
   return {
     // ─────────── State ───────────
     view: 'dashboard',
@@ -229,6 +239,7 @@ function app() {
     mediaOriginal: '',
     mediaDirty: false,
     mediaSaving: false,
+    mediaAlsoAdd: '',         // categoría a añadir en «también en»
 
     // Import view (docx)
     importSearch: '',
@@ -1475,11 +1486,40 @@ function app() {
         extraLinks: EXTRA_LINK_TYPES.flatMap(
           t => (m[t.key] || []).map(l => ({ type: t.type, label: l.label || '', url: l.url || '' }))),
         tags: [...(m.tags || [])],
+        // Subcategoría (dentro de su categoría), «también en» (otras categorías
+        // donde se ve sin duplicar el .cho) y duración. Ver CAMPOS_CANCIONES §5.
+        subcategory: m.subcategory || '',
+        alsoIn: (m.alsoIn || []).map(a => ({ category: a.category, subcategory: a.subcategory || '' })),
+        duration: m.duration || '',
       };
+      this.mediaAlsoAdd = '';
       this.mediaOriginal = JSON.stringify(this.mediaForm);
       this.mediaDirty = false;
     },
     resetMediaMeta() { this.loadMediaForm(); },
+    // La categoría de la canción abierta (por su carpeta) y las demás.
+    editorCategory() {
+      const folder = (this.editor.path || '').split('/').slice(-2, -1)[0];
+      return (this.data?.categories || []).find(c => c.folder === folder) || null;
+    },
+    subcategoriesOf(key) {
+      const c = (this.data?.categories || []).find(x => x.indice_key === key);
+      return c ? Object.entries(c.subcategories || {}).map(([slug, v]) => ({ slug, ...v }))
+                       .sort((a, b) => a.order - b.order) : [];
+    },
+    categoryTitleByKey(key) {
+      const c = (this.data?.categories || []).find(x => x.indice_key === key);
+      return c ? c.title.replace(/^[A-Z+\d]+\.\s*/, '') : key;
+    },
+    mediaAddAlsoIn() {
+      const key = this.mediaAlsoAdd;
+      if (!key || this.mediaForm.alsoIn.some(a => a.category === key)) return;
+      const subs = this.subcategoriesOf(key);
+      this.mediaForm.alsoIn = [...this.mediaForm.alsoIn,
+        { category: key, subcategory: subs.find(s => s.slug === 'otras') ? 'otras' : '' }];
+      this.mediaAlsoAdd = '';
+      this.mediaDirty = true;
+    },
     addMediaLink(key, tpl = {}) {
       this.mediaForm[key] = [...this.mediaForm[key], { label: '', url: '', ...tpl }];
       this.mediaDirty = true;

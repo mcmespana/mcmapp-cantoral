@@ -1381,7 +1381,98 @@ table.songs tr.row-archived td { opacity: 0.55; }
    Una sola rejilla de cortes: por debajo de 820px el lateral pasa a cajón y
    todo lo que tenía anchos fijos de escritorio se apila o hace scroll propio.
    Lo que no está aquí se ve igual que en escritorio. */
+/* ─────────── 🎄 Villancicos Solidarios (static/villancicos.js) ─────────── */
+.vill-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin: 14px 0 4px; flex-wrap: wrap; }
+.vill-tabs button { background: none; border: 1px solid transparent; border-bottom: none; padding: 8px 14px;
+  font-size: 14px; color: var(--fg-2); cursor: pointer; border-radius: 6px 6px 0 0; }
+.vill-tabs button.active { background: var(--bg-2); border-color: var(--border); color: var(--fg); font-weight: 600;
+  margin-bottom: -1px; }
+.vill-tab-n { font-size: 11px; color: var(--fg-3); font-weight: 400; margin-left: 4px; }
+.vill-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+.vill-chip { border: 1px solid var(--border-strong); background: var(--bg-2); color: var(--fg); border-radius: 16px;
+  padding: 5px 12px; cursor: pointer; font-size: 13px; }
+.vill-chip b { margin-left: 4px; color: var(--fg-3); font-weight: 600; }
+.vill-chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.vill-chip.on b { color: var(--accent-fg); }
+.vill-sig { font-size: 10px; font-weight: 700; letter-spacing: .5px; padding: 0 4px; border-radius: 3px;
+  background: var(--bg-3); color: var(--fg-2); }
+.vill-chip.on .vill-sig { background: rgba(255,255,255,.25); color: var(--accent-fg); }
+.vill-bring, .vill-bulk { background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 0 0 14px; }
+.vill-bring .row-inline { display: flex; gap: 8px; align-items: center; }
+.vill-bring input[type=search] { flex: 1; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 4px;
+  background: var(--bg-2); color: var(--fg); font-size: 13px; }
+.vill-bulk { display: flex; gap: 10px; align-items: center; border-left: 4px solid var(--accent); }
+.vill-table tr.vill-group td { background: var(--bg-3); font-weight: 600; font-size: 13px; padding-top: 10px; }
+.vill-sub-select, .vill-send { font-size: 12px; padding: 3px 4px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-2); color: var(--fg); max-width: 100%; }
+.vill-send { margin-top: 4px; color: var(--fg-3); }
+.vill-also { display: inline-block; margin-left: 6px; color: var(--fg-2); }
+.vill-word { display: flex; gap: 16px; align-items: flex-start; }
+.vill-word-list { width: 330px; flex: none; max-height: calc(100vh - 260px); overflow: auto; }
+.vill-word-detail { flex: 1; min-width: 0; }
+.vill-word-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.vill-word-head h3 { margin: 0; font-size: 17px; }
+.vill-word-head .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vill-banner { margin: 10px 0; padding: 8px 12px; border-radius: 6px; font-size: 13px;
+  background: rgba(234,88,12,0.08); border: 1px solid rgba(234,88,12,0.25); }
+.vill-banner.ok { background: rgba(22,163,74,0.08); border-color: rgba(22,163,74,0.25); }
+.vill-warnings { margin: 8px 0; padding-left: 20px; font-size: 12px; color: var(--todo); }
+.vill-word-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.vill-pane { min-width: 0; }
+.vill-pane-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; gap: 6px; align-items: center; }
+.vill-pane-title button { font-size: 12px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-2); color: var(--fg-2); cursor: pointer; }
+.vill-pane-title button.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.vill-layout { font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px; overflow: auto; max-height: calc(100vh - 300px); margin: 0; white-space: pre; }
+.vill-cho { width: 100%; min-height: calc(100vh - 320px); font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  border: 1px solid var(--border-strong); border-radius: 6px; padding: 10px; background: var(--bg-2); color: var(--fg); }
+.vill-packs { display: flex; gap: 16px; align-items: flex-start; margin-top: 14px; }
+.vill-pack-list { width: 260px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.vill-pack-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.vill-pack-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.vill-pack-card-title { font-weight: 600; }
+.vill-bar { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+.vill-bar.big { height: 10px; flex: 1; margin: 0 10px; }
+.vill-bar > div { height: 100%; background: #16a34a; }
+.vill-bar > div.over { background: #ea580c; }
+.vill-missing { color: var(--todo); }
+.vill-pack-editor { flex: 1; min-width: 0; }
+.vill-pack-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vill-pack-title { font-size: 20px; font-weight: 600; flex: 1; min-width: 200px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2); color: var(--fg); }
+.vill-pack-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.vill-pack-actions .btn { padding: 6px 10px; font-size: 13px; }
+.vill-pack-meta { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0; font-size: 13px; color: var(--fg-2); }
+.vill-pack-meta input, .vill-notes textarea, .vill-in, .vill-items td input {
+  padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-2); color: var(--fg); font-size: 13px; }
+.vill-total { display: flex; align-items: center; gap: 6px; margin: 6px 0 10px; font-size: 14px; }
+.vill-items td { vertical-align: middle; }
+.vill-in { width: 100%; min-width: 36px; box-sizing: border-box; padding: 3px 5px !important; }
+.vill-grip { cursor: grab; color: var(--fg-3); text-align: center; user-select: none; }
+.vill-items tr.vill-drop td { border-top: 2px solid var(--accent); }
+.vill-items tr.vill-break td { background: var(--bg-3); font-style: italic; }
+.vill-item-actions { white-space: nowrap; }
+.vill-add { position: relative; display: flex; gap: 8px; margin: 10px 0; }
+.vill-add input[type=search] { flex: 1; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--bg-2); color: var(--fg); font-size: 14px; }
+.vill-add-results { position: absolute; top: 40px; left: 0; right: 0; z-index: 20; background: var(--bg-2);
+  border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 320px; overflow: auto; }
+.vill-add-item { padding: 7px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.vill-add-item:hover { background: var(--bg-3); }
+.vill-notes { display: block; font-size: 12px; color: var(--fg-3); }
+.vill-notes textarea { width: 100%; box-sizing: border-box; margin-top: 4px; }
+.also-list { display: flex; flex-direction: column; gap: 4px; }
+.also-row { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.also-row select { font-size: 12px; }
+
 @media (max-width: 820px) {
+  /* 🎄 Villancicos: listas y editor uno debajo de otro */
+  .vill-word, .vill-packs { flex-direction: column; }
+  .vill-word-list, .vill-pack-list { width: 100%; max-height: none; }
+  .vill-word-panes { grid-template-columns: 1fr; }
+  .vill-items th:nth-child(3), .vill-items td:nth-child(3) { display: none; }
+
   body { display: block; }
 
   /* Lateral → cajón que entra desde la izquierda */

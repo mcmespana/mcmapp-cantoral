@@ -533,6 +533,11 @@ def sentence_case(text: str) -> str:
     return res if len(res) == len(text) else text
 
 
+def _squash(s: str) -> str:
+    """Espacios seguidos (y tabuladores) → uno, sin los de los extremos."""
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _label_case(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip(" :→-")
     if is_upper_line(s) or s.isupper():
@@ -1111,7 +1116,7 @@ def convert_song(song: Song) -> Dict[str, object]:
                         key_from_label = tr[0]
                         continue
                 if re.match(r"(?i)^nota\b", label):
-                    items.append(Item("dir", f"{{c: {_label_case(label)}: {re.sub(r'\s+', ' ', rest)}}}"))
+                    items.append(Item("dir", "{c: " + _label_case(label) + ": " + _squash(rest) + "}"))
                     continue
                 items.append(Item("dir", f"{{c: {_label_case(label)}{arrow}}}"))
                 if not rest:
@@ -1124,7 +1129,7 @@ def convert_song(song: Song) -> Dict[str, object]:
                     items.append(Item("chords", _chords_only(cp_)))
                 elif is_small(rest_line) or rest_line.ratio("i") >= 0.6 and _INSTRUMENTS.search(rest) \
                         or _INSTRUMENTS.search(rest) and len(rest.split()) <= 12 and not rest_line.ratio("b") >= 0.6:
-                    items.append(Item("dir", f"{{arr: {re.sub(r'\s+', ' ', rest)}}}"))
+                    items.append(Item("dir", "{arr: " + _squash(rest) + "}"))
                 else:
                     queue.insert(0, LLine(rest_line.chars, ln.para, False))
                 continue
@@ -1211,7 +1216,7 @@ def convert_song(song: Song) -> Dict[str, object]:
         # «ESTRIBILLO Y LALALA», «2 ESTRIBILLOS + 2 INSTRUMENTAL»: indicación.
         if re.search(r"(?i)\bestribillos?\b", ln.text) and is_upper_line(ln.text) and pending is None \
                 and len(ln.text.split()) <= 8:
-            items.append(Item("dir", f"{{arr: {sentence_case(re.sub(r'\s+', ' ', ln.text.strip()))}}}"))
+            items.append(Item("dir", "{arr: " + sentence_case(_squash(ln.text)) + "}"))
             continue
 
         chord_parse = pending[1] if pending else None
@@ -1363,6 +1368,42 @@ def balance_markup(text: str) -> str:
         carry = stack
         out.append(line)
     return "\n".join(out)
+
+
+# ─────────────────────────── Vista «como en el papel» ─────────────────────────── #
+
+def layout_text(song: Song) -> str:
+    """La canción tal y como está en el Word, en texto de ancho fijo: cada
+    carácter en la columna que le toca por su posición medida, así que los
+    acordes quedan sobre su sílaba y la letra centrada sale centrada. Es lo que
+    se enseña al lado de la conversión para comparar (y en 📄 Original)."""
+    col = char_width("n", 24, False, False) * 1.08     # ancho de una «columna»
+    out = [song.title_raw]
+    if song.artist:
+        out.append(song.artist)
+    out += song.extra
+    out.append("")
+    for p in song.paras:
+        for k, chars in enumerate(p.lines):
+            if not chars or not "".join(c for c, _, _ in chars).strip():
+                out.append("")
+                continue
+            xs = line_positions(p, chars, k == 0)
+            row: List[str] = []
+            for i, (ch, kind, _) in enumerate(chars):
+                if kind == "tab" or ch.isspace() or xs[i] == float("inf"):
+                    if xs[i] == float("inf") and not ch.isspace():
+                        row.append(ch)        # lo que Word baja de renglón, seguido
+                    continue
+                if i > 0 and not chars[i - 1][0].isspace() and chars[i - 1][1] != "tab":
+                    c = len(row)                       # dentro de una palabra, seguido
+                else:
+                    c = max(int(round(xs[i] / col)), len(row) + 1 if row else 0)
+                row.extend(" " * (c - len(row)))
+                row.append(ch)
+            out.append("".join(row).rstrip())
+    text = "\n".join(out)
+    return re.sub(r"\n{3,}", "\n\n", text).strip("\n") + "\n"
 
 
 # ─────────────────────────── API ─────────────────────────── #
