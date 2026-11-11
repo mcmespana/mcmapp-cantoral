@@ -637,6 +637,8 @@ table.songs tr.is-selected td { background: rgba(37, 99, 235, 0.12) !important; 
 .status-pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
 .status-pill.status-revisar { background: rgba(234,88,12,0.12); color: var(--todo); border: 1px solid rgba(234,88,12,0.25); }
 .status-pill.status-acordes { background: rgba(8,145,178,0.1); color: var(--info); border: 1px solid rgba(8,145,178,0.25); }
+.badge-source { font-size: 10px; background: var(--bg-3); color: var(--fg-2); border-radius: 3px; padding: 0 5px; margin-left: 6px; border: 1px solid var(--border-strong); white-space: nowrap; }
+.cat-select-mini.needs-pick { border-color: #f59e0b; }
 .badge-manual { font-size: 10px; background: var(--bg-3); color: var(--fg-3); border-radius: 3px; padding: 0 4px; margin-left: 5px; border: 1px solid var(--border-strong); }
 
 /* Bulk action bar */
