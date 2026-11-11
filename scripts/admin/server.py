@@ -178,6 +178,9 @@ def parse_cho_metadata(content: str) -> Dict[str, object]:
         "otherLinks": extra["otherLinks"],
         "comment": extra["comment"],
         "tags": extra["tags"],
+        "subcategory": extra["subcategory"],
+        "duration": extra["duration"],
+        "alsoIn": extra["alsoIn"],
     }
 
 
@@ -241,6 +244,7 @@ def list_categories() -> List[dict]:
                 "title": title,
                 "order": info.get("order", 999),
             }
+    subcats = cp.load_subcategories(indice)
     folders = []
     for p in sorted(SONGS_DIR.iterdir()):
         if not p.is_dir():
@@ -256,6 +260,7 @@ def list_categories() -> List[dict]:
             "title": info.get("title") or p.name,
             "indice_key": info.get("key"),
             "order": info.get("order", 999),
+            "subcategories": subcats.get(info.get("key"), {}),
         })
     folders.sort(key=lambda x: (x["order"], x["letter"]))
     return folders
@@ -299,6 +304,9 @@ def list_repo_songs(category_letter: Optional[str] = None) -> List[dict]:
                 "rhythm": meta.get("rhythm", ""),
                 "album": meta.get("album", ""),
                 "tags": meta.get("tags", []),
+                "subcategory": meta.get("subcategory", ""),
+                "duration": meta.get("duration", ""),
+                "alsoIn": meta.get("alsoIn", []),
                 "error": meta_err,
             })
     return out
@@ -871,6 +879,15 @@ def _render_meta_directive_lines(meta: Dict[str, object]) -> List[str]:
             if not url:
                 continue
             lines.append(f"{{{directive}: {label} | {url}}}" if label else f"{{{directive}: {url}}}")
+    sub = cp.slugify_tag(meta.get("subcategory") or "")
+    if sub:
+        lines.append(f"{{subcategoria: {sub}}}")
+    also_in = cp.format_also_in(meta.get("alsoIn") or [])
+    if also_in:
+        lines.append(f"{{tambien_en: {also_in}}}")
+    dur = cp.format_duration(cp.parse_duration(meta.get("duration") or ""))
+    if dur:
+        lines.append(f"{{duracion: {dur}}}")
     if meta.get("comment"):
         lines.append(f"{{comentario: {_sanitize_directive_value(meta['comment'])}}}")
     return lines
@@ -910,9 +927,12 @@ def api_song_meta_put():
         abort(404, "No existe")
     body = request.get_json(silent=True) or {}
     original = p.read_text(encoding="utf-8")
-    # Un cliente que no sepa de etiquetas no debe borrarlas por omisión.
-    if "tags" not in body:
-        body["tags"] = parse_cho_metadata(original).get("tags") or []
+    # Un cliente que no sepa de etiquetas (o de subcategorías, «también en» o
+    # duración) no debe borrarlas por omisión.
+    prev = parse_cho_metadata(original)
+    for field in ("tags", "subcategory", "alsoIn", "duration"):
+        if field not in body:
+            body[field] = prev.get(field) or ([] if field in ("tags", "alsoIn") else "")
     new_lines = _render_meta_directive_lines(body)
     new_content = _replace_meta_block(original, new_lines)
     if new_content == original:
@@ -1031,6 +1051,10 @@ def api_app_preview_config():
     sheet = SCRIPT_DIR / "static" / "mcm-sheet.js"
     return jsonify({
         "strip": list(cp.MEDIA_DIRECTIVES) + [cp.DEDUCED_DIRECTIVE],
+        # <i>/<b>/<u> en la letra: la vista previa los quita si la app aún no
+        # los pinta (cp.APP_MARKUP), igual que crear_songs_json.py.
+        "markup": cp.APP_MARKUP,
+        "markupTags": list(cp.MARKUP_TAGS),
         "sheet": sheet.exists(),
     })
 
@@ -2871,6 +2895,12 @@ def api_health():
             "POST /api/build-json",
         ],
     })
+
+
+# 🎄 Villancicos Solidarios: subcategorías de Navidad, «también en», importar
+# del Word de villancicos y packs. Va en su propio módulo (ver su docstring).
+import villancicos_api  # noqa: E402
+villancicos_api.register(app, sys.modules[__name__])
 
 
 def _prewarm() -> None:

@@ -48,6 +48,13 @@ campos opcionales — emitidos sólo cuando existen — que provienen de
 | `youtubeLinks`   | `{youtube: Label \| URL}` (repetible) | `[{label, url}, …]`   | Lista ordenada de enlaces YouTube (orden = prioridad). |
 | `audioLinks`     | `{audio: Label \| URL}` (repetible)   | `[{label, url}, …]`   | Lista ordenada de grabaciones internas (Drive, mp3…). |
 | `comment`        | `{comentario: …}`                | string                     | Comentario libre (no se renderiza en el chordpro). |
+| `tags`           | `{tags: a, b}`                   | `[slug, …]`                | Etiquetas libres y transversales. |
+| `subcategory`    | `{subcategoria: clasicos}`       | string (slug)              | Subcategoría dentro de su categoría (catálogo en `songs/indice.json`). |
+| `alsoIn`         | `{tambien_en: navidad/otras}`    | `[{category, subcategory}]`| Otras categorías donde se ve, sin duplicar el `.cho`. |
+| `duration`       | `{duracion: 3:30}`               | string `m:ss`              | Duración aproximada (para los packs). |
+
+Detalle completo en `docs/CAMPOS_CANCIONES.md`. Todo lo de Navidad y los packs
+de los Villancicos Solidarios, en `docs/VILLANCICOS_SOLIDARIOS.md`.
 
 Estas directives **no se imprimen** en el cuerpo de la canción que ve
 el cantor: `scripts/crear_songs_json.py` las extrae a campos propios

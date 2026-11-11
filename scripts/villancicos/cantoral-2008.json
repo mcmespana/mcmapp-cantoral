@@ -1,0 +1,104 @@
+{
+  "_comment": "Índice del «Cantoral Villancicos Solidarios 2008 - Actualizado.pdf» (escaneado). page = página del PDF; n = número de la canción en el cantoral de villancicos (el del listado del Edificio Hucha 2025), solo donde se sabe; sub = subcategoría sugerida (se decide al revisar). Lo usa el admin: 🎄 Villancicos → 📄 Importar → Cantoral 2008.",
+  "file": "Cantoral Villancicos Solidarios 2008 - Actualizado.pdf",
+  "pages": [
+    {"page": 1, "songs": [], "note": "Portada («Por ellos… GRACIAS», Hospital Provincial, 20 de diciembre de 2008)"},
+    {"page": 2, "songs": [
+      {"title": "Aleluya, aleluya, ha nacido el Salvador", "sub": "clasicos"},
+      {"title": "Dime Niño", "n": 1, "sub": "clasicos"},
+      {"title": "Noche de Dios", "sub": "actuales"}]},
+    {"page": 3, "songs": [
+      {"title": "Mi Navidad", "n": 3, "sub": "actuales"},
+      {"title": "El Tamborilero", "n": 4, "sub": "clasicos"},
+      {"title": "Campana sobre Campana", "n": 5, "sub": "clasicos"}]},
+    {"page": 4, "songs": [
+      {"title": "El Chiquirritín", "n": 6, "sub": "clasicos"},
+      {"title": "Ilusión, Navidad", "n": 7, "sub": "actuales"},
+      {"title": "Siempre es Navidad", "sub": "actuales"}]},
+    {"page": 5, "songs": [
+      {"title": "Haya Paz", "sub": "actuales"},
+      {"title": "Es Navidad", "sub": "actuales"},
+      {"title": "Oh, Blanca Navidad", "n": 10, "sub": "versiones"}]},
+    {"page": 6, "songs": [
+      {"title": "Hacia Belén", "n": 11, "sub": "clasicos"},
+      {"title": "En el Portal de Belén", "sub": "clasicos"},
+      {"title": "Los Peces en el Río", "n": 12, "sub": "clasicos"}]},
+    {"page": 7, "songs": [
+      {"title": "Veinticinco de Diciembre", "sub": "clasicos"},
+      {"title": "Navidad, Navidad (Jingle Bells)", "sub": "versiones"},
+      {"title": "Navidad (Mientras haya en la tierra un niño feliz)", "sub": "actuales"}]},
+    {"page": 8, "songs": [
+      {"title": "Feliz Navidad", "n": 0, "sub": "versiones"},
+      {"title": "Ya vienen los Reyes Magos", "sub": "clasicos"},
+      {"title": "Ande, ande la Marimorena", "n": 14, "sub": "clasicos"}]},
+    {"page": 9, "songs": [
+      {"title": "Arre Burriquito", "sub": "clasicos"},
+      {"title": "Vamos todos a Belén", "sub": "clasicos"},
+      {"title": "Con el Pan", "sub": "clasicos"},
+      {"title": "Gatatumba", "sub": "clasicos"},
+      {"title": "Está Nevando", "n": 15, "sub": "actuales"}]},
+    {"page": 10, "songs": [
+      {"title": "Lucía una Estrella", "sub": "actuales"},
+      {"title": "Este Niño Bonito", "sub": "clasicos"},
+      {"title": "Cantemos todos la Navidad", "sub": "actuales"}]},
+    {"page": 11, "songs": [
+      {"title": "Nunca suenan las Campanas", "sub": "clasicos"},
+      {"title": "Todo es Alegría, porque es Navidad", "sub": "actuales"},
+      {"title": "Ya viene la Vieja", "sub": "clasicos"}]},
+    {"page": 12, "songs": [
+      {"title": "Una Pandereta Suena", "sub": "clasicos"},
+      {"title": "Los Campanilleros", "sub": "clasicos"},
+      {"title": "Navidad, es Navidad", "n": 16, "sub": "actuales"}]},
+    {"page": 13, "songs": [
+      {"title": "Esa Estrella que ha Nacido", "sub": "actuales"},
+      {"title": "En un Portal", "sub": "actuales"}]},
+    {"page": 14, "songs": [
+      {"title": "En Navidad (Rosana)", "n": 17, "sub": "versiones"}]},
+    {"page": 15, "songs": [
+      {"title": "Niño Lindo", "n": 18, "sub": "clasicos"}]},
+    {"page": 16, "songs": [
+      {"title": "Somos Hijos de la Iglesia", "sub": "otras"},
+      {"title": "Somos una Nueva Creación", "sub": "otras"},
+      {"title": "Mª Rosa es", "sub": "otras"}]},
+    {"page": 17, "songs": [
+      {"title": "Ayúdales", "sub": "otras"},
+      {"title": "Hacen Falta Brazos", "sub": "otras"}]},
+    {"page": 18, "songs": [
+      {"title": "Alma Misionera", "sub": "otras"},
+      {"title": "Gratis", "sub": "otras"},
+      {"title": "Vive y Comunica el Carisma", "sub": "otras"}]},
+    {"page": 19, "songs": [
+      {"title": "Contento", "sub": "otras"},
+      {"title": "Somos Jóvenes del COM", "sub": "otras"}]},
+    {"page": 20, "songs": [
+      {"title": "Testigos de la Palabra", "sub": "otras"},
+      {"title": "Con el Fuego del Amor", "sub": "otras"}]},
+    {"page": 21, "songs": [
+      {"title": "Sé que voy Contigo", "sub": "otras"},
+      {"title": "Seréis mis Testigos", "sub": "otras"},
+      {"title": "Papy Dios", "sub": "otras"}]},
+    {"page": 22, "songs": [
+      {"title": "Alzad las Manos", "sub": "otras"},
+      {"title": "El León", "sub": "otras"}]},
+    {"page": 23, "songs": [
+      {"title": "Como Corre un Río", "sub": "otras"},
+      {"title": "Granito de Mostaza", "sub": "otras"},
+      {"title": "Surgirá un Mundo Nuevo", "sub": "otras"}]},
+    {"page": 24, "songs": [
+      {"title": "Desde Hoy", "sub": "otras"},
+      {"title": "Quiero Cantar", "sub": "otras"},
+      {"title": "Marxem en Pau", "sub": "otras"}]},
+    {"page": 25, "songs": [
+      {"title": "Estima el Món", "sub": "otras"},
+      {"title": "Ríe Solo Ríe", "sub": "otras"}]},
+    {"page": 26, "songs": [
+      {"title": "Amén", "sub": "otras"},
+      {"title": "Ayúdales", "sub": "otras", "repeat": true}]},
+    {"page": 27, "songs": [
+      {"title": "Himno del COM", "sub": "otras"},
+      {"title": "Hacen Falta Brazos", "sub": "otras", "repeat": true}]},
+    {"page": 28, "songs": [
+      {"title": "Llevad la Buena Noticia", "sub": "otras"},
+      {"title": "En Comunidad", "sub": "otras"}]}
+  ]
+}

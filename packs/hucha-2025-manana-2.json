@@ -1,0 +1,171 @@
+{
+  "title": "Mañana 2",
+  "event": "Villancicos Solidarios 2025 · Edificio Hucha",
+  "targetMinutes": 60,
+  "items": [
+    {
+      "song": null,
+      "title": "Llegó la Navidad",
+      "key": "D",
+      "page": "B33"
+    },
+    {
+      "song": null,
+      "title": "Hacia Belén",
+      "key": "C",
+      "capo": 2,
+      "page": "A5"
+    },
+    {
+      "song": null,
+      "title": "Los Peces En El Rio",
+      "key": "Am",
+      "capo": 4,
+      "page": "A5"
+    },
+    {
+      "song": null,
+      "title": "En Navidad (Rosana)",
+      "key": "C",
+      "capo": 2,
+      "page": "A13"
+    },
+    {
+      "song": null,
+      "title": "Nochenochebuena",
+      "notes": "LA-RE C/4",
+      "page": "B34"
+    },
+    {
+      "song": null,
+      "title": "Hecho con tus sueños 2014",
+      "key": "C",
+      "capo": 4,
+      "page": "B21"
+    },
+    {
+      "song": null,
+      "title": "Bella noche sin sueño",
+      "key": "D",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Venid sencillos pastores",
+      "key": "Am",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Todas nuestras luchas",
+      "key": "Bm",
+      "capo": 1,
+      "page": "B36"
+    },
+    {
+      "song": null,
+      "title": "Hecho con tus Sueños",
+      "key": "C",
+      "capo": 2,
+      "page": "B18"
+    },
+    {
+      "song": null,
+      "title": "Hoy ha nacido",
+      "key": "D",
+      "capo": 3,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Campana sobre Campana",
+      "key": "C",
+      "capo": 1,
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "Todas nuestras luchas",
+      "key": "Bm",
+      "capo": 1,
+      "page": "B36"
+    },
+    {
+      "song": null,
+      "title": "Oh, bianco Natale",
+      "key": "G",
+      "capo": 3,
+      "page": "A4"
+    },
+    {
+      "song": null,
+      "title": "El Tamborilero",
+      "key": "C",
+      "capo": 2,
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "Podemos Vencer",
+      "key": "D",
+      "capo": 1,
+      "page": "B40"
+    },
+    {
+      "song": null,
+      "title": "Dale la Vuelta",
+      "key": "C",
+      "capo": 4,
+      "page": "B19"
+    },
+    {
+      "song": null,
+      "title": "Navidad, es Navidad",
+      "key": "C",
+      "page": "A11"
+    },
+    {
+      "song": null,
+      "title": "Burrito Sabanero",
+      "key": "C",
+      "capo": 2,
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Soñaré",
+      "key": "G",
+      "capo": 4,
+      "page": "B22"
+    },
+    {
+      "song": null,
+      "title": "Sigue tu Estrella",
+      "key": "C",
+      "capo": 2,
+      "page": "B27"
+    },
+    {
+      "song": null,
+      "title": "Superestrella",
+      "key": "D",
+      "capo": 2,
+      "page": "B39"
+    },
+    {
+      "song": null,
+      "title": "Himno Edificio Hucha",
+      "key": "Am",
+      "capo": 1,
+      "page": "A0"
+    },
+    {
+      "song": null,
+      "title": "Feliz Navidad",
+      "key": "G",
+      "page": "A0"
+    }
+  ]
+}

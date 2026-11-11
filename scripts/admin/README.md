@@ -259,6 +259,40 @@ etiquetas**: no aparece una puerta que no lleva a ningún sitio.
 
 Contrato completo en `docs/CAMPOS_CANCIONES.md` §6.
 
+### 🎄 Villancicos Solidarios
+Sección propia en el menú (`static/villancicos.js` + `villancicos_api.py`), con
+tres pestañas:
+
+- **🎶 Canciones** — todo lo de Navidad agrupado por subcategoría (Villancicos
+  clásicos / actuales / Versiones navideñas / Otras canciones, con sus siglas),
+  las propias y las **traídas** de otras categorías (`{tambien_en: navidad/…}`:
+  no se copian ni se mueven). Cambiar la subcategoría en la fila o en bloque,
+  **➕ Traer del cantoral normal**, «Quitar de Navidad» y «＋ también en…» para
+  llevar una de Navidad a otra categoría.
+- **📄 Importar → 📕 Cantoral 2008** — el PDF escaneado página a página: la
+  página al lado de sus canciones (índice a mano en
+  `scripts/villancicos/cantoral-2008.json`) y **✨ Leer con IA**, que manda solo
+  esa página a ✨ Añadir canción y elige la canción pedida. Al crearla queda con
+  su página en `{fuente:}` y su subcategoría. Necesita `pypdf` (en
+  `requirements.txt`: hay que reconstruir la imagen de Docker).
+- **📄 Importar → 📄 Word** — las 51 canciones del Word de canciones nuevas, una
+  a una: a la izquierda cómo están en el Word («como en el papel», cada acorde en
+  su columna) y a la derecha cómo se verán en la app (o el ChordPro, editable).
+  Número y subcategoría, **📥 Crear y revisar** (con su TO DO y la pestaña
+  📄 Original) y **Siguiente que falta →**. Las que ya están en el cantoral
+  normal ofrecen **↪ Tráela a Navidad**. **⟳ Traer la última versión** baja el
+  Google Doc otra vez.
+- **🎼 Packs** — bloques de ~1 hora: horas de inicio, tono/cejilla/notas del
+  día, duración frente al objetivo, arrastrar para ordenar, pausas, y exportar a
+  WhatsApp, lista impresa, **cancionero impreso en el tono del pack** y Markdown.
+
+Detalles, reglas de conversión y qué revisar: `docs/VILLANCICOS_SOLIDARIOS.md`.
+Tests: `python scripts/test_villancicos_docx.py` y `python scripts/test_packs.py`.
+
+En el editor de cualquier canción, **📋 Datos extra → 🗂 Dónde sale**: la
+subcategoría (si su categoría tiene), «también en» otras categorías y la
+duración aproximada.
+
 ### Importar del cantoral (📥)
 Lista las canciones del `.docx` que aún no están en el repo. Checkboxes para
 seleccionar, batch import añade `{comment: TO DO: PENDIENTE REVISIÓN ACORDES}`

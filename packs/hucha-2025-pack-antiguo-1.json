@@ -1,0 +1,73 @@
+{
+  "title": "Pack antiguo 1",
+  "event": "Villancicos Solidarios 2025 · Edificio Hucha",
+  "notes": "De otra edición: las páginas (A7, B13…) son de otro cantoral en papel.",
+  "targetMinutes": 60,
+  "items": [
+    {
+      "song": null,
+      "title": "Feliz navidad",
+      "page": "A7"
+    },
+    {
+      "song": null,
+      "title": "Peces en el río",
+      "page": "A5"
+    },
+    {
+      "song": null,
+      "title": "Oh blanca navidad",
+      "page": "A4"
+    },
+    {
+      "song": null,
+      "title": "La luz que nace en ti",
+      "page": "B13"
+    },
+    {
+      "song": null,
+      "title": "Sigue tu estrella",
+      "page": "B15"
+    },
+    {
+      "song": null,
+      "title": "Navidad es navidad",
+      "page": "A11"
+    },
+    {
+      "song": null,
+      "title": "La marimorena",
+      "page": "A7"
+    },
+    {
+      "song": null,
+      "title": "Mi navidad",
+      "page": "A2"
+    },
+    {
+      "song": null,
+      "title": "Celébrate",
+      "page": "B19"
+    },
+    {
+      "song": null,
+      "title": "Burrito sabanero",
+      "page": "B1"
+    },
+    {
+      "song": null,
+      "title": "Hecho con tus sueños",
+      "page": "B4"
+    },
+    {
+      "song": null,
+      "title": "All i want",
+      "page": "B9"
+    },
+    {
+      "song": null,
+      "title": "Hallelujah",
+      "page": "B17"
+    }
+  ]
+}

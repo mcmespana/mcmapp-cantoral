@@ -41,6 +41,31 @@ que **no** se hicieron en esa iteración pero merecen la pena:
 - **Filtrar el catálogo de doceacordes por lo que falta en el cantoral**, no
   sólo por "está / no está en repo".
 
+## 🎄 Villancicos Solidarios — siguientes pasos
+
+Hecho: subcategorías, «también en», duración, importador del Word, lectura del
+cantoral de 2008 por páginas, packs con exportar/imprimir, prompt para la app
+(`docs/PROMPT_APP_NAVIDAD.md`). Falta:
+
+- **Cuando la app pinte `<i>`/`<u>`/`<b>`**: `APP_MARKUP = True` en
+  `scripts/chordpro.py` (y regenerar `static/mcm-sheet.js` desde mcmapp).
+- **Publicar los packs** en Firebase (`songs/packs`, formato en la Fase 2 de
+  `docs/PROMPT_APP_NAVIDAD.md`): un `scripts/publicar_packs.py` + un workflow
+  que salte con `packs/**`. `packs.resolve` ya da casi todo.
+- **Probar la lectura del PDF de 2008 con la API de verdad** (aquí se probó con
+  la respuesta simulada): sobre todo las páginas con acordes a mano (2, 5, 15) y
+  las de varias canciones en columnas (9, 12). Guardar las que fallen como
+  fixtures (solo villancicos tradicionales).
+- **Word de villancicos**: notas de arreglo que van ENCIMA de una palabra
+  («(campana + pandereta)      (campana)») podrían ser anotaciones `[*…]` en su
+  sitio, como los acordes, en vez de un `{arr:}` antes de la línea. Y «DO STOP»
+  (acorde y grito en la misma línea) sale como letra.
+- **Packs**: poner horas reales («empieza a las 11:00») además del minuto
+  relativo; avisar si una canción se repite en el mismo pack; arrastrar en el
+  móvil (hoy ▲▼).
+- **Duraciones**: rellenar `{duracion:}` de las canciones de Navidad (los
+  packs cuentan 2:30 si no). Se podría sacar de los enlaces de YouTube.
+
 ## Pendiente de la ronda de editor visual / raw / números
 
 Detectado al hacer el selector de números, las operaciones de línea y el raw

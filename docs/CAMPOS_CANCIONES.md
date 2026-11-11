@@ -76,6 +76,9 @@ y su clave en `songs/ediciones`.
 | Otros enlaces | `{otro: label \| url}` | `otherLinks` | `otherLinksNew` / `otherLinksOld` | array de `{label,url}` | Repetible. **Nuevo.** Cualquier otro enlace (p.ej. partitura en una web externa) a pantalla completa. Ver §3.1. |
 | Comentario (meta) | `{comentario: ...}` | `comment` | `commentNew` / `commentOld` | string | OJO: solo `{comentario:}` (español) se extrae a metadato. |
 | Etiquetas | `{tags: a, b, c}` | `tags` | `tagsNew` / `tagsOld` | array de string (slugs) | Libres y transversales. Ver §6. |
+| Subcategoría | `{subcategoria: clasicos}` | `subcategory` | `subcategoryNew` / `subcategoryOld` | string (slug) | **Nuevo.** Un nivel dentro de la categoría (p.ej. Navidad → Villancicos clásicos). Ver §5.1. |
+| También en | `{tambien_en: navidad/otras, himnos}` | `alsoIn` | `alsoInNew` / `alsoInOld` | array de `{category, subcategory?}` | **Nuevo.** La canción se ve además en otras categorías sin duplicar el `.cho`. Ver §5.2. |
+| Duración | `{duracion: 3:30}` | `duration` | `durationNew` / `durationOld` | string `"m:ss"` | **Nuevo.** Aproximada; para sumar el tiempo de un pack. Ver §5.3. |
 
 ### Identificación / estructura
 
@@ -223,7 +226,8 @@ Al generar el JSON (`crear_songs_json.py`), estas directivas **se eliminan** de
 `content` porque pasan a ser campos propios:
 
 `{ritmo:}` · `{album:}` · `{tiempo:}` · `{fuente:}` · `{video:}` ·
-`{youtube:}` · `{audio:}` · `{spotify:}` · `{drive:}` · `{otro:}` · `{comentario:}`
+`{youtube:}` · `{audio:}` · `{spotify:}` · `{drive:}` · `{otro:}` · `{comentario:}` ·
+`{tags:}` · `{subcategoria:}` · `{tambien_en:}` · `{duracion:}`
 
 El resto **permanece** en `content`: `{title:}`, `{artist:}`/`{author:}`,
 `{key:}`, `{capo:}`, `{soc}`, `{eoc}`, `{arr:}`, `{comment:}`, `{c:}` y los
@@ -301,6 +305,89 @@ la **letra inicial** del `categoryTitle` (ver `songs/indice.json`):
 
 En `songs/ediciones`, la app indica la `category` (la clave, p.ej. `ofertorio`)
 y el `filename`; el sincronizador resuelve la carpeta a partir de la letra.
+
+### 5.1 Subcategorías
+
+Una categoría puede partirse en **subcategorías**: Navidad → Villancicos
+clásicos / Villancicos actuales / Versiones navideñas / Otras canciones. Es un
+nivel más **dentro** de la categoría (no es una etiqueta: una canción tiene como
+mucho una subcategoría, y solo de su categoría).
+
+**Dónde se declaran** — en `songs/indice.json`, dentro de la categoría:
+
+```jsonc
+"navidad": {
+  "categoryTitle": "N. Navidad 🎄",
+  "order": 14,
+  "subcategories": {
+    "clasicos":  { "title": "Villancicos clásicos", "short": "VC", "emoji": "⭐", "order": 1,
+                   "description": "Los de toda la vida: tradicionales y populares." },
+    "actuales":  { "title": "Villancicos actuales", "short": "VA", "emoji": "✨", "order": 2 },
+    "versiones": { "title": "Versiones navideñas",  "short": "VN", "emoji": "🎤", "order": 3 },
+    "otras":     { "title": "Otras canciones",      "short": "OC", "emoji": "🎶", "order": 4 }
+  },
+  "songs": []
+}
+```
+
+- La **clave** (`clasicos`) es el identificador estable (slug). El `title` es lo
+  que se ve; cambiarlo no toca ningún `.cho`.
+- `short` son unas **siglas** cortas (2-3 letras) para chips/insignias donde no
+  cabe el título entero. `emoji`, `description` y `order` son opcionales.
+
+**En el `.cho`**: `{subcategoria: clasicos}` en la cabecera (se normaliza a
+slug, así que `{subcategoria: Clásicos}` también vale). Se **quita** del
+`content`, como el resto de directivas meta.
+
+**En `songs/data`**: cada canción lleva `"subcategory": "clasicos"` (solo si
+tiene) y la categoría lleva el catálogo resuelto:
+
+```json
+"navidad": {
+  "categoryTitle": "N. Navidad 🎄",
+  "subcategories": {
+    "clasicos": { "title": "Villancicos clásicos", "short": "VC", "emoji": "⭐", "order": 1,
+                  "description": "Los de toda la vida: tradicionales y populares." }
+  },
+  "songs": [ { "title": "19. Hoy ha Nacido", "subcategory": "actuales", ... } ]
+}
+```
+
+- `subcategories` es un **mapa por slug** (como `songs/tags`), no un array:
+  Firebase se lleva mejor con objetos. El orden va en `order`.
+- Una canción **sin** subcategoría en una categoría que sí tiene es válida: la
+  app la pone en un grupo «Sin clasificar» (o al final).
+- Una subcategoría que no está declarada funciona igual (la app usa el slug
+  capitalizado); `crear_songs_json.py` avisa para que se declare o se corrija.
+
+### 5.2 «También en» (`alsoIn`)
+
+Una canción vive en **una** carpeta (su categoría), pero puede verse además en
+otras: «Somos Consolación» es de Himnos y se canta en los Villancicos
+Solidarios. En vez de duplicar el `.cho`:
+
+```chordpro
+{title: Somos Consolación}
+{tambien_en: navidad/otras}
+```
+
+- Valor: lista separada por comas de `categoría` o `categoría/subcategoría`
+  (claves de `indice.json`). Repetible: dos `{tambien_en:}` se acumulan; si la
+  misma categoría sale dos veces, manda la última subcategoría.
+- **En `songs/data`**: `"alsoIn": [{"category": "navidad", "subcategory": "otras"}]`
+  en la canción, que **sigue** dentro de su categoría de siempre (`himnos`).
+  La app la enseña también en la lista de Navidad → Otras canciones (con una
+  marca de que «vive» en Himnos), sin contarla dos veces en búsquedas.
+- Vale para los dos sentidos: traer una canción del cantoral normal a Navidad
+  (`{tambien_en: navidad/otras}` en una de Himnos) y llevar una de Navidad a
+  otra categoría (`{tambien_en: himnos}` en una de Navidad).
+
+### 5.3 Duración
+
+`{duracion: 3:30}` → `"duration": "3:30"`. Siempre `m:ss` (el generador y el
+admin normalizan `3'30`, `3m30s`, `210`…). Es aproximada y opcional; sirve para
+que un pack (playlist) de villancicos sepa cuánto dura (ver
+`docs/VILLANCICOS_SOLIDARIOS.md`).
 
 ---
 
@@ -429,7 +516,10 @@ Reglas del sincronizador:
   `capo`, `info`, `content`.
 - Campos opcionales (pueden faltar): `rhythm`, `album`, `liturgicalTime`,
   `source`, `videoEmbed`, `youtubeLinks`, `audioLinks`, `spotifyLinks`,
-  `driveLinks`, `otherLinks`, `comment`.
+  `driveLinks`, `otherLinks`, `comment`, `tags`, `subcategory`, `alsoIn`,
+  `duration`.
+- Una categoría puede traer `subcategories` (mapa por slug con `title`,
+  `short`, `emoji`, `description`, `order`). Ver §5.1–§5.2.
 - `youtubeLinks` / `audioLinks` / `spotifyLinks` / `driveLinks` / `otherLinks`
   son arrays de `{label, url}` (label puede ser `""`). Ver §3.1 para cómo debe
   abrir cada uno la app: `audioLinks` = reproductor flotante; `youtubeLinks` =

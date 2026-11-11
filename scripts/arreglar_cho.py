@@ -101,6 +101,8 @@ def split_long(raw):
     pos = 0
     pieces = []
     for m in re.finditer(r"([,.;:!?…]+[\"'»”)]*)((?:\[[^\]]*\])*)(\s+)", body):
+        if body.count("[", 0, m.start()) > body.count("]", 0, m.start()):
+            continue  # la coma está dentro de unos corchetes: «[*CLAP, CLAP]»
         end_punct = m.start(2)
         if lyric(body[end_punct:]):
             pieces.append(body[pos:end_punct].rstrip())

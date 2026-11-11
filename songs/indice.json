@@ -67,6 +67,36 @@
   "navidad": {
     "categoryTitle": "N. Navidad 🎄",
     "order": 14,
+    "subcategories": {
+      "clasicos": {
+        "title": "Villancicos clásicos",
+        "short": "VC",
+        "emoji": "⭐",
+        "order": 1,
+        "description": "Los de toda la vida: tradicionales y populares."
+      },
+      "actuales": {
+        "title": "Villancicos actuales",
+        "short": "VA",
+        "emoji": "✨",
+        "order": 2,
+        "description": "Villancicos nuevos, de grupos y cantautores de ahora."
+      },
+      "versiones": {
+        "title": "Versiones navideñas",
+        "short": "VN",
+        "emoji": "🎤",
+        "order": 3,
+        "description": "Canciones de Navidad de la radio y adaptaciones de canciones conocidas."
+      },
+      "otras": {
+        "title": "Otras canciones",
+        "short": "OC",
+        "emoji": "🎶",
+        "order": 4,
+        "description": "Las que se cantan en los Villancicos Solidarios sin ser de Navidad."
+      }
+    },
     "songs": []
   },
   "pascua": {

@@ -23,6 +23,12 @@ SCALAR_FIELDS = {
     "liturgicalTime": "tiempo",
     "source":         "fuente",
     "videoEmbed":     "video",
+    # Subcategoría dentro de la categoría de la canción (slug declarado en
+    # songs/indice.json → "subcategories"). Ver §5.1 de docs/CAMPOS_CANCIONES.md.
+    "subcategory":    "subcategoria",
+    # Duración aproximada, "m:ss". La usan los packs de villancicos para sumar
+    # el tiempo de un bloque. Ver §5.3.
+    "duration":       "duracion",
     "comment":        "comentario",
 }
 LIST_FIELDS = {
@@ -47,9 +53,16 @@ LIST_FIELDS = {
 TAG_FIELDS = {
     "tags": "tags",
 }
+# «También en»: la canción vive en su carpeta (su categoría de siempre) pero se
+# ve además en otras categorías: {tambien_en: navidad/otras, himnos}.
+# Es lo que permite «traer» una canción del cantoral normal a Navidad sin
+# duplicar el .cho (y al revés). Lista de {category, subcategory}. Ver §5.2.
+ALSO_IN_FIELDS = {
+    "alsoIn": "tambien_en",
+}
 # Todas las directivas multimedia/meta (las que se extraen del cuerpo al JSON).
 MEDIA_DIRECTIVES = (list(SCALAR_FIELDS.values()) + list(LIST_FIELDS.values())
-                    + list(TAG_FIELDS.values()))
+                    + list(TAG_FIELDS.values()) + list(ALSO_IN_FIELDS.values()))
 
 _DIRECTIVE_TO_SCALAR = {v: k for k, v in SCALAR_FIELDS.items()}
 _DIRECTIVE_TO_LIST = {v: k for k, v in LIST_FIELDS.items()}
@@ -186,6 +199,8 @@ def empty_media() -> dict:
         d[f] = []
     for f in TAG_FIELDS:
         d[f] = []
+    for f in ALSO_IN_FIELDS:
+        d[f] = []
     return d
 
 
@@ -202,9 +217,130 @@ def parse_media(text: str) -> dict:
         elif directive == "tags":
             # Repetible por comodidad: dos {tags:} se acumulan sin duplicar.
             media["tags"] = normalize_tags(media["tags"] + [val])
+        elif directive == "tambien_en":
+            media["alsoIn"] = normalize_also_in(media["alsoIn"] + parse_also_in(val))
         else:
-            media[_DIRECTIVE_TO_SCALAR[directive]] = val
+            field = _DIRECTIVE_TO_SCALAR[directive]
+            if field == "subcategory":
+                val = slugify_tag(val)
+            elif field == "duration":
+                secs = parse_duration(val)
+                val = format_duration(secs) if secs else val
+            if val:
+                media[field] = val
     return media
+
+
+# ─────────── Subcategorías y «también en» ─────────── #
+#
+# Subcategoría = un nivel más dentro de UNA categoría (Navidad → Villancicos
+# clásicos, actuales…). Se declaran en songs/indice.json, dentro de la
+# categoría, con su título, siglas, emoji y orden. En el .cho va el slug:
+# {subcategoria: clasicos}.
+#
+# «También en» = la misma canción listada además en OTRA categoría (y,
+# opcionalmente, en una subcategoría de esa otra): {tambien_en: navidad/otras}.
+# El .cho no se mueve ni se duplica; la app la enseña en los dos sitios.
+
+
+def parse_also_in(value) -> list:
+    """'navidad/otras, himnos' → [{category:'navidad', subcategory:'otras'},
+    {category:'himnos'}]. Acepta también listas de strings o de dicts."""
+    items = []
+    if isinstance(value, str):
+        raw = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        raw = list(value)
+    else:
+        raw = []
+    for it in raw:
+        if isinstance(it, dict):
+            cat = slugify_tag(it.get("category") or "")
+            sub = slugify_tag(it.get("subcategory") or "")
+        else:
+            cat, _, sub = str(it).partition("/")
+            cat, sub = slugify_tag(cat), slugify_tag(sub)
+        if not cat:
+            continue
+        entry = {"category": cat}
+        if sub:
+            entry["subcategory"] = sub
+        items.append(entry)
+    return items
+
+
+def normalize_also_in(value) -> list:
+    """Lista de «también en» sin duplicados (una entrada por categoría: la
+    última subcategoría manda)."""
+    out: dict = {}
+    for entry in parse_also_in(value):
+        out[entry["category"]] = entry
+    return list(out.values())
+
+
+def format_also_in(value) -> str:
+    """[{category, subcategory}] → 'navidad/otras, himnos' ('' si no hay)."""
+    parts = []
+    for e in normalize_also_in(value):
+        parts.append(e["category"] + (f"/{e['subcategory']}" if e.get("subcategory") else ""))
+    return ", ".join(parts)
+
+
+def load_subcategories(indice: dict) -> dict:
+    """{categoria: {slug: {title, short, emoji, order, description}}} desde
+    indice.json. Las categorías sin subcategorías no aparecen."""
+    out = {}
+    for cat_key, info in (indice or {}).items():
+        subs = (info or {}).get("subcategories")
+        if not isinstance(subs, dict) or not subs:
+            continue
+        clean = {}
+        for i, (raw_slug, sub) in enumerate(subs.items()):
+            slug = slugify_tag(raw_slug)
+            if not slug:
+                continue
+            sub = sub if isinstance(sub, dict) else {"title": str(sub)}
+            entry = {"title": str(sub.get("title") or pretty_tag_label(slug)).strip()}
+            for k in ("short", "emoji", "description"):
+                v = str(sub.get(k) or "").strip()
+                if v:
+                    entry[k] = v
+            entry["order"] = sub["order"] if isinstance(sub.get("order"), int) else i + 1
+            clean[slug] = entry
+        out[cat_key] = clean
+    return out
+
+
+# ─────────── Duración ("m:ss") ─────────── #
+
+_DUR_RX = re.compile(
+    r"^\s*(?:(\d{1,3})\s*(?::|'|’|m(?:in)?\.?)\s*(\d{1,2})?\s*(?:\"|”|s(?:eg)?\.?)?"
+    r"|(\d{1,4})\s*(?:\"|”|s(?:eg)?\.?)?)\s*$", re.IGNORECASE)
+
+
+def parse_duration(value) -> int:
+    """'3:30' / "3'30" / '3m30s' / '3 min' → segundos. '210' o '210s' → 210.
+    0 si no se entiende."""
+    m = _DUR_RX.match(str(value or ""))
+    if not m:
+        return 0
+    if m.group(3) is not None:          # solo segundos
+        return int(m.group(3))
+    mins, secs = int(m.group(1)), int(m.group(2) or 0)
+    if secs >= 60:
+        return 0
+    return mins * 60 + secs
+
+
+def format_duration(seconds) -> str:
+    """210 → '3:30'. '' si no hay duración."""
+    try:
+        s = int(seconds or 0)
+    except (TypeError, ValueError):
+        return ""
+    if s <= 0:
+        return ""
+    return f"{s // 60}:{s % 60:02d}"
 
 
 # Marca de trabajo del admin: «esta estrofa trae acordes deducidos de otra,
@@ -221,6 +357,35 @@ def strip_media(text: str) -> str:
     """Quita del cuerpo las líneas de directivas multimedia/meta (y las marcas
     de trabajo del admin, que no son para la app)."""
     return _ADMIN_STRIP_RX.sub("", _STRIP_RX.sub("", text))
+
+
+# ─────────── Marcado dentro de la letra: <i>, <b>, <u> ─────────── #
+#
+# ChordPro 6 admite marcado tipo Pango en la letra. Usamos solo tres etiquetas,
+# para lo que el papel distingue con formato y tiene significado al cantar:
+#   <i>…</i>  cursiva: 2ª voz, eco, la parte del otro grupo
+#   <u>…</u>  subrayado: altas/bajas (lo dice la leyenda de la canción)
+#   <b>…</b>  negrita dentro de una línea que NO es estribillo (énfasis)
+# Nunca cruzan de una línea a otra. Ver docs/VILLANCICOS_SOLIDARIOS.md.
+#
+# APP_MARKUP dice si la app ya sabe pintarlo. Mientras sea False,
+# crear_songs_json.py lo quita del `content` (si no, la app enseñaría «<i>» tal
+# cual) y la vista previa del admin hace lo mismo. Los .cho lo guardan siempre:
+# el día que la app lo pinte, se pone a True y aparece solo.
+APP_MARKUP = False
+MARKUP_TAGS = ("i", "b", "u")
+_MARKUP_RX = re.compile(r"</?(?:" + "|".join(MARKUP_TAGS) + r")>", re.IGNORECASE)
+
+
+def strip_markup(text: str) -> str:
+    """Quita <i> <b> <u> (y sus cierres) dejando el texto."""
+    return _MARKUP_RX.sub("", text)
+
+
+def content_for_app(text: str) -> str:
+    """El cuerpo tal y como viaja a la app (songs/data → `content`)."""
+    body = strip_media(text)
+    return body if APP_MARKUP else strip_markup(body)
 
 
 # ─────────── Etiquetas del cantoral: {tags: a, b, c} ─────────── #
