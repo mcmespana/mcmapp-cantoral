@@ -161,7 +161,7 @@ llegan ya y se pintan, pero con el mismo estilo que un acorde.
 1. En `songSheet`/`songDocument`: reconocer `<i> </i> <u> </u> <b> </b>` en la
    letra **antes** de pasarla a chordsheetjs (que escapa), igual que ya se hace
    con `{arr:}` (marcador privado `@@ARR@@`): sustitúyelas por marcadores de uso
-   privado (p.ej. ``…``), y al generar el HTML conviértelas en
+   privado (p.ej. `\uE000`…`\uE005`), y al generar el HTML conviértelas en
    `<em class="v2">`, `<span class="u">`, `<strong>` **por segmento**: la hoja
    parte la línea en segmentos acorde+texto (`.s > .t`), así que cada segmento
    abre y cierra las etiquetas que estén activas en ese punto (nada de HTML mal
