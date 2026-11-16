@@ -669,6 +669,7 @@ Esto se apoya en las reglas de la base de datos: cada usuario tiene que poder
 | `POST /api/app/song/convert` | `{text, format?}` → ChordPro. Lo mismo que la vista previa de ✨ Añadir canción (`format`, `meta`, `cho`, `notes`, `stats`, `duplicate`), sin las candidatas de doceacordes. |
 | `POST /api/app/song/read` | Fotos o PDF (`multipart`, campo `files`) → canciones leídas con la IA, como en ✨. Cada canción trae además `cho`, `meta` y `warnings`: ya convertida, lista para el editor. Sin IA configurada, `503`. |
 | `POST /api/app/song/new` | `{category, title, artist?, key?, capo?, number?, content}` (`content` en ChordPro; `category`, clave de Firebase o letra). Mismas reglas que ✨ Añadir canción: lleva su `TO DO` y el primer número libre. Responde `{ok, path, filename, committed, pushed, warning?}`. |
+| `POST /api/app/category/reorder` | `{category, order: [filename, …]}` con todas las canciones de la categoría en el orden nuevo. Renumera los `.cho` (como arrastrar en el admin), commit de la carpeta y push. Responde `{ok, category, new_order, committed, pushed, warning?}`. |
 
 Detalles de `save` y `new`:
 

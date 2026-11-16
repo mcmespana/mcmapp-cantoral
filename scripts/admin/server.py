@@ -2382,6 +2382,12 @@ def api_reorder():
     cat = next((c for c in list_categories() if c["letter"] == letter), None)
     if not cat:
         abort(404, "Categoría no encontrada")
+    final_names = _reorder_category(cat, order)
+    return jsonify({"ok": True, "category": letter, "new_order": final_names})
+
+
+def _reorder_category(cat: dict, order: list) -> list:
+    """Renumera los .cho de una categoría según `order` (lo usan el admin y la app)."""
     folder = SONGS_DIR / cat["folder"]
     current = {p.name: p for p in folder.glob("*.cho")}
     # Validar: todos los filenames no-null deben existir y ser únicos
@@ -2430,7 +2436,7 @@ def api_reorder():
         (folder / final_name).exists()  # no debería existir; backup ya hecho
         tp.rename(folder / final_name)
         final_names[slot - 1] = final_name
-    return jsonify({"ok": True, "category": letter, "new_order": final_names})
+    return final_names
 
 
 @app.route("/api/build-json", methods=["POST"])
@@ -2963,6 +2969,28 @@ def api_app_song_save():
         git = _app_commit_push(path, f"app: edita «{title}» ({_app_who()})")
     return jsonify({"ok": True, "path": str(path.relative_to(REPO_DIR)),
                     "filename": path.name, "unchanged": res.status == "skipped", **git})
+
+
+@app.route("/api/app/category/reorder", methods=["POST"])
+def api_app_category_reorder():
+    """Reordena una categoría desde la app: renumera los .cho + commit + push.
+
+    Body: {category (clave o letra), order: [filename, …]} con TODAS las
+    canciones de la categoría en el orden nuevo. Devuelve `new_order` (los
+    nombres ya renumerados).
+    """
+    body = _app_json()
+    order = body.get("order")
+    if not isinstance(order, list) or not order:
+        abort(400, "Falta order")
+    cat = _app_category(body.get("category"))
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    with _app_write_lock:
+        final_names = _reorder_category(cat, list(order))
+        git = _app_commit_push(SONGS_DIR / cat["folder"],
+                               f"app: reordena «{_one_line(cat['title'])}» ({_app_who()})")
+    return jsonify({"ok": True, "category": cat["letter"], "new_order": final_names, **git})
 
 
 @app.route("/api/app/song/convert", methods=["POST"])

@@ -327,6 +327,25 @@ def test_status():
             assert client.get("/api/app/status", headers=bearer()).get_json()["ai"] is True
 
 
+# ── reordenar ──────────────────────────────────────────────────────────────────
+def test_reorder_renumera_y_commitea_la_carpeta():
+    with sandbox() as (client, repo, git):
+        folder = repo / "songs" / "E. Ofertorio"
+        (folder / "02.otra.cho").write_text("{title: Otra}\n", encoding="utf-8")
+        r = client.post("/api/app/category/reorder", headers=bearer(),
+                        json={"category": "ofertorio", "order": ["02.otra.cho", SONG]})
+        assert r.status_code == 200, r.get_data(as_text=True)
+        data = r.get_json()
+        assert data["new_order"][0] == "01.otra.cho" and data["pushed"] is True
+        assert sorted(p.name for p in folder.glob("*.cho")) == sorted(data["new_order"])
+        assert git.named("add") == [["add", "--", "songs/E. Ofertorio"]]
+        # faltan canciones → 400; categoría que no existe → 404
+        assert client.post("/api/app/category/reorder", headers=bearer(),
+                           json={"category": "E", "order": ["01.otra.cho"]}).status_code == 400
+        assert client.post("/api/app/category/reorder", headers=bearer(),
+                           json={"category": "nope", "order": ["x.cho"]}).status_code == 404
+
+
 # ── guardar ────────────────────────────────────────────────────────────────────
 def test_save_aplica_y_commitea_solo_ese_archivo():
     with sandbox() as (client, repo, git):
