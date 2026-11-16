@@ -17,9 +17,14 @@ Endpoints (ver /api/health para listado):
   POST /api/docx/import             → body: {ids: [N,...]} importa con TO DO
   POST /api/reorder                 → body: {category, order: [filename,...]}
   POST /api/build-json              → ejecuta crear_songs_json.py
+  /api/app/*                        → API para el editor de canciones de la app
+                                      (token de Firebase en vez de Basic auth;
+                                      ver «API para la app» más abajo)
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -38,7 +43,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from flask import Flask, Response, jsonify, request, send_from_directory, abort
+from flask import Flask, Response, g, jsonify, request, send_from_directory, abort
 from werkzeug.exceptions import HTTPException
 
 # Importar el conversor docx como módulo (mismo paquete scripts/)
@@ -66,6 +71,7 @@ import song_import as si  # noqa: E402  (canciones sueltas: texto pegado → .ch
 import ai_review  # noqa: E402  (segunda mirada con Claude: señala, no reescribe)
 import song_reader as sr  # noqa: E402  (foto/PDF → canción, leída con Claude)
 import web_import as wi  # noqa: E402  (enlace → canción)
+import sincronizaCambiosDeFirebase as sync  # noqa: E402  (edición de la app → .cho)
 
 # Marca para canciones pendientes de revisar acordes (TO DO con espacio entre TO y DO)
 TODO_COMMENT_LINE = "{comment: TO DO: PENDIENTE REVISIÓN ACORDES}"
@@ -100,11 +106,18 @@ def _load_admin_users() -> Dict[str, str]:
 
 _ADMIN_USERS = _load_admin_users()
 
+# Rutas del editor de canciones de la app: no llevan la Basic auth del admin (la
+# app no puede guardar una contraseña) sino el ID token de Firebase del usuario.
+# Su control de acceso está en «API para la app», más abajo.
+APP_API_PREFIX = "/api/app/"
+
 
 @app.before_request
 def _require_auth():
     if not _ADMIN_USERS or request.path == "/api/health":
         return None
+    if request.path.startswith(APP_API_PREFIX):
+        return None  # se autentican solas (_app_api_gate)
     auth = request.authorization
     valid = (
         auth is not None
@@ -1024,9 +1037,14 @@ def api_song_meta_quick_add():
     return jsonify({"ok": True, "meta": parse_cho_metadata(new_content)})
 
 
-@app.route("/api/song/new", methods=["POST"])
-def api_song_new():
-    body = request.get_json(silent=True) or {}
+def _create_song(body: dict) -> Path:
+    """Crea el .cho de una canción nueva y devuelve su ruta.
+
+    Compartido por «➕ Nueva canción» / «✨ Añadir canción» del admin y por la
+    API de la app, para que las dos pongan el TO DO y elijan número igual.
+    `body` es el de /api/song/new: {category (letra), title, artist?, key?,
+    capo?, number?, mode: blank|chordpro|import, content?}.
+    """
     cat_letter = (body.get("category") or "").upper()
     title = (body.get("title") or "").strip()
     artist = (body.get("artist") or "").strip()
@@ -1078,10 +1096,16 @@ def api_song_new():
         content = "\n".join(header) + "\n\n" + body_text
 
     fpath.write_text(content, encoding="utf-8")
+    return fpath
+
+
+@app.route("/api/song/new", methods=["POST"])
+def api_song_new():
+    fpath = _create_song(request.get_json(silent=True) or {})
     return jsonify({
         "ok": True,
         "path": str(fpath.relative_to(REPO_DIR)),
-        "filename": fname,
+        "filename": fpath.name,
     })
 
 
@@ -1104,18 +1128,17 @@ def api_app_preview_config():
     })
 
 
-@app.route("/api/song/import/preview", methods=["POST"])
-def api_song_import_preview():
-    """Texto pegado → .cho + avisos, sin escribir nada.
+def _convert_pasted_text(body: dict) -> dict:
+    """Texto pegado → lo de ImportResult.to_dict() + `duplicate` (canción del
+    repo con el mismo título, si la hay). No escribe nada.
 
+    Compartido por la vista previa de «✨ Añadir canción» y por la API de la app.
     Body: {text, format?}  (format: chordpro | chords_above | lyrics; si no
-    viene se detecta). Devuelve lo de ImportResult.to_dict() y además:
-      - duplicate: canción del repo con el mismo título, si la hay.
-      - doce: candidatas de doceacordes por título (útil sobre todo cuando se
-        pega letra sola: allí puede estar con acordes).
+    viene se detecta).
     """
-    body = request.get_json(silent=True) or {}
     text = body.get("text") or ""
+    if not isinstance(text, str):
+        abort(400, "text debe ser un texto")
     if len(text) > 60000:
         abort(413, "Texto demasiado largo para una canción")
     fmt = body.get("format") or None
@@ -1124,12 +1147,26 @@ def api_song_import_preview():
     res = si.import_text(text, fmt).to_dict()
     title = res["meta"].get("title") or ""
     res["duplicate"] = None
-    res["doce"] = []
     if title:
         r = find_repo_match(title, build_repo_title_index(list_repo_songs()))
         if r:
             res["duplicate"] = {"path": r["path"], "title": r["title"],
                                 "category_letter": r["category_letter"]}
+    return res
+
+
+@app.route("/api/song/import/preview", methods=["POST"])
+def api_song_import_preview():
+    """Texto pegado → .cho + avisos, sin escribir nada.
+
+    Body: {text, format?}. Devuelve lo de _convert_pasted_text y además:
+      - doce: candidatas de doceacordes por título (útil sobre todo cuando se
+        pega letra sola: allí puede estar con acordes).
+    """
+    res = _convert_pasted_text(request.get_json(silent=True) or {})
+    title = res["meta"].get("title") or ""
+    res["doce"] = []
+    if title:
         try:
             res["doce"] = [
                 {"id": c["id"], "title": c.get("title", ""), "artist": c.get("artist", ""),
@@ -1197,6 +1234,25 @@ def _category_titles() -> List[str]:
     return [c["title"] for c in list_categories()]
 
 
+def _read_uploaded_songs() -> dict:
+    """Los `files` de la petición (multipart) → canciones leídas con IA.
+
+    Compartido por «📷 Foto o PDF» del admin y por la API de la app. Devuelve lo
+    de song_reader.read_files: {songs: [{title, text, category, doubts, notes}],
+    ignored, uploads, model}. No escribe en el repo.
+    """
+    if not ai_review.is_configured():
+        abort(503, ai_review.not_configured_message())
+    files = request.files.getlist("files")
+    try:
+        payload = [sr.prepare_upload(f.read(), f.mimetype or "", f.filename or "") for f in files]
+        return sr.read_files(payload, categories=_category_titles())
+    except sr.ReadError as e:
+        abort(400, str(e))
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
+
+
 @app.route("/api/song/read", methods=["POST"])
 def api_song_read():
     """Foto(s), escaneo o PDF → canciones leídas con IA (no escribe en el repo).
@@ -1206,16 +1262,7 @@ def api_song_read():
     doubts, notes}], ignored, uploads, model}. El `text` de cada canción va a la
     caja de ✨ Añadir canción, que lo convierte igual que lo pegado a mano.
     """
-    if not ai_review.is_configured():
-        abort(503, ai_review.not_configured_message())
-    files = request.files.getlist("files")
-    try:
-        payload = [sr.prepare_upload(f.read(), f.mimetype or "", f.filename or "") for f in files]
-        return jsonify(sr.read_files(payload, categories=_category_titles()))
-    except sr.ReadError as e:
-        abort(400, str(e))
-    except ai_review.ReviewError as e:
-        abort(502, str(e))
+    return jsonify(_read_uploaded_songs())
 
 
 @app.route("/api/song/fetch-url", methods=["POST"])
@@ -2470,6 +2517,54 @@ def api_git_status():
         return jsonify({"ok": False, "error": str(e)})
 
 
+def _push_with_rebase(step) -> Dict[str, object]:
+    """`git push`; si lo rechazan porque alguien subió antes, se traen sus
+    cambios, los nuestros se replantan encima y se reintenta.
+
+    Compartido por «☁️ Subir» del admin y por la API de la app. `step(nombre,
+    proc)` apunta cada paso y devuelve si fue bien. Devuelve {ok, branch} y,
+    según el caso, `error` (si no ok) o `merged` + `pulled` (archivos que han
+    llegado al juntar).
+    """
+    branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    has_upstream = _run_git(["rev-parse", "--abbrev-ref", "@{u}"]).returncode == 0
+    push_args = ["push"] if has_upstream else ["push", "-u", "origin", branch]
+    push = _run_git(push_args, timeout=60)
+    if step("push", push):
+        return {"ok": True, "branch": branch}
+
+    # El caso habitual con diferencia: alguien subió mientras tú editabas.
+    # No es un error que deba ver el usuario: se traen sus cambios, los
+    # nuestros se replantan encima y se reintenta. Sin esto el admin se
+    # queda bloqueado (no puedes subir porque falta descargar, y no puedes
+    # descargar porque tienes cambios sin subir).
+    stderr = push.stderr or ""
+    if not ("rejected" in stderr or "fetch first" in stderr):
+        return {"ok": False, "branch": branch,
+                "error": "Fallo en git push: " + _git_detail(push)}
+
+    before = _run_git(["rev-parse", "HEAD"]).stdout.strip()
+    pull = _run_git(["pull", "--rebase", "--autostash"], timeout=60)
+    if not step("pull", pull):
+        # Deja el repo como estaba: mejor pedir ayuda que dejarlo a medias.
+        _run_git(["rebase", "--abort"])
+        return {
+            "ok": False, "branch": branch, "rebase_failed": True,
+            "error": "Alguien ha tocado las mismas líneas que tú y no se "
+                     "puede juntar automáticamente. Bájate el .cho con ⬇ "
+                     "para no perder tu trabajo y avisa a David.",
+        }
+    after = _run_git(["rev-parse", "HEAD"]).stdout.strip()
+    pulled = [f for f in _run_git(["diff", "--name-only", before, after]).stdout.split("\n")
+              if f.strip()] if before != after else []
+
+    push2 = _run_git(push_args, timeout=60)
+    if not step("push2", push2):
+        return {"ok": False, "branch": branch,
+                "error": "Fallo en git push: " + _git_detail(push2)}
+    return {"ok": True, "branch": branch, "merged": True, "pulled": pulled}
+
+
 @app.route("/api/git/commit", methods=["POST"])
 def api_git_commit():
     """Commit + push rápido de los cambios actuales.
@@ -2501,45 +2596,14 @@ def api_git_commit():
         if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr):
             return jsonify({"ok": False, "steps": steps,
                             "error": "Fallo en git commit: " + _git_detail(commit)}), 500
-        branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
-        has_upstream = _run_git(["rev-parse", "--abbrev-ref", "@{u}"]).returncode == 0
-        push_args = ["push"] if has_upstream else ["push", "-u", "origin", branch]
-        push = _run_git(push_args, timeout=60)
-        if step("push", push):
-            return jsonify({"ok": True, "steps": steps, "branch": branch})
-
-        # El caso habitual con diferencia: alguien subió mientras tú editabas.
-        # No es un error que deba ver el usuario: se traen sus cambios, los
-        # nuestros se replantan encima y se reintenta. Sin esto el admin se
-        # queda bloqueado (no puedes subir porque falta descargar, y no puedes
-        # descargar porque tienes cambios sin subir).
-        stderr = push.stderr or ""
-        if not ("rejected" in stderr or "fetch first" in stderr):
-            return jsonify({"ok": False, "steps": steps,
-                            "error": "Fallo en git push: " + _git_detail(push)}), 500
-
-        before = _run_git(["rev-parse", "HEAD"]).stdout.strip()
-        pull = _run_git(["pull", "--rebase", "--autostash"], timeout=60)
-        if not step("pull", pull):
-            # Deja el repo como estaba: mejor pedir ayuda que dejarlo a medias.
-            _run_git(["rebase", "--abort"])
-            return jsonify({
-                "ok": False, "steps": steps,
-                "error": "Alguien ha tocado las mismas líneas que tú y no se "
-                         "puede juntar automáticamente. Bájate el .cho con ⬇ "
-                         "para no perder tu trabajo y avisa a David.",
-            }), 500
-        after = _run_git(["rev-parse", "HEAD"]).stdout.strip()
-        pulled = [f for f in _run_git(["diff", "--name-only", before, after]).stdout.split("\n")
-                  if f.strip()] if before != after else []
-
-        push2 = _run_git(push_args, timeout=60)
-        if not step("push2", push2):
-            return jsonify({"ok": False, "steps": steps,
-                            "error": "Fallo en git push: " + _git_detail(push2)}), 500
-        return jsonify({"ok": True, "steps": steps, "branch": branch,
-                        "merged": True, "pulled_count": len(pulled),
-                        "needs_restart": _needs_restart(pulled)})
+        res = _push_with_rebase(step)
+        if not res["ok"]:
+            return jsonify({"ok": False, "steps": steps, "error": res["error"]}), 500
+        if not res.get("merged"):
+            return jsonify({"ok": True, "steps": steps, "branch": res["branch"]})
+        return jsonify({"ok": True, "steps": steps, "branch": res["branch"],
+                        "merged": True, "pulled_count": len(res["pulled"]),
+                        "needs_restart": _needs_restart(res["pulled"])})
     except Exception as e:
         return jsonify({"ok": False, "steps": steps, "error": str(e)}), 500
 
@@ -2585,6 +2649,386 @@ def api_git_pull():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ─────────── 📱 API para la app (/api/app/*) ─────────── #
+#
+# El editor de canciones de la app habla con estas rutas. La app no guarda
+# ningún secreto: manda el ID token de Firebase de quien ha iniciado sesión y
+# aquí se comprueba que es administrador del cantoral (users/<uid>/isAdmin =
+# true en la Realtime Database). Sin dependencias ni service account: la firma
+# del token la valida Firebase al usarlo nosotros en la consulta.
+
+_APP_UID_RX = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_APP_TOKEN_TTL = 300          # segundos que vale un «sí, es admin»
+_APP_TOKEN_MAX_CHARS = 8192   # un ID token ronda 1 kB; más que esto no lo es
+_APP_FIREBASE_TIMEOUT = 8
+_APP_MAX_JSON_BYTES = 2 * 1024 * 1024
+_APP_MAX_SONG_CHARS = 120000  # como /api/song/ai-correct
+_APP_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+}
+_GIT_LOCK_WAIT = 1.0          # espera antes de reintentar si git tiene el índice cogido
+
+# sha256(token) → (caduca, usuario). Nunca el token: ni aquí ni en un log.
+_app_token_cache: Dict[str, tuple] = {}
+_app_token_lock = threading.Lock()
+# Escribir el .cho y hacer su commit va de uno en uno (dentro de este proceso).
+_app_write_lock = threading.Lock()
+
+
+class AppAuthError(Exception):
+    """El token no vale para la API de la app. `code` es el HTTP a devolver."""
+
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _one_line(value, limit: int = 120) -> str:
+    """Texto de fuera → una sola línea corta (para un mensaje de commit)."""
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+
+
+def _jwt_claims(token: str) -> dict:
+    """Payload del JWT SIN verificar la firma: solo sirve para saber por quién
+    preguntar. Lo que diga no vale nada hasta que Firebase acepte el token."""
+    parts = token.split(".")
+    try:
+        if len(parts) != 3:
+            raise ValueError("no es un JWT")
+        raw = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(raw.encode("ascii")))
+    except Exception:
+        raise AppAuthError(401, "Sesión no válida") from None
+    if not isinstance(claims, dict):
+        raise AppAuthError(401, "Sesión no válida")
+    return claims
+
+
+def _http_get(url: str, timeout: float) -> tuple:
+    """GET → (status, cuerpo). Un 4xx/5xx no lanza: se devuelve su status."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def verify_app_admin(token: str) -> Dict[str, object]:
+    """ID token de Firebase → {uid, email, name, exp} si es admin del cantoral.
+
+    Si no, AppAuthError. Se le pregunta a Firebase por users/<uid>/isAdmin
+    usando el propio token (?auth=): si el token es falso o está caducado,
+    Firebase contesta 401, y si es bueno pero la cuenta no es admin, el valor
+    no es `true`. Los tests cambian esta función por una falsa (no hay red).
+    """
+    claims = _jwt_claims(token)
+    uid = str(claims.get("user_id") or claims.get("sub") or "")
+    if not _APP_UID_RX.match(uid):
+        raise AppAuthError(401, "Sesión no válida")
+    _load_env_once()
+    base = (os.environ.get("FIREBASE_URL") or "").strip().rstrip("/")
+    if not base:
+        raise AppAuthError(503, "El servidor del cantoral no tiene FIREBASE_URL configurada "
+                                "y no puede comprobar quién eres. Avisa a quien lo mantiene.")
+    url = f"{base}/users/{uid}/isAdmin.json?auth=" + urllib.parse.quote(token, safe="")
+    try:
+        status, body = _http_get(url, _APP_FIREBASE_TIMEOUT)
+    except Exception:
+        # Sin el detalle del error: la URL lleva el token y no debe salir de aquí.
+        raise AppAuthError(502, "No se ha podido comprobar la sesión con Firebase. "
+                                "Inténtalo otra vez.") from None
+    if status in (401, 403):
+        raise AppAuthError(401, "Sesión no válida")
+    if status != 200:
+        raise AppAuthError(502, f"Firebase ha respondido {status} al comprobar la sesión.")
+    try:
+        is_admin = json.loads(body.decode("utf-8")) is True
+    except Exception:
+        is_admin = False
+    if not is_admin:
+        raise AppAuthError(403, "Tu cuenta no es administradora del cantoral")
+    return {"uid": uid, "email": _one_line(claims.get("email")),
+            "name": _one_line(claims.get("name")), "exp": claims.get("exp")}
+
+
+def _app_user() -> Dict[str, object]:
+    """Usuario (admin) de la petición, o corta con 401/403/502/503."""
+    scheme, _, token = (request.headers.get("Authorization") or "").partition(" ")
+    token = token.strip()
+    if scheme.lower() != "bearer" or not token:
+        abort(401, "Falta la sesión: inicia sesión en la app")
+    if len(token) > _APP_TOKEN_MAX_CHARS:
+        abort(401, "Sesión no válida")
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _app_token_lock:
+        hit = _app_token_cache.get(digest)
+    if hit and hit[0] > now:
+        return hit[1]
+    try:
+        user = dict(verify_app_admin(token))
+    except AppAuthError as e:
+        abort(e.code, e.message)
+    # Solo se recuerdan los «sí», y nunca más allá de lo que dura el token.
+    expires = now + _APP_TOKEN_TTL
+    exp = user.pop("exp", None)
+    if isinstance(exp, (int, float)) and not isinstance(exp, bool):
+        expires = min(expires, float(exp))
+    with _app_token_lock:
+        for old in [k for k, v in _app_token_cache.items() if v[0] <= now]:
+            del _app_token_cache[old]
+        _app_token_cache[digest] = (expires, user)
+    return user
+
+
+@app.before_request
+def _app_api_gate():
+    if not request.path.startswith(APP_API_PREFIX):
+        return None
+    if request.method == "OPTIONS":
+        # Preflight de CORS: el navegador lo manda sin el token.
+        return Response(status=204)
+    g.app_user = _app_user()
+    return None
+
+
+@app.after_request
+def _app_api_cors(resp):
+    # La app también corre como web, desde otro origen. Va en todas las
+    # respuestas de /api/app/ (también los errores) o el navegador no deja
+    # leer ni el mensaje. No hay cookies de por medio: el «*» no abre nada.
+    if request.path.startswith(APP_API_PREFIX):
+        for name, value in _APP_CORS_HEADERS.items():
+            resp.headers[name] = value
+    return resp
+
+
+def _app_json() -> dict:
+    """Cuerpo JSON de una petición de la app (un objeto), con tope de tamaño."""
+    if (request.content_length or 0) > _APP_MAX_JSON_BYTES:
+        abort(413, "Petición demasiado grande")
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        abort(400, "El cuerpo debe ser un objeto JSON")
+    return body
+
+
+def _app_who() -> str:
+    user = g.app_user
+    return _one_line(user.get("email") or user.get("name") or user.get("uid") or "app")
+
+
+def _app_category(value) -> Optional[dict]:
+    """Categoría por su clave de Firebase («ofertorio») o por su letra («E»)."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    cats = list_categories()
+    return (next((c for c in cats if (c["indice_key"] or "").lower() == raw.lower()), None)
+            or next((c for c in cats if c["letter"] == raw.upper()), None))
+
+
+def _git_retry_lock(args: List[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    """Como _run_git, pero si git tiene el índice cogido (index.lock) espera un
+    momento y reintenta una vez. gunicorn lleva dos workers: el candado de
+    arriba no los separa, y pueden coincidir dos git a la vez."""
+    proc = _run_git(args, timeout=timeout)
+    if proc.returncode != 0 and "index.lock" in ((proc.stderr or "") + (proc.stdout or "")):
+        time.sleep(_GIT_LOCK_WAIT)
+        proc = _run_git(args, timeout=timeout)
+    return proc
+
+
+def _app_commit_push(path: Path, message: str) -> Dict[str, object]:
+    """Commit SOLO de ese archivo + push → {committed, pushed, warning?}.
+
+    Nunca lanza: cuando se llama, el .cho ya está guardado en el servidor, y si
+    git falla lo llevará el siguiente «☁️ Subir» del admin (que hace add -A).
+    Para quien edita desde la app eso no es un error, es un aviso.
+    """
+    rel = str(path.relative_to(REPO_DIR))
+    out: Dict[str, object] = {"committed": False, "pushed": False}
+    later = " Está guardada en el servidor y se subirá con el próximo «☁️ Subir» del admin."
+    try:
+        add = _git_retry_lock(["add", "--", rel])
+        if add.returncode != 0:
+            out["warning"] = f"No se ha podido hacer el commit ({_git_detail(add)})." + later
+            return out
+        pending = _run_git(["status", "--porcelain", "--", rel])
+        if pending.returncode == 0 and not pending.stdout.strip():
+            return out  # el archivo ya está commiteado tal cual: nada que hacer
+        # Con la ruta: aunque hubiera otras cosas preparadas, solo entra este archivo.
+        commit = _git_retry_lock(["commit", "-m", message, "--", rel])
+        if commit.returncode != 0:
+            out["warning"] = f"No se ha podido hacer el commit ({_git_detail(commit)})." + later
+            return out
+        out["committed"] = True
+        res = _push_with_rebase(lambda _name, proc: proc.returncode == 0)
+        if res["ok"]:
+            out["pushed"] = True
+        else:
+            # El mensaje de «☁️ Subir» habla de botones del admin; aquí, uno propio.
+            why = ("lo que hay en la nube choca con lo del servidor" if res.get("rebase_failed")
+                   else _one_line(res.get("error")))
+            out["warning"] = f"Todavía no se ha podido subir a la nube ({why})." + later
+    except Exception as e:  # git que no responde, que no está…
+        out["warning"] = f"No se ha podido subir a la nube ({_one_line(e)})." + later
+    return out
+
+
+@app.route("/api/app/status")
+def api_app_status():
+    """¿Puede esta cuenta editar? + lo que el editor necesita para arrancar.
+
+    `categories[].key` es la clave de la categoría en Firebase (songs/data,
+    la de indice.json) y `letter` la de su carpeta: /api/app/song/* admiten las
+    dos. Solo salen las categorías que tienen ambas.
+    """
+    user = g.app_user
+    return jsonify({
+        "ok": True,
+        "ai": ai_review.is_configured(),
+        "user": {"email": user.get("email") or "", "name": user.get("name") or ""},
+        "categories": [{"letter": c["letter"], "title": c["title"], "key": c["indice_key"]}
+                       for c in list_categories() if c["indice_key"]],
+    })
+
+
+def _apply_app_edition(ed: dict, force: bool):
+    """sync.apply_edition sobre el repo, SIN escribir (dry_run): el cálculo es el
+    del sync; el backup y la escritura los pone el admin. Una edición con campos
+    que no se dejan aplicar (un enlace que no es ni texto ni {label, url}…) es
+    culpa de quien la manda: 400, no un 500."""
+    cat_map = sync.load_category_letter_map(INDICE_JSON) if INDICE_JSON.exists() else {}
+    try:
+        return sync.apply_edition(ed, SONGS_DIR, cat_map, dry_run=True, force=force)
+    except Exception as e:
+        abort(400, f"La edición no se puede aplicar ({_one_line(e)})")
+
+
+@app.route("/api/app/song/save", methods=["POST"])
+def api_app_song_save():
+    """Guarda una canción editada en la app: .cho + commit + push.
+
+    Body: una «edición» como las de Firebase `songs/ediciones` ({filename,
+    category, titleOld/titleNew, contentOld/contentNew, …}) y, opcional,
+    `force: true`. Se aplica con la MISMA función que el sync
+    (sync.apply_edition), así que el .cho queda igual por los dos caminos.
+    """
+    ed = _app_json()
+    filename = str(ed.get("filename") or "").strip()
+    if not filename or not str(ed.get("category") or "").strip():
+        abort(400, "Falta filename o category")
+    # El nombre viene de fuera: un .cho suelto, nunca una ruta.
+    if (Path(filename).name != filename or "\\" in filename
+            or not filename.lower().endswith(".cho")):
+        abort(400, "filename no válido")
+    for field in ("contentOld", "contentNew"):
+        value = ed.get(field)
+        if value is not None and not isinstance(value, str):
+            abort(400, f"{field} debe ser un texto")
+        if value and len(value) > _APP_MAX_SONG_CHARS:
+            abort(413, "Demasiado largo para una canción")
+    force = ed.get("force") is True
+
+    with _app_write_lock:
+        res = _apply_app_edition(ed, force)
+        if res.status == "conflict":
+            # ¿Un reintento (se perdió la respuesta, no la petición)? Entonces el
+            # .cho ya está como la app lo quiere dejar: forzar no cambiaría nada,
+            # así que no hay conflicto que enseñar ni cambio ajeno que machacar.
+            forced = _apply_app_edition(ed, True)
+            if forced.status == "skipped":
+                res = forced
+        if res.status == "not_found":
+            abort(404, res.message)
+        if res.status == "conflict":
+            return jsonify({
+                "error": "La canción ha cambiado en el servidor desde que la abriste. "
+                         "Vuelve a cargarla, o guarda de todas formas para quedarte con tu versión.",
+                "conflict": True,
+            }), 409
+        path = safe_relpath(str(res.path.relative_to(REPO_DIR)))
+        if res.status == "ok":
+            backup_file(path)
+            path.write_text(res.new_text, encoding="utf-8")
+        title = _one_line(cp.parse_basic_meta(res.new_text)["title"] or path.stem)
+        # También si no cambia nada: puede quedar un guardado anterior sin commitear.
+        git = _app_commit_push(path, f"app: edita «{title}» ({_app_who()})")
+    return jsonify({"ok": True, "path": str(path.relative_to(REPO_DIR)),
+                    "filename": path.name, "unchanged": res.status == "skipped", **git})
+
+
+@app.route("/api/app/song/convert", methods=["POST"])
+def api_app_song_convert():
+    """Texto pegado (acordes encima, ChordPro o letra sola) → ChordPro.
+
+    Body: {text, format?}. Lo mismo que la vista previa de «✨ Añadir canción»
+    ({format, meta, cho, notes, stats, duplicate}), sin escribir nada.
+    """
+    return jsonify(_convert_pasted_text(_app_json()))
+
+
+@app.route("/api/app/song/read", methods=["POST"])
+def api_app_song_read():
+    """Fotos o PDF → canciones leídas con IA, ya convertidas a ChordPro.
+
+    multipart/form-data con `files`, como /api/song/read. Cada canción trae
+    además `cho`, `meta` y `warnings` (lo que da convertir su `text`), para que
+    la app lo ponga tal cual en su editor.
+    """
+    res = _read_uploaded_songs()
+    for song in res.get("songs") or []:
+        conv = si.import_text(song.get("text") or "").to_dict()
+        song["cho"] = conv["cho"]
+        song["meta"] = conv["meta"]
+        song["warnings"] = conv["notes"]
+    return jsonify(res)
+
+
+@app.route("/api/app/song/new", methods=["POST"])
+def api_app_song_new():
+    """Crea una canción nueva desde la app: .cho + commit + push.
+
+    Body: {category (clave de Firebase o letra), title, artist?, key?, capo?,
+    number?, content (ChordPro)}. Mismas reglas que «✨ Añadir canción» del
+    admin (_create_song en modo import): lleva su TO DO y el primer número libre.
+    """
+    body = _app_json()
+    content = body.get("content")
+    if not isinstance(content, str) or not content.strip():
+        abort(400, "Falta content (la canción en ChordPro)")
+    if len(content) > _APP_MAX_SONG_CHARS:
+        abort(413, "Demasiado largo para una canción")
+    if not str(body.get("category") or "").strip():
+        abort(400, "Falta category")
+    cat = _app_category(body.get("category"))
+    if not cat:
+        abort(404, "Categoría no encontrada")
+    # Lo que no venga en el formulario se toma de la cabecera del ChordPro, que
+    # si no _create_song la dejaría vacía (pone la cabecera del formulario).
+    head = cp.parse_basic_meta(content)
+    title = _sanitize_directive_value(body.get("title") or head["title"])
+    if not title:
+        abort(400, "Falta title")
+    with _app_write_lock:
+        fpath = _create_song({
+            "category": cat["letter"], "mode": "import", "content": content,
+            "title": title,
+            "artist": _sanitize_directive_value(body.get("artist", head["author"])),
+            "key": _sanitize_directive_value(body.get("key", head["key"])),
+            "capo": body.get("capo", head["capo"]),
+            "number": body.get("number"),
+        })
+        git = _app_commit_push(fpath, f"app: nueva «{_one_line(title)}» ({_app_who()})")
+    return jsonify({"ok": True, "path": str(fpath.relative_to(REPO_DIR)),
+                    "filename": fpath.name, **git})
 
 
 # ─────────── Static + fallback ─────────── #

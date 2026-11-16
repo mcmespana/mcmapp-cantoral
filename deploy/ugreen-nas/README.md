@@ -66,6 +66,50 @@ Con la IA también se leen **fotos y PDF** de cancioneros en «✨ Añadir
 canción». Esos originales se guardan en `repo/scripts/admin/.uploads/` (fuera de
 git; se borran solos a los 60 días).
 
+## Editor de canciones desde la app
+
+Quien administra el cantoral puede editar y añadir canciones desde la app: la
+app habla con este admin (`/api/app/*`) y la canción queda guardada, commiteada
+y subida en el momento. Para activarlo:
+
+```sh
+# 1) El admin necesita saber dónde está la base de datos para comprobar quién
+#    es admin. Es la URL de la Realtime Database (no es un secreto):
+grep FIREBASE_URL /volume1/docker/cantoral-admin/cantoral-admin.env
+#    Si la línea no está o está vacía, edita el fichero y déjala así:
+#    FIREBASE_URL=https://<proyecto>-default-rtdb.<región>.firebasedatabase.app
+
+# 2) Relanzar (el --env-file solo se lee al crear el contenedor)
+sh /volume1/docker/cantoral-admin/run-cantoral.sh
+```
+
+3. Decirle a la app dónde está el admin: en la consola de Firebase → Realtime
+   Database, poner en `songs/editor/url` la URL del Funnel
+   (`https://cantoral.tuTailnet.ts.net`, sin barra al final).
+4. **Quién cuenta como admin**: las cuentas con `users/<uid>/isAdmin = true` en
+   la Realtime Database. Se da y se quita ahí; el admin lo vuelve a comprobar
+   como mucho cada 5 minutos.
+
+No hay contraseña ni clave nueva que guardar: la app manda el token de sesión de
+Firebase del usuario y el admin le pregunta a Firebase si esa cuenta es admin.
+El resto del admin sigue pidiendo usuario y contraseña como siempre.
+
+Para comprobar que está en pie, desde cualquier sitio:
+
+```sh
+curl -i https://cantoral.tuTailnet.ts.net/api/app/status
+# 401 con {"error": "Falta la sesión: inicia sesión en la app"} → bien.
+# Si pide usuario y contraseña (WWW-Authenticate: Basic), el contenedor aún
+# tiene el código viejo: git pull y docker restart (ver Mantenimiento).
+```
+
+Si la app dice que el servidor no tiene `FIREBASE_URL`, es el paso 1. Si dice
+«Todavía no se ha podido subir a la nube», la canción
+está a salvo en el NAS y sube con el siguiente ☁️ Subir del admin (suele ser el
+DNS del contenedor: ver «Could not resolve hostname» más abajo).
+
+Detalles de la API: [scripts/admin/README.md](../../scripts/admin/README.md#-api-para-la-app).
+
 ## Mantenimiento
 
 - **Actualizar el admin**: `sudo docker exec cantoral-admin git -C /app pull`
