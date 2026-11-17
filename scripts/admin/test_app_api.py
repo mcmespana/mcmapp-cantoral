@@ -349,6 +349,17 @@ def test_fetch_url_doceacordes_sin_ia():
                            json={"url": "no es un enlace"}).status_code == 400
 
 
+def test_save_quita_el_numero_del_titulo():
+    with sandbox() as (client, repo, _):
+        ed = content_edition()
+        ed["titleNew"] = "03. Ven a Cantar"
+        ed["contentNew"] = ed["contentNew"].replace("{title: Ven a Cantar}", "{title: 03. Ven a Cantar}")
+        r = client.post("/api/app/song/save", json=ed, headers=bearer())
+        assert r.status_code == 200, r.get_data(as_text=True)
+        text = read_song(repo)
+        assert "{title: Ven a Cantar}" in text and "03." not in text.split("\n")[0]
+
+
 # ── reordenar ──────────────────────────────────────────────────────────────────
 def test_reorder_renumera_y_commitea_la_carpeta():
     with sandbox() as (client, repo, git):

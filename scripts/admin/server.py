@@ -2918,6 +2918,22 @@ def _apply_app_edition(ed: dict, force: bool):
         abort(400, f"La edición no se puede aplicar ({_one_line(e)})")
 
 
+# El catálogo de la app lleva el título con el número del fichero delante
+# («03. Parenostre»: lo pone crear_songs_json.py). Si llega así desde la app,
+# no es parte del título: en el .cho saldría y el JSON diría «03. 03. …».
+_TITLE_NUMBER_RX = re.compile(r"^\s*\d+\s*\.\s*")
+_TITLE_DIRECTIVE_RX = re.compile(r"^(\{\s*(?:title|t)\s*:\s*)\d+\s*\.\s*", re.I | re.M)
+
+
+def _strip_app_title_number(ed: dict) -> None:
+    for key in ("titleNew", "titleOld"):
+        if isinstance(ed.get(key), str):
+            ed[key] = _TITLE_NUMBER_RX.sub("", ed[key]).strip()
+    for key in ("contentNew", "contentOld"):
+        if isinstance(ed.get(key), str):
+            ed[key] = _TITLE_DIRECTIVE_RX.sub(r"\1", ed[key])
+
+
 @app.route("/api/app/song/save", methods=["POST"])
 def api_app_song_save():
     """Guarda una canción editada en la app: .cho + commit + push.
@@ -2942,6 +2958,7 @@ def api_app_song_save():
         if value and len(value) > _APP_MAX_SONG_CHARS:
             abort(413, "Demasiado largo para una canción")
     force = ed.get("force") is True
+    _strip_app_title_number(ed)
 
     with _app_write_lock:
         res = _apply_app_edition(ed, force)
