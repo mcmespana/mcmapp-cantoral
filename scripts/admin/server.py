@@ -3003,6 +3003,56 @@ def api_app_song_convert():
     return jsonify(_convert_pasted_text(_app_json()))
 
 
+@app.route("/api/app/song/fetch-url", methods=["POST"])
+def api_app_song_fetch_url():
+    """Enlace → canción en ChordPro, lista para el editor de la app.
+
+    Body: {url}. Responde {source, title, cho, meta, notes}:
+      - doceacordes (`doceacordes.es/cancion/<id>`): con su conversor propio,
+        el mismo de la pestaña 🎵 del admin. Sin IA.
+      - una web con formato conocido (texto con acordes): el conversor de
+        «✨ Añadir canción». Sin IA.
+      - lo demás (foto, PDF o web cualquiera): lo lee la IA, si está.
+    """
+    body = _app_json()
+    try:
+        got = wi.from_url(str(body.get("url") or ""))
+    except wi.FetchError as e:
+        abort(400, str(e))
+    if got["kind"] == "doce":
+        try:
+            content, meta = da.fetch_and_adapt(got["id"], use_cache=True, include_meta=True)
+        except Exception as e:  # red, id que no existe…
+            abort(502, f"No se ha podido traer la canción de doceacordes: {_one_line(e)}")
+        return jsonify({"source": "doceacordes", "id": got["id"],
+                        "title": meta.get("title") or cp.parse_basic_meta(content)["title"],
+                        "cho": content, "meta": meta, "notes": []})
+    if got["kind"] == "text":
+        res = si.import_text(got["text"]).to_dict()
+        return jsonify({"source": got.get("source") or "web", "title": res["meta"].get("title") or "",
+                        "cho": res["cho"], "meta": res["meta"], "notes": res.get("notes") or []})
+    if not ai_review.is_configured():
+        abort(503, "Ese enlace no es de doceacordes ni de una web conocida: "
+                   "para leerlo hace falta la IA. " + ai_review.not_configured_message())
+    try:
+        if got["kind"] == "media":
+            read = sr.read_files([sr.prepare_upload(got["data"], got["content_type"], got["url"])],
+                                 categories=_category_titles())
+        else:
+            read = sr.read_page(got["text"], got["url"], categories=_category_titles())
+    except sr.ReadError as e:
+        abort(400, str(e))
+    except ai_review.ReviewError as e:
+        abort(502, str(e))
+    songs = read.get("songs") or []
+    if not songs:
+        abort(404, "No he encontrado ninguna canción en ese enlace")
+    res = si.import_text(songs[0].get("text") or "").to_dict()
+    return jsonify({"source": "ia", "title": songs[0].get("title") or res["meta"].get("title") or "",
+                    "cho": res["cho"], "meta": res["meta"], "notes": res.get("notes") or [],
+                    "category": songs[0].get("category")})
+
+
 @app.route("/api/app/song/read", methods=["POST"])
 def api_app_song_read():
     """Fotos o PDF → canciones leídas con IA, ya convertidas a ChordPro.

@@ -327,6 +327,28 @@ def test_status():
             assert client.get("/api/app/status", headers=bearer()).get_json()["ai"] is True
 
 
+# ── enlace ─────────────────────────────────────────────────────────────────────
+def test_fetch_url_doceacordes_sin_ia():
+    with sandbox() as (client, _, _):
+        calls = []
+
+        def fake_fetch(doce_id, use_cache=True, include_meta=True):
+            calls.append(doce_id)
+            return "{title: Vienen con alegría}\n[C]Vienen con ale[G]gría\n", {"title": "Vienen con alegría"}
+
+        with patched(server.da, fetch_and_adapt=fake_fetch), \
+                patched(server.ai_review, is_configured=lambda: False):
+            r = client.post("/api/app/song/fetch-url", headers=bearer(),
+                            json={"url": "https://doceacordes.es/cancion/972"})
+        assert r.status_code == 200, r.get_data(as_text=True)
+        data = r.get_json()
+        assert calls == ["972"]
+        assert data["source"] == "doceacordes" and data["title"] == "Vienen con alegría"
+        assert "[C]Vienen" in data["cho"]
+        assert client.post("/api/app/song/fetch-url", headers=bearer(),
+                           json={"url": "no es un enlace"}).status_code == 400
+
+
 # ── reordenar ──────────────────────────────────────────────────────────────────
 def test_reorder_renumera_y_commitea_la_carpeta():
     with sandbox() as (client, repo, git):
