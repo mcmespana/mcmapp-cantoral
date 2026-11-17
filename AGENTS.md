@@ -38,6 +38,7 @@
 - Shared ChordPro/sync logic has tests: `python scripts/test_sync.py` (no deps needed; also works under pytest). Extend it when touching `scripts/chordpro.py`.
 - The admin song importer has tests: `python scripts/admin/test_song_import.py` (real songs in `scripts/admin/fixtures_import/`) and `python scripts/admin/test_ai_review.py` (fake client, no API calls). Extend them when touching `song_import.py` / `ai_review.py`.
 - Photo/PDF reading and link import («✨ Añadir canción»): `python scripts/admin/test_song_reader.py` (fake client; a real cantoral page in `scripts/admin/fixtures_read/` with the JSON Claude should return) and `python scripts/admin/test_web_import.py` (no network). Extend them when touching `song_reader.py` / `web_import.py`. Don't put copyrighted lyrics in fixtures beyond what the repo already has: use traditional songs or invented lines.
+- The app's song editor talks to the admin through `/api/app/*` (Firebase ID token instead of Basic auth; see `scripts/admin/README.md` «📱 API para la app»): `python scripts/admin/test_app_api.py` (Flask test client, fake token verifier and fake git; no network). Saving goes through `apply_edition` in `sincronizaCambiosDeFirebase.py`, shared with the Firebase sync (`python scripts/test_sync.py`): keep both paths on that one function.
 - Optional: add minimal unit tests under `scripts/` with `pytest` if present; name tests `test_*.py`.
 
 ## Commit & Pull Request Guidelines

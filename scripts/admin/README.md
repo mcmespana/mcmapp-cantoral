@@ -624,6 +624,79 @@ toque de cada acorde es más grande que el dibujo. Como en táctil no hay doble
 click fiable, **tocar un acorde que ya está seleccionado abre su edición**. Sin
 teclado no hay `Shift`/`Alt`, así que el arrastre táctil siempre ajusta a sílaba.
 
+## 📱 API para la app
+
+El editor de canciones de la app (solo para quien administra el cantoral) habla
+con este servidor por `/api/app/*`: guarda el `.cho`, hace commit y push en el
+momento, sin esperar al sync de `songs/ediciones`. Es lo único del admin que no
+va con usuario y contraseña.
+
+### Quién entra
+
+La app no guarda ningún secreto. Manda el **ID token de Firebase** de quien ha
+iniciado sesión (`Authorization: Bearer <token>`) y el servidor comprueba que
+esa cuenta es administradora: `users/<uid>/isAdmin = true` en la Realtime
+Database.
+
+Se hace sin dependencias ni service account: del token solo se lee el `uid`
+(sin fiarse de él) y se le pregunta a Firebase por `users/<uid>/isAdmin` **con
+el propio token** (`?auth=`). Firebase valida la firma y la caducidad; si el
+token es falso contesta 401, y si es bueno pero la cuenta no es admin, el valor
+no es `true`. Un «sí» se recuerda 5 minutos (por el hash del token; el token no
+se guarda ni se escribe en ningún log).
+
+| respuesta | qué ha pasado |
+| --- | --- |
+| `401` «Falta la sesión…» / «Sesión no válida» | no hay token, no es un token o Firebase lo rechaza (caducado, de otro proyecto…) |
+| `403` «Tu cuenta no es administradora del cantoral» | el token vale, pero `isAdmin` no es `true` |
+| `503` | al servidor le falta `FIREBASE_URL` |
+| `502` | no se ha podido hablar con Firebase |
+
+Todos los errores son JSON `{error: "…"}`. Solo estas rutas llevan **CORS**
+(`Access-Control-Allow-Origin: *`; la app también corre como web desde otro
+origen) y contestan al preflight `OPTIONS` con un 204 sin pedir token. El resto
+del admin sigue exactamente igual, con su Basic auth.
+
+Esto se apoya en las reglas de la base de datos: cada usuario tiene que poder
+**leer** su `users/<uid>/isAdmin` con su token y **no** poder escribirlo.
+
+### Rutas
+
+| ruta | qué hace |
+| --- | --- |
+| `GET /api/app/status` | `{ok, ai, user: {email, name}, categories: [{letter, title, key}]}`. `ai` dice si se pueden leer fotos; `key` es la clave de la categoría en Firebase (`ofertorio`) y `letter` la de su carpeta (`E`). |
+| `POST /api/app/song/save` | Guarda una canción editada. El cuerpo es una **edición** como las de `songs/ediciones` (`filename`, `category`, `titleOld`/`titleNew`, `contentOld`/`contentNew`, `…Old`/`…New`) y se aplica con la **misma función** que el sync (`apply_edition` de `sincronizaCambiosDeFirebase.py`): el `.cho` queda igual por los dos caminos. Responde `{ok, path, filename, unchanged, committed, pushed, warning?}`. |
+| `POST /api/app/song/convert` | `{text, format?}` → ChordPro. Lo mismo que la vista previa de ✨ Añadir canción (`format`, `meta`, `cho`, `notes`, `stats`, `duplicate`), sin las candidatas de doceacordes. |
+| `POST /api/app/song/read` | Fotos o PDF (`multipart`, campo `files`) → canciones leídas con la IA, como en ✨. Cada canción trae además `cho`, `meta` y `warnings`: ya convertida, lista para el editor. Sin IA configurada, `503`. |
+| `POST /api/app/song/new` | `{category, title, artist?, key?, capo?, number?, content}` (`content` en ChordPro; `category`, clave de Firebase o letra). Mismas reglas que ✨ Añadir canción: lleva su `TO DO` y el primer número libre. Responde `{ok, path, filename, committed, pushed, warning?}`. |
+| `POST /api/app/song/fetch-url` | `{url}` → `{source, title, cho, meta, notes}`. Un enlace de **doceacordes** (`doceacordes.es/cancion/<id>`) se convierte con su conversor, sin IA; una web con formato conocido, con el de ✨; lo demás (foto, PDF, web cualquiera), con la IA. |
+| `POST /api/app/category/reorder` | `{category, order: [filename, …]}` con todas las canciones de la categoría en el orden nuevo. Renumera los `.cho` (como arrastrar en el admin), commit de la carpeta y push. Responde `{ok, category, new_order, committed, pushed, warning?}`. |
+
+Detalles de `save` y `new`:
+
+- **Conflicto** (`save`): si el `.cho` ha cambiado desde que la app leyó la
+  canción (`contentOld` no coincide), `409 {error, conflict: true}` y no se toca
+  nada. Con `force: true` en el cuerpo se guarda igualmente. Repetir la misma
+  edición (se perdió la respuesta) no es conflicto: responde `unchanged: true`.
+- `404` si la canción o la categoría no existen; `409` en `new` si ya hay un
+  archivo con ese número y título; `413` si el texto no es de una canción.
+- **Backup** del original en `songs-backup-edits/`, como cualquier edición.
+- **Git**: `git add` y commit **solo de ese archivo** (`app: edita «Título»
+  (correo)` / `app: nueva «Título» (correo)`) y push. Si el push se rechaza
+  porque alguien subió antes, `pull --rebase --autostash` y reintento, igual
+  que ☁️ Subir (comparten código).
+- **Que falle git no es un error para la app**: la canción ya está guardada en
+  el servidor. Responde `ok: true` con `committed`/`pushed` a `false` según
+  dónde se quedó y un `warning`; el siguiente ☁️ Subir se la lleva.
+- Escribir y commitear va de uno en uno; como gunicorn lleva dos procesos, un
+  `index.lock` ocupado se reintenta una vez.
+
+Hace falta `FIREBASE_URL` (la URL de la Realtime Database, la misma de 🙋
+Peticiones; no es un secreto). En el NAS: [deploy/ugreen-nas](../../deploy/ugreen-nas/README.md#editor-de-canciones-desde-la-app).
+
+Código al final de `server.py` («API para la app»); tests, sin red y con un git
+falso, en `python scripts/admin/test_app_api.py`.
+
 ## Guardado y publicación
 
 La app guarda directamente en los archivos `.cho`. Cuando termines de editar,

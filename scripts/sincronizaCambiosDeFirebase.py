@@ -14,6 +14,7 @@ Reqs recomendadas: requests, python-dotenv, rich, google-auth
 """
 
 import os, re, json, argparse
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -40,7 +41,12 @@ except Exception:
     console = _C()
 
 # ── HTTP ───────────────────────────────────────────────────────────────────────
-import requests
+# El admin importa este módulo solo por `apply_edition` (que no toca la red) y en
+# local puede no tener `requests`: que falte no debe tumbar el import.
+try:
+    import requests
+except ImportError:
+    requests = None
 
 # ── Utilidades texto/ChordPro ─────────────────────────────────────────────────
 TAG_MAP = {
@@ -288,6 +294,97 @@ def find_category_folder(songs_dir: Path, letter: str) -> Path | None:
             return p
     return None
 
+# ── Aplicar UNA edición a su .cho ──────────────────────────────────────────────
+@dataclass
+class EditionResult:
+    """Qué pasó al aplicar una edición.
+
+    status:
+      - "ok":        el .cho cambia (escrito ya, salvo en dry_run).
+      - "skipped":   la edición no produce ningún cambio (ya estaba aplicada).
+      - "conflict":  el cuerpo del .cho cambió desde que la app lo leyó; no se toca.
+      - "not_found": categoría, carpeta o archivo que no existen.
+    """
+    status: str
+    message: str = ""
+    path: Path | None = None      # el .cho (None si no se llegó a localizar)
+    new_text: str | None = None   # cómo queda (o quedaría) el .cho
+    original: str | None = None   # cómo estaba
+
+def apply_edition(ed: dict, songs_dir: Path, cat_letter_map: dict,
+                  backup_dir: Path | None = None, dry_run: bool = False,
+                  force: bool = False) -> EditionResult:
+    """
+    Aplica una edición (un nodo de `songs/ediciones`) a su .cho.
+
+    Es la única implementación de «edición → .cho»: la usan el bucle de `main()`
+    y el admin (`/api/app/song/save`, el editor de la app), para que una canción
+    editada en directo quede igual que una sincronizada desde Firebase.
+
+    - backup_dir: si viene, antes de escribir deja ahí una copia espejo del
+      original (<backup_dir>/<Carpeta>/<archivo>).
+    - dry_run: calcula el resultado pero no escribe nada.
+    - force: aplica aunque haya conflicto de contenido (quien edita ya lo ha
+      visto y decide machacar).
+    No toca Firebase: borrar el nodo es cosa de quien llama.
+    """
+    category_raw = str(ed.get("category","")).strip()
+    filename = str(ed.get("filename","")).strip()
+
+    letter = cat_letter_map.get(category_raw.lower()) or (category_raw[:1].upper() if category_raw else None)
+    if not letter:
+        return EditionResult("not_found", f"Categoría no mapeada: '{category_raw}'")
+
+    cat_folder = find_category_folder(songs_dir, letter)
+    if not cat_folder:
+        return EditionResult("not_found", f"No encuentro carpeta para letra '{letter}'")
+
+    cho_path = cat_folder / filename
+    if not cho_path.exists():
+        return EditionResult("not_found", f"No existe {filename} en {cat_folder.name}")
+
+    original = cho_path.read_text(encoding="utf-8")
+    new_text = original
+
+    content_changed = (ed.get("contentNew") is not None
+                       and ed.get("contentNew") != ed.get("contentOld"))
+    media_edit = media_changed(ed)
+
+    # 0) Conflicto: si el cuerpo del .cho cambió en el repo desde que la
+    #    app leyó la canción, NO machacamos. Dejamos el nodo intacto para
+    #    revisarlo a mano (el plan B de "tirar de git" necesita que te
+    #    enteres; esto es el chivato).
+    if content_changed and not force and content_conflict(ed, original):
+        return EditionResult("conflict",
+            f"CONFLICTO: {filename} cambió en el repo desde la edición. "
+            f"No aplicado; nodo conservado para revisión manual.",
+            cho_path, None, original)
+
+    # 1) Cuerpo: contentNew manda si difiere. El cuerpo viaja SIN multimedia,
+    #    así que partimos de un cuerpo sin esas directivas y las reinyectamos
+    #    luego (conservando las del .cho original si la edición no las toca).
+    if content_changed or media_edit:
+        base = _nl(ed["contentNew"]) if content_changed else original
+        base_body = cp.strip_media(base)
+        media = resolve_media(ed, original)
+        new_text = inject_media(base_body, media)
+
+    # 2) SIEMPRE revisar tags de cabecera después
+    new_text = apply_tag_updates(new_text, ed)
+
+    if new_text == original:
+        return EditionResult("skipped", f"Sin cambios → {filename}", cho_path, new_text, original)
+
+    if not dry_run:
+        if backup_dir is not None:
+            # Backup espejo: ./songs-backup-edits/<ts>/<Carpeta>/<archivo>
+            dest_folder = Path(backup_dir) / cat_folder.name
+            dest_folder.mkdir(parents=True, exist_ok=True)
+            (dest_folder / (filename)).write_text(original, encoding="utf-8")
+        cho_path.write_text(new_text, encoding="utf-8")
+
+    return EditionResult("ok", f"Actualizado {filename}", cho_path, new_text, original)
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Sync Firebase ediciones -> .cho (con backups y borrado de nodo)")
@@ -305,6 +402,9 @@ def main():
     base_url = (os.environ.get("FIREBASE_URL") or "").strip()
     if not base_url:
         console.print("❌ Falta FIREBASE_URL en .env")
+        return
+    if requests is None:
+        console.print("❌ Falta el paquete 'requests' (pip install -r scripts/requirements.txt)")
         return
 
     # ── Modo borrado diferido: solo borra los nodos ya sincronizados y confirmados ──
@@ -396,54 +496,16 @@ def main():
 
     for ed_id, ed in to_process:
         try:
-            category_raw = str(ed.get("category","")).strip()
             filename = str(ed.get("filename","")).strip()
+            res = apply_edition(ed, songs_dir, cat_letter,
+                                backup_dir=backup_dir, dry_run=args.dry_run)
 
-            letter = cat_letter.get(category_raw.lower()) or (category_raw[:1].upper() if category_raw else None)
-            if not letter:
-                results.append((ed_id,"⚠️",f"Categoría no mapeada: '{category_raw}'"))
-                if progress: progress.advance(task); continue
+            if res.status in ("not_found", "conflict"):
+                # El nodo se conserva en Firebase: hay que mirarlo a mano.
+                results.append((ed_id,"⚠️",res.message))
+                continue
 
-            cat_folder = find_category_folder(songs_dir, letter)
-            if not cat_folder:
-                results.append((ed_id,"⚠️",f"No encuentro carpeta para letra '{letter}'"))
-                if progress: progress.advance(task); continue
-
-            cho_path = cat_folder / filename
-            if not cho_path.exists():
-                results.append((ed_id,"⚠️",f"No existe {filename} en {cat_folder.name}"))
-                if progress: progress.advance(task); continue
-
-            original = cho_path.read_text(encoding="utf-8")
-            new_text = original
-
-            content_changed = (ed.get("contentNew") is not None
-                               and ed.get("contentNew") != ed.get("contentOld"))
-            media_edit = media_changed(ed)
-
-            # 0) Conflicto: si el cuerpo del .cho cambió en el repo desde que la
-            #    app leyó la canción, NO machacamos. Dejamos el nodo intacto para
-            #    revisarlo a mano (el plan B de "tirar de git" necesita que te
-            #    enteres; esto es el chivato).
-            if content_changed and content_conflict(ed, original):
-                results.append((ed_id,"⚠️",
-                    f"CONFLICTO: {filename} cambió en el repo desde la edición. "
-                    f"No aplicado; nodo conservado para revisión manual."))
-                if progress: progress.advance(task); continue
-
-            # 1) Cuerpo: contentNew manda si difiere. El cuerpo viaja SIN multimedia,
-            #    así que partimos de un cuerpo sin esas directivas y las reinyectamos
-            #    luego (conservando las del .cho original si la edición no las toca).
-            if content_changed or media_edit:
-                base = _nl(ed["contentNew"]) if content_changed else original
-                base_body = cp.strip_media(base)
-                media = resolve_media(ed, original)
-                new_text = inject_media(base_body, media)
-
-            # 2) SIEMPRE revisar tags de cabecera después
-            new_text = apply_tag_updates(new_text, ed)
-
-            if new_text == original:
+            if res.status == "skipped":
                 # No produce cambios (ya estaba aplicado o es redundante): consumimos
                 # el nodo igualmente para no reprocesarlo en cada ejecución.
                 if args.dry_run:
@@ -454,26 +516,18 @@ def main():
                 else:
                     fb_delete(base_url, f"songs/ediciones/{ed_id}")
                     results.append((ed_id,"😴",f"Sin cambios → {filename} (nodo eliminado)"))
-                if progress: progress.advance(task); continue
+                continue
 
             if args.dry_run:
                 results.append((ed_id,"📝",f"[dry-run] Cambiaría {filename} (backup en {backup_dir})"))
+            elif args.defer_deletes:
+                # No borramos aún: el nodo se borra después, solo si el push tiene éxito.
+                deferred_deletes.append(ed_id)
+                results.append((ed_id,"✨",f"Actualizado {filename} (borrado de nodo diferido)"))
             else:
-                # Backup espejo: ./songs-backup-edits/<ts>/<Carpeta>/<archivo>
-                dest_folder = backup_dir / cat_folder.name
-                dest_folder.mkdir(parents=True, exist_ok=True)
-                (dest_folder / (filename)).write_text(original, encoding="utf-8")
-
-                cho_path.write_text(new_text, encoding="utf-8")
-
-                if args.defer_deletes:
-                    # No borramos aún: el nodo se borra después, solo si el push tiene éxito.
-                    deferred_deletes.append(ed_id)
-                    results.append((ed_id,"✨",f"Actualizado {filename} (borrado de nodo diferido)"))
-                else:
-                    # Borrar nodo procesado
-                    fb_delete(base_url, f"songs/ediciones/{ed_id}")
-                    results.append((ed_id,"✨",f"Actualizado {filename} + nodo Firebase eliminado"))
+                # Borrar nodo procesado
+                fb_delete(base_url, f"songs/ediciones/{ed_id}")
+                results.append((ed_id,"✨",f"Actualizado {filename} + nodo Firebase eliminado"))
 
         except Exception as e:
             results.append((ed_id,"💥",f"Error: {e}"))

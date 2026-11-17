@@ -364,6 +364,101 @@ def test_sync_subcategoria_y_tambien_en():
 
 
 
+# ── sync: apply_edition (una edición → su .cho) ─────────────────────────────────
+def _songs_tmp(d):
+    """Un songs/ mínimo en `d`: carpeta «E. Ofertorio» con una canción."""
+    from pathlib import Path
+    songs = Path(d) / "songs"
+    (songs / "E. Ofertorio").mkdir(parents=True)
+    cho = songs / "E. Ofertorio" / "01.ven_a_celebrar.cho"
+    cho.write_text(CHO, encoding="utf-8")
+    return songs, cho
+
+CAT_MAP = {"ofertorio": "E"}
+
+def _edition(**kw):
+    ed = {"filename": "01.ven_a_celebrar.cho", "category": "ofertorio"}
+    ed.update(kw)
+    return ed
+
+def test_apply_edition_titulo_y_contenido():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        songs, cho = _songs_tmp(d)
+        old = cp.content_for_app(CHO)
+        new = old.replace("[G]Ven a cele[D]brar", "[G]Ven a can[D]tar")
+        res = sync.apply_edition(
+            _edition(titleOld="Ven a Celebrar", titleNew="Ven a Cantar",
+                     contentOld=old, contentNew=new), songs, CAT_MAP)
+        assert res.status == "ok" and res.path == cho
+        text = cho.read_text(encoding="utf-8")
+        assert text == res.new_text and res.original == CHO
+        assert "{title: Ven a Cantar}" in text and "[G]Ven a can[D]tar" in text
+        # la multimedia que la edición no toca se conserva
+        assert "{ritmo: 4x4}" in text and "{youtube: Oficial | https://yt/abc}" in text
+
+def test_apply_edition_backup_espejo():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as d:
+        songs, cho = _songs_tmp(d)
+        backup = Path(d) / "backup"
+        res = sync.apply_edition(_edition(keyOld="G", keyNew="A"), songs, CAT_MAP,
+                                 backup_dir=backup)
+        assert res.status == "ok" and "{key: A}" in cho.read_text(encoding="utf-8")
+        assert (backup / "E. Ofertorio" / cho.name).read_text(encoding="utf-8") == CHO
+
+def test_apply_edition_dry_run_no_escribe():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as d:
+        songs, cho = _songs_tmp(d)
+        backup = Path(d) / "backup"
+        res = sync.apply_edition(_edition(keyOld="G", keyNew="A"), songs, CAT_MAP,
+                                 backup_dir=backup, dry_run=True)
+        assert res.status == "ok" and "{key: A}" in res.new_text
+        assert cho.read_text(encoding="utf-8") == CHO and not backup.exists()
+
+def test_apply_edition_conflicto_y_force():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        songs, cho = _songs_tmp(d)
+        ed = _edition(contentOld="{title: Ven a Celebrar}\n[G]Letra VIEJA\n",
+                      contentNew="{title: Ven a Celebrar}\n[G]Letra nueva\n")
+        res = sync.apply_edition(ed, songs, CAT_MAP)
+        assert res.status == "conflict" and "CONFLICTO" in res.message
+        assert cho.read_text(encoding="utf-8") == CHO      # no se toca
+        res = sync.apply_edition(ed, songs, CAT_MAP, force=True)
+        assert res.status == "ok" and "[G]Letra nueva" in cho.read_text(encoding="utf-8")
+
+def test_apply_edition_sin_cambios():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        songs, cho = _songs_tmp(d)
+        res = sync.apply_edition(_edition(keyOld="A", keyNew="G"), songs, CAT_MAP)
+        assert res.status == "skipped" and res.path == cho
+        assert cho.read_text(encoding="utf-8") == CHO
+
+def test_apply_edition_no_encontrada():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        songs, _ = _songs_tmp(d)
+        cases = [(_edition(filename="99.no_existe.cho"), "No existe"),
+                 (_edition(category="quinielas"), "No encuentro carpeta"),
+                 (_edition(category=""), "Categoría no mapeada")]
+        for ed, msg in cases:
+            res = sync.apply_edition(ed, songs, CAT_MAP)
+            assert res.status == "not_found" and msg in res.message and res.path is None
+
+def test_apply_edition_categoria_por_letra():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        songs, cho = _songs_tmp(d)
+        # sin clave en el mapa se toma la primera letra, como siempre hizo el sync
+        res = sync.apply_edition(_edition(category="E", capoOld=2, capoNew=3), songs, {})
+        assert res.status == "ok" and "{capo: 3}" in cho.read_text(encoding="utf-8")
+
+
 # ── runner sin pytest ───────────────────────────────────────────────────────────
 def _run():
     tests = [v for k, v in sorted(globals().items())
