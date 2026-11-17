@@ -10,6 +10,7 @@ solo apunta lo que se le pide. Un único test usa git de verdad (en un repo
 temporal, sin remoto) para comprobar que el commit se lleva solo ese archivo.
 Las letras son inventadas.
 """
+import time
 import base64
 import io
 import json
@@ -358,6 +359,32 @@ def test_save_quita_el_numero_del_titulo():
         assert r.status_code == 200, r.get_data(as_text=True)
         text = read_song(repo)
         assert "{title: Ven a Cantar}" in text and "03." not in text.split("\n")[0]
+
+
+def test_trabajo_en_segundo_plano():
+    import tempfile
+    with sandbox() as (client, _, _), tempfile.TemporaryDirectory() as tmp:
+        with patched(server, _APP_JOBS_DIR=Path(tmp) / "jobs"):
+            job = server._start_app_job(lambda: {"songs": [1]})
+            for _ in range(50):
+                data = client.get(f"/api/app/job/{job}", headers=bearer()).get_json()
+                if data["status"] != "pending":
+                    break
+                time.sleep(0.02)
+            assert data == {"status": "done", "result": {"songs": [1]}}
+
+            def falla():
+                server.abort(502, "La IA ha fallado")
+
+            job = server._start_app_job(falla)
+            for _ in range(50):
+                data = client.get(f"/api/app/job/{job}", headers=bearer()).get_json()
+                if data["status"] != "pending":
+                    break
+                time.sleep(0.02)
+            assert data["status"] == "error" and data["code"] == 502
+            assert client.get("/api/app/job/xx", headers=bearer()).status_code == 400
+            assert client.get("/api/app/job/" + "0" * 32, headers=bearer()).status_code == 404
 
 
 # ── reordenar ──────────────────────────────────────────────────────────────────

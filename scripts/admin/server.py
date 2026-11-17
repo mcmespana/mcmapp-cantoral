@@ -3051,23 +3051,107 @@ def api_app_song_fetch_url():
     if not ai_review.is_configured():
         abort(503, "Ese enlace no es de doceacordes ni de una web conocida: "
                    "para leerlo hace falta la IA. " + ai_review.not_configured_message())
+    categories = _category_titles()
+
+    def work():
+        try:
+            if got["kind"] == "media":
+                read = sr.read_files([sr.prepare_upload(got["data"], got["content_type"], got["url"])],
+                                     categories=categories)
+            else:
+                read = sr.read_page(got["text"], got["url"], categories=categories)
+        except sr.ReadError as e:
+            abort(400, str(e))
+        except ai_review.ReviewError as e:
+            abort(502, str(e))
+        songs = read.get("songs") or []
+        if not songs:
+            abort(404, "No he encontrado ninguna canción en ese enlace")
+        res = si.import_text(songs[0].get("text") or "").to_dict()
+        return {"source": "ia", "title": songs[0].get("title") or res["meta"].get("title") or "",
+                "cho": res["cho"], "meta": res["meta"], "notes": res.get("notes") or [],
+                "category": songs[0].get("category")}
+
+    # Con IA puede pasar del minuto: en segundo plano si la app lo pide.
+    if body.get("async") is True:
+        return jsonify({"job": _start_app_job(work)}), 202
+    return jsonify(work())
+
+
+# ─────────── Trabajos largos para la app ───────────
+#
+# Leer una foto con la IA tarda a menudo más de un minuto, y en el iPhone una
+# petición se corta a los 60 s (lo decide el sistema, no la app). Así que lo
+# largo va en segundo plano: la app recibe un `job` y pregunta cada pocos
+# segundos por /api/app/job/<id>. El estado vive en ficheros (gunicorn tiene
+# dos workers: la pregunta puede caer en el que no lanzó el trabajo).
+_APP_JOBS_DIR = sr.UPLOADS_DIR / "jobs"
+_APP_JOB_ID_RX = re.compile(r"^[0-9a-f]{32}$")
+_APP_JOB_TTL_S = 3600
+
+
+def _app_job_path(job_id: str) -> Path:
+    return _APP_JOBS_DIR / f"{job_id}.json"
+
+
+def _app_job_write(job_id: str, data: dict) -> None:
+    _APP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _app_job_path(job_id).with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(_app_job_path(job_id))
+
+
+def _app_jobs_prune() -> None:
+    limit = time.time() - _APP_JOB_TTL_S
     try:
-        if got["kind"] == "media":
-            read = sr.read_files([sr.prepare_upload(got["data"], got["content_type"], got["url"])],
-                                 categories=_category_titles())
-        else:
-            read = sr.read_page(got["text"], got["url"], categories=_category_titles())
-    except sr.ReadError as e:
-        abort(400, str(e))
-    except ai_review.ReviewError as e:
-        abort(502, str(e))
-    songs = read.get("songs") or []
-    if not songs:
-        abort(404, "No he encontrado ninguna canción en ese enlace")
-    res = si.import_text(songs[0].get("text") or "").to_dict()
-    return jsonify({"source": "ia", "title": songs[0].get("title") or res["meta"].get("title") or "",
-                    "cho": res["cho"], "meta": res["meta"], "notes": res.get("notes") or [],
-                    "category": songs[0].get("category")})
+        for p in _APP_JOBS_DIR.glob("*.json"):
+            if p.stat().st_mtime < limit:
+                p.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _start_app_job(fn) -> str:
+    """Lanza `fn()` en un hilo y devuelve el id del trabajo. `fn` no puede
+    tocar `request`: lo que necesite de la petición se lee antes."""
+    _app_jobs_prune()
+    job_id = secrets.token_hex(16)
+    _app_job_write(job_id, {"status": "pending", "started": time.time()})
+
+    def run():
+        try:
+            _app_job_write(job_id, {"status": "done", "result": fn()})
+        except HTTPException as e:
+            _app_job_write(job_id, {"status": "error", "code": e.code, "error": e.description})
+        except Exception as e:  # que la app no se quede esperando para siempre
+            _app_job_write(job_id, {"status": "error", "code": 500, "error": _one_line(e)})
+
+    threading.Thread(target=run, daemon=True).start()
+    return job_id
+
+
+@app.route("/api/app/job/<job_id>")
+def api_app_job(job_id):
+    """Estado de un trabajo: {status: pending|done|error, result?, error?, code?}."""
+    if not _APP_JOB_ID_RX.match(job_id or ""):
+        abort(400, "Trabajo no válido")
+    p = _app_job_path(job_id)
+    if not p.exists():
+        abort(404, "Ese trabajo ya no existe")
+    try:
+        return jsonify(json.loads(p.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return jsonify({"status": "pending"})
+
+
+def _songs_with_cho(res: dict) -> dict:
+    """A cada canción leída, su ChordPro ya convertido (`cho`, `meta`, `warnings`)."""
+    for song in res.get("songs") or []:
+        conv = si.import_text(song.get("text") or "").to_dict()
+        song["cho"] = conv["cho"]
+        song["meta"] = conv["meta"]
+        song["warnings"] = conv["notes"]
+    return res
 
 
 @app.route("/api/app/song/read", methods=["POST"])
@@ -3075,16 +3159,30 @@ def api_app_song_read():
     """Fotos o PDF → canciones leídas con IA, ya convertidas a ChordPro.
 
     multipart/form-data con `files`, como /api/song/read. Cada canción trae
-    además `cho`, `meta` y `warnings` (lo que da convertir su `text`), para que
-    la app lo ponga tal cual en su editor.
+    además `cho`, `meta` y `warnings`, para que la app lo ponga tal cual en su
+    editor. Con `?async=1` responde al momento `{job}` (202) y el resultado se
+    pide a /api/app/job/<id>: es lo que usa la app (ver «Trabajos largos»).
     """
-    res = _read_uploaded_songs()
-    for song in res.get("songs") or []:
-        conv = si.import_text(song.get("text") or "").to_dict()
-        song["cho"] = conv["cho"]
-        song["meta"] = conv["meta"]
-        song["warnings"] = conv["notes"]
-    return jsonify(res)
+    if not ai_review.is_configured():
+        abort(503, ai_review.not_configured_message())
+    files = request.files.getlist("files")
+    try:
+        payload = [sr.prepare_upload(f.read(), f.mimetype or "", f.filename or "") for f in files]
+    except sr.ReadError as e:
+        abort(400, str(e))
+    categories = _category_titles()
+
+    def work():
+        try:
+            return _songs_with_cho(sr.read_files(payload, categories=categories))
+        except sr.ReadError as e:
+            abort(400, str(e))
+        except ai_review.ReviewError as e:
+            abort(502, str(e))
+
+    if request.args.get("async") == "1":
+        return jsonify({"job": _start_app_job(work)}), 202
+    return jsonify(work())
 
 
 @app.route("/api/app/song/new", methods=["POST"])
