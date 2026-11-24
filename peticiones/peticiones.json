@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-17T17:09:15+00:00",
+  "updatedAt": "2026-11-24T16:16:33+00:00",
   "solicitudes": {},
   "fallitos": {
     "catBaleluya/Aleluya (Si sientes que Cristo, en ti vivo está)/-OzapiKvb4ADvOph02UF": {
@@ -17,7 +17,7 @@
       "categoryName": "Baleluya",
       "_firstSeen": "2026-08-09T18:50:19+02:00",
       "_id": "catBaleluya/Aleluya (Si sientes que Cristo, en ti vivo está)/-OzapiKvb4ADvOph02UF",
-      "_lastFetched": "2026-09-17T17:09:15+00:00",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
       "_inFirebase": true
     },
     "catZotros/Gloria a Dios en el Cielo/-OuY5jWH433I5EcBw0-V": {
@@ -35,7 +35,7 @@
       "categoryName": "Zotros",
       "_firstSeen": "2026-08-09T18:50:19+02:00",
       "_id": "catZotros/Gloria a Dios en el Cielo/-OuY5jWH433I5EcBw0-V",
-      "_lastFetched": "2026-09-17T17:09:15+00:00",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
       "_inFirebase": true
     },
     "catZotros/Gloria a Dios en el Cielo/-Oucquc66s3737DYbvj9": {
@@ -53,7 +53,97 @@
       "categoryName": "Zotros",
       "_firstSeen": "2026-08-09T18:50:19+02:00",
       "_id": "catZotros/Gloria a Dios en el Cielo/-Oucquc66s3737DYbvj9",
-      "_lastFetched": "2026-09-17T17:09:15+00:00",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
+      "_inFirebase": true
+    },
+    "catDentrada/Herederos/-P5Hw64Go93oPQi_FhbO": {
+      "description": "Esta cancion no es de nati, investigaremos de quien es, marisa arrufat sabe",
+      "platform": "ios",
+      "reportedAt": "2026-10-31T17:09:53.642Z",
+      "songFilename": "03.herederos.cho",
+      "songTitle": "03. Herederos",
+      "status": "pending",
+      "timestamp": 1793466593642,
+      "userDelegation": "MCM Castellón",
+      "userName": "Izan Rivera",
+      "userProfileType": "monitor",
+      "categoryKey": "catDentrada",
+      "categoryName": "Dentrada",
+      "_firstSeen": "2026-11-24T16:16:33+00:00",
+      "_id": "catDentrada/Herederos/-P5Hw64Go93oPQi_FhbO",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
+      "_inFirebase": true
+    },
+    "catDentrada/Todo lo que Tengo/-P5vwu6qZ0cXRFdCQdOp": {
+      "description": "Revisar acordes",
+      "platform": "ios",
+      "reportedAt": "2026-11-08T16:17:48.561Z",
+      "songFilename": "04.todo_lo_que_tengo.cho",
+      "songTitle": "Todo lo que Tengo",
+      "status": "pending",
+      "timestamp": 1794154668561,
+      "userDelegation": "MCM Castellón",
+      "userName": "David Soler",
+      "userProfileType": "monitor",
+      "categoryKey": "catDentrada",
+      "categoryName": "Dentrada",
+      "_firstSeen": "2026-11-24T16:16:33+00:00",
+      "_id": "catDentrada/Todo lo que Tengo/-P5vwu6qZ0cXRFdCQdOp",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
+      "_inFirebase": true
+    },
+    "catDentrada/Ven a Celebrar/-P5vwnlrF6WNruA8-jAr": {
+      "description": "Revisar acordes",
+      "platform": "ios",
+      "reportedAt": "2026-11-08T16:17:22.580Z",
+      "songFilename": "01.ven_a_celebrar.cho",
+      "songTitle": "Ven a Celebrar",
+      "status": "pending",
+      "timestamp": 1794154642580,
+      "userDelegation": "MCM Castellón",
+      "userName": "David Soler",
+      "userProfileType": "monitor",
+      "categoryKey": "catDentrada",
+      "categoryName": "Dentrada",
+      "_firstSeen": "2026-11-24T16:16:33+00:00",
+      "_id": "catDentrada/Ven a Celebrar/-P5vwnlrF6WNruA8-jAr",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
+      "_inFirebase": true
+    },
+    "catFofertorio/Todo lo que Tengo/-P5uzJB5QAbbNG95O4Lp": {
+      "description": "Revisar acordes",
+      "platform": "ios",
+      "reportedAt": "2026-11-08T11:48:42.405Z",
+      "songFilename": "04.todo_lo_que_tengo.cho",
+      "songTitle": "Todo lo que Tengo",
+      "status": "pending",
+      "timestamp": 1794138522405,
+      "userDelegation": "MCM Castellón",
+      "userName": "David Soler",
+      "userProfileType": "monitor",
+      "categoryKey": "catFofertorio",
+      "categoryName": "Fofertorio",
+      "_firstSeen": "2026-11-24T16:16:33+00:00",
+      "_id": "catFofertorio/Todo lo que Tengo/-P5uzJB5QAbbNG95O4Lp",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
+      "_inFirebase": true
+    },
+    "catZotros/El Mundo Está Esperando la Paz de Dios/-P6k99t6nAOzuJ1YFl_y": {
+      "description": "Yyy",
+      "platform": "ios",
+      "reportedAt": "2026-11-18T19:36:00.342Z",
+      "songFilename": "01.mundo_esta_esperando.cho",
+      "songTitle": "El Mundo Está Esperando la Paz de Dios",
+      "status": "pending",
+      "timestamp": 1795030560342,
+      "userDelegation": "MCM Castellón",
+      "userName": "María Gascó",
+      "userProfileType": "monitor",
+      "categoryKey": "catZotros",
+      "categoryName": "Zotros",
+      "_firstSeen": "2026-11-24T16:16:33+00:00",
+      "_id": "catZotros/El Mundo Está Esperando la Paz de Dios/-P6k99t6nAOzuJ1YFl_y",
+      "_lastFetched": "2026-11-24T16:16:33+00:00",
       "_inFirebase": true
     }
   }
